@@ -3,15 +3,10 @@ package ifl.agentbreaker.conversationmanager.domain.dtos.requests;
 import lombok.Data;
 
 @Data
-public class GetConversationHistoryRequest
+public class GetConversationsRequest
 {
     /**
-     * ID of the conversation, in string.
-     */
-    private String conversationId;
-
-    /**
-     * Keyword to search for.
+     * Keyword to search for in conversation titles.
      */
     private String keyword;
 

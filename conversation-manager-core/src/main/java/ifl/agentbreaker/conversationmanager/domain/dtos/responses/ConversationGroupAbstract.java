@@ -8,7 +8,7 @@ public class ConversationGroupAbstract
     /**
      * ID of the conversation group.
      */
-    private long id;
+    private String groupId;
 
     /**
      * Name of the conversation group.

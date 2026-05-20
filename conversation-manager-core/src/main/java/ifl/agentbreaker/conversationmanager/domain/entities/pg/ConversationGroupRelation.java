@@ -16,7 +16,7 @@ public class ConversationGroupRelation extends EntityBase
      * ID of the conversation group that the current conversation belongs to.
      * {@code null} if the conversation is not in a group.
      */
-    private Long conversationGroupId;
+    private String conversationGroupId;
 
     /**
      * Sort order of the conversation in the conversation group.

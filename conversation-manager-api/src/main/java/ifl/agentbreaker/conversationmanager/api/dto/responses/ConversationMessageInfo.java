@@ -1,6 +1,6 @@
-package ifl.agentbreaker.conversationmanager.domain.dtos.responses;
+package ifl.agentbreaker.conversationmanager.api.dto.responses;
 
-import ifl.agentbreaker.conversationmanager.domain.constants.MessageRole;
+import ifl.agentbreaker.conversationmanager.api.constants.MessageRole;
 import lombok.Data;
 
 @Data

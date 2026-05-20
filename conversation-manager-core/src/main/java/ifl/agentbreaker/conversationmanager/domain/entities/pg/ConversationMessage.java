@@ -1,6 +1,6 @@
 package ifl.agentbreaker.conversationmanager.domain.entities.pg;
 
-import ifl.agentbreaker.conversationmanager.domain.constants.MessageRole;
+import ifl.agentbreaker.conversationmanager.api.constants.MessageRole;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
 
@@ -12,6 +12,11 @@ public class ConversationMessage extends EntityBase
      * Role of the message.
      */
     private MessageRole role;
+
+    /**
+     * ID of the conversation that the message belongs to.
+     */
+    private String conversationId;
 
     /**
      * Text content of the message.

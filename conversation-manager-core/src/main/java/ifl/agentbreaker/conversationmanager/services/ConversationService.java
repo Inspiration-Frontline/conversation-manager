@@ -10,6 +10,7 @@ import ifl.agentbreaker.conversationmanager.domain.dtos.responses.ConversationSh
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.dubbo.config.annotation.DubboService;
 import org.springframework.stereotype.Service;
 import org.springframework.validation.annotation.Validated;
 import stark.dataworks.boot.autoconfig.web.LogArgumentsAndResponse;
@@ -20,6 +21,7 @@ import java.util.List;
 
 @Slf4j
 @Service
+@DubboService
 @Validated
 @LogArgumentsAndResponse
 public class ConversationService implements IConversationRpcService
@@ -53,7 +55,7 @@ public class ConversationService implements IConversationRpcService
         return null;
     }
 
-    public ServiceResponse<PaginatedData<ConversationAbstract>> getConversationHistory(@Valid GetConversationHistoryRequest request)
+    public ServiceResponse<PaginatedData<ConversationAbstract>> getConversations(@Valid GetConversationsRequest request)
     {
         return null;
     }
