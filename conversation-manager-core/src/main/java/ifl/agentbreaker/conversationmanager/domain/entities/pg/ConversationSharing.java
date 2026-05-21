@@ -24,4 +24,9 @@ public class ConversationSharing extends EntityBase
      * as the range of the messages.
      */
     private long endMessageId;
+
+    /**
+     * Whether the shared conversation remains accessible after the original conversation is deleted.
+     */
+    private boolean accessibleAfterDeleted;
 }

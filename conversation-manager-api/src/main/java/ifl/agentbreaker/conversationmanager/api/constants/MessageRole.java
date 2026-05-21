@@ -5,6 +5,5 @@ public enum MessageRole
     SYSTEM,
     USER,
     ASSISTANT,
-    TOOL_CALL,
-    TOOL_RESPONSE,
+    TOOL,
 }
