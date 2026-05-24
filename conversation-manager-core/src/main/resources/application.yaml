@@ -18,6 +18,7 @@ mybatis:
 dubbo:
     application:
         name: ${spring.application.name}
+        qos-enable: false
     protocol:
         name: tri
         port: 20880

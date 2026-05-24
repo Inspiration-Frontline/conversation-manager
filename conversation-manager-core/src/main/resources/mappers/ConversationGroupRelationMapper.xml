@@ -21,9 +21,14 @@
         WHERE "conversation_group_id" IS NOT NULL
         DO UPDATE SET
             "modifier_id" = EXCLUDED."modifier_id",
-            "modification_time" = NOW(),
             "sort_order" = EXCLUDED."sort_order"
     </insert>
+
+    <select id="getMaxConversationGroupRelationSortOrder" resultType="int">
+        SELECT COALESCE(MAX("sort_order"), 0)
+        FROM "conversation_group_relation"
+        WHERE "conversation_group_id" = #{groupId}
+    </select>
 
     <delete id="deleteConversationGroupRelations">
         DELETE FROM "conversation_group_relation"
@@ -39,6 +44,12 @@
         DELETE FROM "conversation_group_relation"
         WHERE "creator_id" = #{userId}
           AND "conversation_group_id" = #{groupId}
+    </delete>
+
+    <delete id="deleteConversationGroupRelationsByConversationId">
+        DELETE FROM "conversation_group_relation"
+        WHERE "creator_id" = #{userId}
+          AND "conversation_id" = #{conversationId}
     </delete>
 
     <delete id="deletePinnedConversationRelations">
@@ -58,7 +69,6 @@
         WHERE "conversation_group_id" IS NULL
         DO UPDATE SET
             "modifier_id" = EXCLUDED."modifier_id",
-            "modification_time" = NOW(),
             "sort_order" = EXCLUDED."sort_order"
     </insert>
 </mapper>

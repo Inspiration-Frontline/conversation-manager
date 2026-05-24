@@ -22,14 +22,15 @@
         c."conversation_id", c."title", c."deleted"
     </sql>
 
-    <insert id="insertConversation" useGeneratedKeys="true" keyProperty="id" keyColumn="id">
+    <select id="insertConversation" resultMap="ConversationResultMap" affectData="true">
         INSERT INTO "conversation" (
             "creator_id", "modifier_id", "conversation_id", "title", "deleted"
         )
         VALUES (
             #{creatorId}, #{modifierId}, #{conversationId}, #{title}, #{deleted}
         )
-    </insert>
+        RETURNING <include refid="ConversationColumns"/>
+    </select>
 
     <select id="getConversationById" resultMap="ConversationResultMap">
         SELECT <include refid="ConversationColumns"/>
@@ -43,6 +44,16 @@
         WHERE "conversation_id" = #{conversationId}
           AND "creator_id" = #{userId}
           AND "deleted" = FALSE
+    </select>
+
+    <select id="existsByIdAndUser" resultType="boolean">
+        SELECT EXISTS (
+            SELECT 1
+            FROM "conversation"
+            WHERE "conversation_id" = #{conversationId}
+              AND "creator_id" = #{userId}
+              AND "deleted" = FALSE
+        )
     </select>
 
     <select id="listConversations" resultMap="ConversationResultMap">
@@ -76,21 +87,20 @@
         </if>
     </select>
 
-    <update id="updateConversationTitle">
+    <select id="updateConversationTitle" resultMap="ConversationResultMap" affectData="true">
         UPDATE "conversation"
         SET "title" = #{title},
-            "modifier_id" = #{userId},
-            "modification_time" = NOW()
+            "modifier_id" = #{userId}
         WHERE "conversation_id" = #{conversationId}
           AND "creator_id" = #{userId}
           AND "deleted" = FALSE
-    </update>
+        RETURNING <include refid="ConversationColumns"/>
+    </select>
 
     <update id="deleteConversation">
         UPDATE "conversation"
         SET "deleted" = TRUE,
-            "modifier_id" = #{userId},
-            "modification_time" = NOW()
+            "modifier_id" = #{userId}
         WHERE "conversation_id" = #{conversationId}
           AND "creator_id" = #{userId}
           AND "deleted" = FALSE
@@ -99,8 +109,7 @@
     <update id="deleteConversationsByGroupId">
         UPDATE "conversation"
         SET "deleted" = TRUE,
-            "modifier_id" = #{userId},
-            "modification_time" = NOW()
+            "modifier_id" = #{userId}
         WHERE "creator_id" = #{userId}
           AND "deleted" = FALSE
           AND "conversation_id" IN (

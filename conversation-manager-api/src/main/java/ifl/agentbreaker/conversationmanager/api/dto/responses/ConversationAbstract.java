@@ -8,10 +8,7 @@ import java.util.Date;
 public class ConversationAbstract
 {
     private String conversationId;
-
     private String title;
-
     private Date creationTime;
-
     private Date modificationTime;
 }

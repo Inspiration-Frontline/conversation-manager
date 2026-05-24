@@ -47,8 +47,7 @@
         UPDATE "conversation_group"
         SET "name" = #{name},
             "description" = #{description},
-            "modifier_id" = #{modifierId},
-            "modification_time" = NOW()
+            "modifier_id" = #{modifierId}
         WHERE "group_id" = #{groupId}
           AND "creator_id" = #{creatorId}
     </update>
@@ -69,8 +68,7 @@
     <update id="updateConversationGroupSortOrder">
         UPDATE "conversation_group"
         SET "sort_order" = #{sortOrder},
-            "modifier_id" = #{userId},
-            "modification_time" = NOW()
+            "modifier_id" = #{userId}
         WHERE "group_id" = #{groupId}
           AND "creator_id" = #{userId}
     </update>

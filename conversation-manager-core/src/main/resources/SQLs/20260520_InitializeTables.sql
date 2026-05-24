@@ -119,3 +119,47 @@ CREATE TABLE IF NOT EXISTS "message_file"
     "width"             INTEGER,
     "height"            INTEGER
 );
+
+CREATE OR REPLACE FUNCTION "refresh_modification_time"()
+RETURNS TRIGGER AS $$
+BEGIN
+    NEW."modification_time" = NOW();
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS "trg_conversation_refresh_modification_time" ON "conversation";
+CREATE TRIGGER "trg_conversation_refresh_modification_time"
+    BEFORE UPDATE ON "conversation"
+    FOR EACH ROW
+    EXECUTE FUNCTION "refresh_modification_time"();
+
+DROP TRIGGER IF EXISTS "trg_conversation_message_refresh_modification_time" ON "conversation_message";
+CREATE TRIGGER "trg_conversation_message_refresh_modification_time"
+    BEFORE UPDATE ON "conversation_message"
+    FOR EACH ROW
+    EXECUTE FUNCTION "refresh_modification_time"();
+
+DROP TRIGGER IF EXISTS "trg_conversation_group_refresh_modification_time" ON "conversation_group";
+CREATE TRIGGER "trg_conversation_group_refresh_modification_time"
+    BEFORE UPDATE ON "conversation_group"
+    FOR EACH ROW
+    EXECUTE FUNCTION "refresh_modification_time"();
+
+DROP TRIGGER IF EXISTS "trg_conversation_group_relation_refresh_modification_time" ON "conversation_group_relation";
+CREATE TRIGGER "trg_conversation_group_relation_refresh_modification_time"
+    BEFORE UPDATE ON "conversation_group_relation"
+    FOR EACH ROW
+    EXECUTE FUNCTION "refresh_modification_time"();
+
+DROP TRIGGER IF EXISTS "trg_conversation_sharing_refresh_modification_time" ON "conversation_sharing";
+CREATE TRIGGER "trg_conversation_sharing_refresh_modification_time"
+    BEFORE UPDATE ON "conversation_sharing"
+    FOR EACH ROW
+    EXECUTE FUNCTION "refresh_modification_time"();
+
+DROP TRIGGER IF EXISTS "trg_message_file_refresh_modification_time" ON "message_file";
+CREATE TRIGGER "trg_message_file_refresh_modification_time"
+    BEFORE UPDATE ON "message_file"
+    FOR EACH ROW
+    EXECUTE FUNCTION "refresh_modification_time"();

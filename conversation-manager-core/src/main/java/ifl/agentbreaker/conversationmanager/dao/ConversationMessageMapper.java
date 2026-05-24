@@ -14,6 +14,11 @@ public interface ConversationMessageMapper
 
     int insertMessages(@Param("messages") Collection<ConversationMessage> messages);
 
+    int forkConversationMessages(@Param("sourceConversationId") String sourceConversationId,
+                                 @Param("targetConversationId") String targetConversationId,
+                                 @Param("userId") long userId,
+                                 @Param("endMessageId") long endMessageId);
+
     List<ConversationMessage> listConversationMessages(@Param("conversationId") String conversationId, @Param("endMessageId") Long endMessageId);
 
     long getMaxMessageId(@Param("conversationId") String conversationId);

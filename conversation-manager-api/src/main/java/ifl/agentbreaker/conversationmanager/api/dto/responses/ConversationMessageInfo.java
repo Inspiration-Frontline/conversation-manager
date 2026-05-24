@@ -11,20 +11,12 @@ import java.util.List;
 public class ConversationMessageInfo
 {
     private long id;
-
     private MessageRole role;
-
     private String name;
-
     private String content;
-
     private List<ContentPart> contentParts;
-
     private List<ToolCall> toolCalls;
-
     private String toolCallId;
-
     private Long agentId;
-
     private String finishReason;
 }

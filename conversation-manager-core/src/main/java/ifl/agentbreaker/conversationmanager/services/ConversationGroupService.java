@@ -17,6 +17,7 @@ import ifl.agentbreaker.conversationmanager.support.BusinessIdManager;
 import ifl.agentbreaker.conversationmanager.support.TextNormalizer;
 import jakarta.validation.Valid;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.BeanUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -152,7 +153,7 @@ public class ConversationGroupService
         if (CollectionUtils.isEmpty(conversationIds) || !conversationMapper.allOwnedConversationsExist(userId, conversationIds))
             return ServiceResponse.buildErrorResponse(ERROR_INVALID_CONVERSATION, "Some conversations do not exist.");
 
-        int sortOrder = 1;
+        int sortOrder = conversationGroupRelationMapper.getMaxConversationGroupRelationSortOrder(request.getConversationGroupId()) + 1;
         for (String conversationId : conversationIds)
         {
             ConversationGroupRelation relation = new ConversationGroupRelation();
@@ -186,9 +187,7 @@ public class ConversationGroupService
     private ConversationGroupAbstract toConversationGroupAbstract(ConversationGroup group)
     {
         ConversationGroupAbstract groupAbstract = new ConversationGroupAbstract();
-        groupAbstract.setGroupId(group.getGroupId());
-        groupAbstract.setName(group.getName());
-        groupAbstract.setDescription(group.getDescription());
+        BeanUtils.copyProperties(group, groupAbstract);
         return groupAbstract;
     }
 }
