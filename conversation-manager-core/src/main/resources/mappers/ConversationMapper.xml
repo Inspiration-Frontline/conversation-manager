@@ -1,5 +1,132 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
 <mapper namespace="ifl.agentbreaker.conversationmanager.dao.ConversationMapper">
-    <!-- Insert resultMap here, for ifl.agentbreaker.conversationmanager.domain.entities.pg.Conversation -->
+    <resultMap id="ConversationResultMap" type="ifl.agentbreaker.conversationmanager.domain.entities.pg.Conversation">
+        <id column="id" property="id"/>
+        <result column="creator_id" property="creatorId"/>
+        <result column="creation_time" property="creationTime"/>
+        <result column="modifier_id" property="modifierId"/>
+        <result column="modification_time" property="modificationTime"/>
+        <result column="conversation_id" property="conversationId"/>
+        <result column="title" property="title"/>
+        <result column="deleted" property="deleted"/>
+    </resultMap>
+
+    <sql id="ConversationColumns">
+        "id", "creator_id", "creation_time", "modifier_id", "modification_time",
+        "conversation_id", "title", "deleted"
+    </sql>
+
+    <sql id="ConversationColumnsWithAlias">
+        c."id", c."creator_id", c."creation_time", c."modifier_id", c."modification_time",
+        c."conversation_id", c."title", c."deleted"
+    </sql>
+
+    <insert id="insertConversation" useGeneratedKeys="true" keyProperty="id" keyColumn="id">
+        INSERT INTO "conversation" (
+            "creator_id", "modifier_id", "conversation_id", "title", "deleted"
+        )
+        VALUES (
+            #{creatorId}, #{modifierId}, #{conversationId}, #{title}, #{deleted}
+        )
+    </insert>
+
+    <select id="getConversationById" resultMap="ConversationResultMap">
+        SELECT <include refid="ConversationColumns"/>
+        FROM "conversation"
+        WHERE "conversation_id" = #{conversationId}
+    </select>
+
+    <select id="getConversationByIdAndUser" resultMap="ConversationResultMap">
+        SELECT <include refid="ConversationColumns"/>
+        FROM "conversation"
+        WHERE "conversation_id" = #{conversationId}
+          AND "creator_id" = #{userId}
+          AND "deleted" = FALSE
+    </select>
+
+    <select id="listConversations" resultMap="ConversationResultMap">
+        SELECT <include refid="ConversationColumnsWithAlias"/>
+        FROM "conversation" c
+        LEFT JOIN "conversation_group_relation" p
+          ON p."conversation_id" = c."conversation_id"
+         AND p."creator_id" = c."creator_id"
+         AND p."conversation_group_id" IS NULL
+        WHERE c."creator_id" = #{userId}
+          AND c."deleted" = FALSE
+        <if test="keyword != null and keyword != ''">
+          AND c."title" ILIKE CONCAT('%', #{keyword}, '%')
+        </if>
+        ORDER BY
+          CASE WHEN p."id" IS NULL THEN 1 ELSE 0 END ASC,
+          p."sort_order" ASC NULLS LAST,
+          c."modification_time" DESC,
+          c."id" DESC
+        LIMIT #{limit}
+        OFFSET #{offset}
+    </select>
+
+    <select id="countConversations" resultType="long">
+        SELECT COUNT(1)
+        FROM "conversation"
+        WHERE "creator_id" = #{userId}
+          AND "deleted" = FALSE
+        <if test="keyword != null and keyword != ''">
+          AND "title" ILIKE CONCAT('%', #{keyword}, '%')
+        </if>
+    </select>
+
+    <update id="updateConversationTitle">
+        UPDATE "conversation"
+        SET "title" = #{title},
+            "modifier_id" = #{userId},
+            "modification_time" = NOW()
+        WHERE "conversation_id" = #{conversationId}
+          AND "creator_id" = #{userId}
+          AND "deleted" = FALSE
+    </update>
+
+    <update id="deleteConversation">
+        UPDATE "conversation"
+        SET "deleted" = TRUE,
+            "modifier_id" = #{userId},
+            "modification_time" = NOW()
+        WHERE "conversation_id" = #{conversationId}
+          AND "creator_id" = #{userId}
+          AND "deleted" = FALSE
+    </update>
+
+    <update id="deleteConversationsByGroupId">
+        UPDATE "conversation"
+        SET "deleted" = TRUE,
+            "modifier_id" = #{userId},
+            "modification_time" = NOW()
+        WHERE "creator_id" = #{userId}
+          AND "deleted" = FALSE
+          AND "conversation_id" IN (
+              SELECT "conversation_id"
+              FROM "conversation_group_relation"
+              WHERE "creator_id" = #{userId}
+                AND "conversation_group_id" = #{groupId}
+          )
+    </update>
+
+    <select id="allOwnedConversationsExist" resultType="boolean">
+        SELECT NOT EXISTS (
+            SELECT 1
+            FROM (
+                VALUES
+                <foreach item="conversationId" collection="conversationIds" separator=",">
+                    (#{conversationId})
+                </foreach>
+            ) AS requested("conversation_id")
+            WHERE NOT EXISTS (
+                SELECT 1
+                FROM "conversation" c
+                WHERE c."creator_id" = #{userId}
+                  AND c."deleted" = FALSE
+                  AND c."conversation_id" = requested."conversation_id"
+            )
+        )
+    </select>
 </mapper>

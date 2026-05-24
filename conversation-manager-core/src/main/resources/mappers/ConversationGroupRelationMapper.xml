@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="ifl.agentbreaker.conversationmanager.dao.ConversationGroupRelationMapper">
+    <insert id="insertConversationGroupRelation" useGeneratedKeys="true" keyProperty="id" keyColumn="id">
+        INSERT INTO "conversation_group_relation" (
+            "creator_id", "modifier_id", "conversation_id", "conversation_group_id", "sort_order"
+        )
+        VALUES (
+            #{creatorId}, #{modifierId}, #{conversationId}, #{conversationGroupId}, #{sortOrder}
+        )
+    </insert>
+
+    <insert id="upsertConversationGroupRelation">
+        INSERT INTO "conversation_group_relation" (
+            "creator_id", "modifier_id", "conversation_id", "conversation_group_id", "sort_order"
+        )
+        VALUES (
+            #{creatorId}, #{modifierId}, #{conversationId}, #{conversationGroupId}, #{sortOrder}
+        )
+        ON CONFLICT ("creator_id", "conversation_group_id", "conversation_id")
+        WHERE "conversation_group_id" IS NOT NULL
+        DO UPDATE SET
+            "modifier_id" = EXCLUDED."modifier_id",
+            "modification_time" = NOW(),
+            "sort_order" = EXCLUDED."sort_order"
+    </insert>
+
+    <delete id="deleteConversationGroupRelations">
+        DELETE FROM "conversation_group_relation"
+        WHERE "creator_id" = #{userId}
+          AND "conversation_group_id" = #{groupId}
+          AND "conversation_id" IN
+        <foreach item="conversationId" collection="conversationIds" open="(" separator="," close=")">
+            #{conversationId}
+        </foreach>
+    </delete>
+
+    <delete id="deleteConversationGroupRelationsByGroupId">
+        DELETE FROM "conversation_group_relation"
+        WHERE "creator_id" = #{userId}
+          AND "conversation_group_id" = #{groupId}
+    </delete>
+
+    <delete id="deletePinnedConversationRelations">
+        DELETE FROM "conversation_group_relation"
+        WHERE "creator_id" = #{userId}
+          AND "conversation_group_id" IS NULL
+    </delete>
+
+    <insert id="insertPinnedConversationRelation">
+        INSERT INTO "conversation_group_relation" (
+            "creator_id", "modifier_id", "conversation_id", "conversation_group_id", "sort_order"
+        )
+        VALUES (
+            #{creatorId}, #{modifierId}, #{conversationId}, NULL, #{sortOrder}
+        )
+        ON CONFLICT ("creator_id", "conversation_id")
+        WHERE "conversation_group_id" IS NULL
+        DO UPDATE SET
+            "modifier_id" = EXCLUDED."modifier_id",
+            "modification_time" = NOW(),
+            "sort_order" = EXCLUDED."sort_order"
+    </insert>
+</mapper>

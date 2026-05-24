@@ -1,0 +1,91 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="ifl.agentbreaker.conversationmanager.dao.ConversationMessageMapper">
+    <resultMap id="ConversationMessageResultMap" type="ifl.agentbreaker.conversationmanager.domain.entities.pg.ConversationMessage">
+        <id column="id" property="id"/>
+        <result column="creator_id" property="creatorId"/>
+        <result column="creation_time" property="creationTime"/>
+        <result column="modifier_id" property="modifierId"/>
+        <result column="modification_time" property="modificationTime"/>
+        <result column="conversation_id" property="conversationId"/>
+        <result column="role" property="role"/>
+        <result column="name" property="name"/>
+        <result column="content" property="content"/>
+        <result column="content_parts" property="contentParts"/>
+        <result column="tool_calls" property="toolCalls"/>
+        <result column="tool_call_id" property="toolCallId"/>
+        <result column="agent_id" property="agentId"/>
+        <result column="finish_reason" property="finishReason"/>
+        <result column="deleted" property="deleted"/>
+    </resultMap>
+
+    <sql id="ConversationMessageColumns">
+        "id", "creator_id", "creation_time", "modifier_id", "modification_time",
+        "conversation_id", "role", "name", "content", "content_parts", "tool_calls",
+        "tool_call_id", "agent_id", "finish_reason", "deleted"
+    </sql>
+
+    <insert id="insertMessage" useGeneratedKeys="true" keyProperty="id" keyColumn="id">
+        INSERT INTO "conversation_message" (
+            "creator_id", "modifier_id", "conversation_id", "role", "name", "content",
+            "content_parts", "tool_calls", "tool_call_id", "agent_id", "finish_reason", "deleted"
+        )
+        VALUES (
+            #{creatorId}, #{modifierId}, #{conversationId}, #{role}, #{name}, #{content},
+            #{contentParts}, #{toolCalls}, #{toolCallId}, #{agentId}, #{finishReason}, #{deleted}
+        )
+    </insert>
+
+    <insert id="insertMessages">
+        INSERT INTO "conversation_message" (
+            "creator_id", "modifier_id", "conversation_id", "role", "name", "content",
+            "content_parts", "tool_calls", "tool_call_id", "agent_id", "finish_reason", "deleted"
+        )
+        VALUES
+        <foreach item="message" collection="messages" separator=",">
+            (
+                #{message.creatorId}, #{message.modifierId}, #{message.conversationId}, #{message.role},
+                #{message.name}, #{message.content}, #{message.contentParts}, #{message.toolCalls},
+                #{message.toolCallId}, #{message.agentId}, #{message.finishReason}, #{message.deleted}
+            )
+        </foreach>
+    </insert>
+
+    <select id="listConversationMessages" resultMap="ConversationMessageResultMap">
+        SELECT <include refid="ConversationMessageColumns"/>
+        FROM "conversation_message"
+        WHERE "conversation_id" = #{conversationId}
+          AND "deleted" = FALSE
+        <if test="endMessageId != null">
+          AND "id" &lt;= #{endMessageId}
+        </if>
+        ORDER BY "id" ASC
+    </select>
+
+    <select id="getMaxMessageId" resultType="long">
+        SELECT COALESCE(MAX("id"), 0)
+        FROM "conversation_message"
+        WHERE "conversation_id" = #{conversationId}
+          AND "deleted" = FALSE
+    </select>
+
+    <update id="deleteMessages">
+        UPDATE "conversation_message" m
+        SET "deleted" = TRUE,
+            "modifier_id" = #{userId},
+            "modification_time" = NOW()
+        WHERE m."conversation_id" = #{conversationId}
+          AND m."deleted" = FALSE
+          AND m."id" IN
+        <foreach item="messageId" collection="messageIds" open="(" separator="," close=")">
+            #{messageId}
+        </foreach>
+          AND EXISTS (
+              SELECT 1
+              FROM "conversation" c
+              WHERE c."conversation_id" = m."conversation_id"
+                AND c."creator_id" = #{userId}
+                AND c."deleted" = FALSE
+          )
+    </update>
+</mapper>

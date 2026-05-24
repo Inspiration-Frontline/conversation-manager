@@ -15,6 +15,7 @@ public class UpdateConversationGroupAbstractRequest
     /**
      * Name of the conversation group.
      */
+    @NotBlank(message = "Name of the group is required.")
     private String name;
 
     /**

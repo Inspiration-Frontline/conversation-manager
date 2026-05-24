@@ -2,6 +2,8 @@ package ifl.agentbreaker.conversationmanager.controllers;
 
 import ifl.agentbreaker.conversationmanager.api.dto.responses.ConversationAbstract;
 import ifl.agentbreaker.conversationmanager.api.dto.responses.ConversationMessageHistory;
+import ifl.agentbreaker.conversationmanager.api.dto.requests.DeleteMessagesRequest;
+import ifl.agentbreaker.conversationmanager.api.dto.requests.UpdateTitleRequest;
 import ifl.agentbreaker.conversationmanager.domain.dtos.requests.*;
 import ifl.agentbreaker.conversationmanager.domain.dtos.responses.ConversationSharingResult;
 import ifl.agentbreaker.conversationmanager.services.ConversationService;

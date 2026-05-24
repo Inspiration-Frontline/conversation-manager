@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="ifl.agentbreaker.conversationmanager.dao.ConversationSharingMapper">
+    <resultMap id="ConversationSharingResultMap" type="ifl.agentbreaker.conversationmanager.domain.entities.pg.ConversationSharing">
+        <id column="id" property="id"/>
+        <result column="creator_id" property="creatorId"/>
+        <result column="creation_time" property="creationTime"/>
+        <result column="modifier_id" property="modifierId"/>
+        <result column="modification_time" property="modificationTime"/>
+        <result column="parent_conversation_id" property="parentConversationId"/>
+        <result column="shared_conversation_id" property="sharedConversationId"/>
+        <result column="end_message_id" property="endMessageId"/>
+        <result column="accessible_after_deleted" property="accessibleAfterDeleted"/>
+    </resultMap>
+
+    <sql id="ConversationSharingColumns">
+        "id", "creator_id", "creation_time", "modifier_id", "modification_time",
+        "parent_conversation_id", "shared_conversation_id", "end_message_id",
+        "accessible_after_deleted"
+    </sql>
+
+    <insert id="insertConversationSharing" useGeneratedKeys="true" keyProperty="id" keyColumn="id">
+        INSERT INTO "conversation_sharing" (
+            "creator_id", "modifier_id", "parent_conversation_id", "shared_conversation_id",
+            "end_message_id", "accessible_after_deleted"
+        )
+        VALUES (
+            #{creatorId}, #{modifierId}, #{parentConversationId}, #{sharedConversationId},
+            #{endMessageId}, #{accessibleAfterDeleted}
+        )
+    </insert>
+
+    <select id="getConversationSharingBySharedId" resultMap="ConversationSharingResultMap">
+        SELECT <include refid="ConversationSharingColumns"/>
+        FROM "conversation_sharing"
+        WHERE "shared_conversation_id" = #{sharedConversationId}
+    </select>
+</mapper>

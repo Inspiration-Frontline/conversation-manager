@@ -1,0 +1,83 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="ifl.agentbreaker.conversationmanager.dao.ConversationGroupMapper">
+    <resultMap id="ConversationGroupResultMap" type="ifl.agentbreaker.conversationmanager.domain.entities.pg.ConversationGroup">
+        <id column="id" property="id"/>
+        <result column="creator_id" property="creatorId"/>
+        <result column="creation_time" property="creationTime"/>
+        <result column="modifier_id" property="modifierId"/>
+        <result column="modification_time" property="modificationTime"/>
+        <result column="group_id" property="groupId"/>
+        <result column="name" property="name"/>
+        <result column="description" property="description"/>
+        <result column="sort_order" property="sortOrder"/>
+    </resultMap>
+
+    <sql id="ConversationGroupColumns">
+        "id", "creator_id", "creation_time", "modifier_id", "modification_time",
+        "group_id", "name", "description", "sort_order"
+    </sql>
+
+    <insert id="insertConversationGroup" useGeneratedKeys="true" keyProperty="id" keyColumn="id">
+        INSERT INTO "conversation_group" (
+            "creator_id", "modifier_id", "group_id", "name", "description", "sort_order"
+        )
+        VALUES (
+            #{creatorId}, #{modifierId}, #{groupId}, #{name}, #{description}, #{sortOrder}
+        )
+    </insert>
+
+    <select id="getConversationGroupByIdForUser" resultMap="ConversationGroupResultMap">
+        SELECT <include refid="ConversationGroupColumns"/>
+        FROM "conversation_group"
+        WHERE "group_id" = #{groupId}
+          AND "creator_id" = #{userId}
+    </select>
+
+    <select id="existsByIdAndUser" resultType="boolean">
+        SELECT EXISTS (
+            SELECT 1
+            FROM "conversation_group"
+            WHERE "group_id" = #{groupId}
+              AND "creator_id" = #{userId}
+        )
+    </select>
+
+    <update id="updateConversationGroupAbstract">
+        UPDATE "conversation_group"
+        SET "name" = #{name},
+            "description" = #{description},
+            "modifier_id" = #{modifierId},
+            "modification_time" = NOW()
+        WHERE "group_id" = #{groupId}
+          AND "creator_id" = #{creatorId}
+    </update>
+
+    <delete id="deleteConversationGroup">
+        DELETE FROM "conversation_group"
+        WHERE "group_id" = #{groupId}
+          AND "creator_id" = #{userId}
+    </delete>
+
+    <select id="listConversationGroups" resultMap="ConversationGroupResultMap">
+        SELECT <include refid="ConversationGroupColumns"/>
+        FROM "conversation_group"
+        WHERE "creator_id" = #{userId}
+        ORDER BY "sort_order" ASC, "id" ASC
+    </select>
+
+    <update id="updateConversationGroupSortOrder">
+        UPDATE "conversation_group"
+        SET "sort_order" = #{sortOrder},
+            "modifier_id" = #{userId},
+            "modification_time" = NOW()
+        WHERE "group_id" = #{groupId}
+          AND "creator_id" = #{userId}
+    </update>
+
+    <select id="getMaxConversationGroupSortOrder" resultType="int">
+        SELECT COALESCE(MAX("sort_order"), 0)
+        FROM "conversation_group"
+        WHERE "creator_id" = #{userId}
+    </select>
+</mapper>
