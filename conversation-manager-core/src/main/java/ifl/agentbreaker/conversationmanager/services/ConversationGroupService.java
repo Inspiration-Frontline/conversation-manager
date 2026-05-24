@@ -154,6 +154,7 @@ public class ConversationGroupService
             return ServiceResponse.buildErrorResponse(ERROR_INVALID_CONVERSATION, "Some conversations do not exist.");
 
         int sortOrder = conversationGroupRelationMapper.getMaxConversationGroupRelationSortOrder(request.getConversationGroupId()) + 1;
+        conversationMapper.clearConversationPinnedByIds(userId, conversationIds);
         for (String conversationId : conversationIds)
         {
             ConversationGroupRelation relation = new ConversationGroupRelation();

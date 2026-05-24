@@ -9,6 +9,7 @@ public class ConversationAbstract
 {
     private String conversationId;
     private String title;
+    private boolean pinned;
     private Date creationTime;
     private Date modificationTime;
 }

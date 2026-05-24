@@ -20,8 +20,4 @@ public interface ConversationGroupRelationMapper
     int deleteConversationGroupRelationsByGroupId(@Param("groupId") String groupId, @Param("userId") long userId);
 
     int deleteConversationGroupRelationsByConversationId(@Param("conversationId") String conversationId, @Param("userId") long userId);
-
-    int deletePinnedConversationRelations(@Param("userId") long userId);
-
-    int insertPinnedConversationRelation(ConversationGroupRelation relation);
 }

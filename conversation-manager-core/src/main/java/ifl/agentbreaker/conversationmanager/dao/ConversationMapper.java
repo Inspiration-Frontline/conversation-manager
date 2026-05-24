@@ -29,4 +29,12 @@ public interface ConversationMapper
     int deleteConversationsByGroupId(@Param("groupId") String groupId, @Param("userId") long userId);
 
     boolean allOwnedConversationsExist(@Param("userId") long userId, @Param("conversationIds") Collection<String> conversationIds);
+
+    boolean allOwnedUngroupedConversationsExist(@Param("userId") long userId, @Param("conversationIds") Collection<String> conversationIds);
+
+    int updateConversationPinnedByIds(@Param("userId") long userId, @Param("conversationIds") Collection<String> conversationIds, @Param("pinned") boolean pinned);
+
+    int clearConversationPinnedByIds(@Param("userId") long userId, @Param("conversationIds") Collection<String> conversationIds);
+
+    int clearConversationPinned(@Param("userId") long userId);
 }

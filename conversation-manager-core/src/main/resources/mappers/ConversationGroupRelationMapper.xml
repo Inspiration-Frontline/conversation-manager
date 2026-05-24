@@ -51,24 +51,4 @@
         WHERE "creator_id" = #{userId}
           AND "conversation_id" = #{conversationId}
     </delete>
-
-    <delete id="deletePinnedConversationRelations">
-        DELETE FROM "conversation_group_relation"
-        WHERE "creator_id" = #{userId}
-          AND "conversation_group_id" IS NULL
-    </delete>
-
-    <insert id="insertPinnedConversationRelation">
-        INSERT INTO "conversation_group_relation" (
-            "creator_id", "modifier_id", "conversation_id", "conversation_group_id", "sort_order"
-        )
-        VALUES (
-            #{creatorId}, #{modifierId}, #{conversationId}, NULL, #{sortOrder}
-        )
-        ON CONFLICT ("creator_id", "conversation_id")
-        WHERE "conversation_group_id" IS NULL
-        DO UPDATE SET
-            "modifier_id" = EXCLUDED."modifier_id",
-            "sort_order" = EXCLUDED."sort_order"
-    </insert>
 </mapper>

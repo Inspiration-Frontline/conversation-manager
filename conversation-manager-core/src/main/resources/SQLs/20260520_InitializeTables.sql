@@ -7,12 +7,19 @@ CREATE TABLE IF NOT EXISTS "conversation"
     "modification_time" TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
     "conversation_id"   VARCHAR(64)  NOT NULL,
     "title"             VARCHAR(200) NOT NULL,
+    "pinned"            BOOLEAN      NOT NULL DEFAULT FALSE,
     "deleted"           BOOLEAN      NOT NULL DEFAULT FALSE,
     CONSTRAINT "uk_conversation_conversation_id" UNIQUE ("conversation_id")
 );
 
+ALTER TABLE "conversation"
+    ADD COLUMN IF NOT EXISTS "pinned" BOOLEAN NOT NULL DEFAULT FALSE;
+
 CREATE INDEX IF NOT EXISTS "idx_conversation_creator_deleted_modified"
     ON "conversation" ("creator_id", "deleted", "modification_time" DESC);
+
+CREATE INDEX IF NOT EXISTS "idx_conversation_creator_deleted_pinned_modified"
+    ON "conversation" ("creator_id", "deleted", "pinned" DESC, "modification_time" DESC);
 
 CREATE INDEX IF NOT EXISTS "idx_conversation_title"
     ON "conversation" ("title");
@@ -68,22 +75,37 @@ CREATE TABLE IF NOT EXISTS "conversation_group_relation"
     "modifier_id"           BIGINT      NOT NULL,
     "modification_time"     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     "conversation_id"       VARCHAR(64) NOT NULL,
-    "conversation_group_id" VARCHAR(64),
+    "conversation_group_id" VARCHAR(64) NOT NULL,
     "sort_order"            INTEGER     NOT NULL DEFAULT 0,
     CONSTRAINT "fk_conversation_group_relation_conversation" FOREIGN KEY ("conversation_id") REFERENCES "conversation" ("conversation_id") ON DELETE CASCADE,
     CONSTRAINT "fk_conversation_group_relation_group" FOREIGN KEY ("conversation_group_id") REFERENCES "conversation_group" ("group_id") ON DELETE CASCADE
 );
 
+UPDATE "conversation" c
+SET "pinned" = TRUE
+FROM "conversation_group_relation" r
+WHERE r."conversation_group_id" IS NULL
+  AND r."creator_id" = c."creator_id"
+  AND r."conversation_id" = c."conversation_id"
+  AND c."deleted" = FALSE;
+
+DELETE FROM "conversation_group_relation"
+WHERE "conversation_group_id" IS NULL;
+
+DROP INDEX IF EXISTS "uk_conversation_group_relation_pin";
+
+ALTER TABLE "conversation_group_relation"
+    ALTER COLUMN "conversation_group_id" SET NOT NULL;
+
 CREATE UNIQUE INDEX IF NOT EXISTS "uk_conversation_group_relation_group"
     ON "conversation_group_relation" ("creator_id", "conversation_group_id", "conversation_id")
     WHERE "conversation_group_id" IS NOT NULL;
 
-CREATE UNIQUE INDEX IF NOT EXISTS "uk_conversation_group_relation_pin"
-    ON "conversation_group_relation" ("creator_id", "conversation_id")
-    WHERE "conversation_group_id" IS NULL;
-
 CREATE INDEX IF NOT EXISTS "idx_conversation_group_relation_group_sort"
     ON "conversation_group_relation" ("creator_id", "conversation_group_id", "sort_order", "id");
+
+CREATE INDEX IF NOT EXISTS "idx_conversation_group_relation_conversation"
+    ON "conversation_group_relation" ("creator_id", "conversation_id");
 
 CREATE TABLE IF NOT EXISTS "conversation_sharing"
 (

@@ -18,6 +18,11 @@ public class Conversation extends EntityBase
     private String title;
 
     /**
+     * Whether the conversation is pinned in the root conversation list.
+     */
+    private boolean pinned;
+
+    /**
      * Whether the conversation is deleted.
      */
     // Here we use a logic deletion instead of a hard deletion because the shared conversation may contain the deleted conversation, since the shared conversation is a snapshot of the parent conversation.

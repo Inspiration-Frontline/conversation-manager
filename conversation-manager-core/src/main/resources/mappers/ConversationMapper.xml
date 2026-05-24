@@ -9,25 +9,26 @@
         <result column="modification_time" property="modificationTime"/>
         <result column="conversation_id" property="conversationId"/>
         <result column="title" property="title"/>
+        <result column="pinned" property="pinned"/>
         <result column="deleted" property="deleted"/>
     </resultMap>
 
     <sql id="ConversationColumns">
         "id", "creator_id", "creation_time", "modifier_id", "modification_time",
-        "conversation_id", "title", "deleted"
+        "conversation_id", "title", "pinned", "deleted"
     </sql>
 
     <sql id="ConversationColumnsWithAlias">
         c."id", c."creator_id", c."creation_time", c."modifier_id", c."modification_time",
-        c."conversation_id", c."title", c."deleted"
+        c."conversation_id", c."title", c."pinned", c."deleted"
     </sql>
 
     <select id="insertConversation" resultMap="ConversationResultMap" affectData="true">
         INSERT INTO "conversation" (
-            "creator_id", "modifier_id", "conversation_id", "title", "deleted"
+            "creator_id", "modifier_id", "conversation_id", "title", "pinned", "deleted"
         )
         VALUES (
-            #{creatorId}, #{modifierId}, #{conversationId}, #{title}, #{deleted}
+            #{creatorId}, #{modifierId}, #{conversationId}, #{title}, #{pinned}, #{deleted}
         )
         RETURNING <include refid="ConversationColumns"/>
     </select>
@@ -59,18 +60,19 @@
     <select id="listConversations" resultMap="ConversationResultMap">
         SELECT <include refid="ConversationColumnsWithAlias"/>
         FROM "conversation" c
-        LEFT JOIN "conversation_group_relation" p
-          ON p."conversation_id" = c."conversation_id"
-         AND p."creator_id" = c."creator_id"
-         AND p."conversation_group_id" IS NULL
         WHERE c."creator_id" = #{userId}
           AND c."deleted" = FALSE
+          AND NOT EXISTS (
+              SELECT 1
+              FROM "conversation_group_relation" r
+              WHERE r."creator_id" = c."creator_id"
+                AND r."conversation_id" = c."conversation_id"
+          )
         <if test="keyword != null and keyword != ''">
           AND c."title" ILIKE CONCAT('%', #{keyword}, '%')
         </if>
         ORDER BY
-          CASE WHEN p."id" IS NULL THEN 1 ELSE 0 END ASC,
-          p."sort_order" ASC NULLS LAST,
+          c."pinned" DESC,
           c."modification_time" DESC,
           c."id" DESC
         LIMIT #{limit}
@@ -82,6 +84,12 @@
         FROM "conversation"
         WHERE "creator_id" = #{userId}
           AND "deleted" = FALSE
+          AND NOT EXISTS (
+              SELECT 1
+              FROM "conversation_group_relation" r
+              WHERE r."creator_id" = "conversation"."creator_id"
+                AND r."conversation_id" = "conversation"."conversation_id"
+          )
         <if test="keyword != null and keyword != ''">
           AND "title" ILIKE CONCAT('%', #{keyword}, '%')
         </if>
@@ -138,4 +146,72 @@
             )
         )
     </select>
+
+    <select id="allOwnedUngroupedConversationsExist" resultType="boolean">
+        SELECT NOT EXISTS (
+            SELECT 1
+            FROM (
+                VALUES
+                <foreach item="conversationId" collection="conversationIds" separator=",">
+                    (#{conversationId})
+                </foreach>
+            ) AS requested("conversation_id")
+            WHERE NOT EXISTS (
+                SELECT 1
+                FROM "conversation" c
+                WHERE c."creator_id" = #{userId}
+                  AND c."deleted" = FALSE
+                  AND c."conversation_id" = requested."conversation_id"
+                  AND NOT EXISTS (
+                      SELECT 1
+                      FROM "conversation_group_relation" r
+                      WHERE r."creator_id" = c."creator_id"
+                        AND r."conversation_id" = c."conversation_id"
+                  )
+            )
+        )
+    </select>
+
+    <update id="updateConversationPinnedByIds">
+        UPDATE "conversation"
+        SET "pinned" = #{pinned},
+            "modifier_id" = #{userId}
+        WHERE "creator_id" = #{userId}
+          AND "deleted" = FALSE
+          AND "conversation_id" IN
+        <foreach item="conversationId" collection="conversationIds" open="(" separator="," close=")">
+            #{conversationId}
+        </foreach>
+          AND (
+              #{pinned} = FALSE
+              OR NOT EXISTS (
+                  SELECT 1
+                  FROM "conversation_group_relation" r
+                  WHERE r."creator_id" = "conversation"."creator_id"
+                    AND r."conversation_id" = "conversation"."conversation_id"
+              )
+          )
+    </update>
+
+    <update id="clearConversationPinnedByIds">
+        UPDATE "conversation"
+        SET "pinned" = FALSE,
+            "modifier_id" = #{userId}
+        WHERE "creator_id" = #{userId}
+          AND "deleted" = FALSE
+          AND "pinned" = TRUE
+          AND "conversation_id" IN
+        <foreach item="conversationId" collection="conversationIds" open="(" separator="," close=")">
+            #{conversationId}
+        </foreach>
+    </update>
+
+    <update id="clearConversationPinned">
+        UPDATE "conversation"
+        SET "pinned" = FALSE,
+            "modifier_id" = #{userId}
+        WHERE "creator_id" = #{userId}
+          AND "deleted" = FALSE
+          AND "pinned" = TRUE
+    </update>
 </mapper>

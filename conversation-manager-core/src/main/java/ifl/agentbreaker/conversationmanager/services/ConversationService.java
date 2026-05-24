@@ -16,7 +16,6 @@ import ifl.agentbreaker.conversationmanager.dao.ConversationMapper;
 import ifl.agentbreaker.conversationmanager.dao.ConversationMessageMapper;
 import ifl.agentbreaker.conversationmanager.dao.ConversationSharingMapper;
 import ifl.agentbreaker.conversationmanager.domain.constants.ExportFormat;
-import ifl.agentbreaker.conversationmanager.domain.dtos.ConversationPinOrder;
 import ifl.agentbreaker.conversationmanager.domain.dtos.requests.ExportConversationRequest;
 import ifl.agentbreaker.conversationmanager.domain.dtos.requests.ForkConversationRequest;
 import ifl.agentbreaker.conversationmanager.domain.dtos.requests.GetConversationsRequest;
@@ -24,7 +23,6 @@ import ifl.agentbreaker.conversationmanager.domain.dtos.requests.PinConversation
 import ifl.agentbreaker.conversationmanager.domain.dtos.requests.ShareConversationRequest;
 import ifl.agentbreaker.conversationmanager.domain.dtos.responses.ConversationSharingResult;
 import ifl.agentbreaker.conversationmanager.domain.entities.pg.Conversation;
-import ifl.agentbreaker.conversationmanager.domain.entities.pg.ConversationGroupRelation;
 import ifl.agentbreaker.conversationmanager.domain.entities.pg.ConversationMessage;
 import ifl.agentbreaker.conversationmanager.domain.entities.pg.ConversationSharing;
 import ifl.agentbreaker.conversationmanager.support.BusinessIdManager;
@@ -50,10 +48,8 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
-import java.util.Map;
 
 @Slf4j
 @Service
@@ -110,6 +106,7 @@ public class ConversationService implements IConversationRpcService
         conversation.setModifierId(userId);
         conversation.setConversationId(BusinessIdManager.newConversationId());
         conversation.setTitle(DEFAULT_TITLE);
+        conversation.setPinned(false);
         conversation.setDeleted(false);
 
         Conversation createdConversation = conversationMapper.insertConversation(conversation);
@@ -172,6 +169,7 @@ public class ConversationService implements IConversationRpcService
         forked.setModifierId(userId);
         forked.setConversationId(BusinessIdManager.newConversationId());
         forked.setTitle(TextNormalizer.trimToMaxLength(source.getTitle() + " Fork", MAX_TITLE_LENGTH));
+        forked.setPinned(false);
         forked.setDeleted(false);
         Conversation createdConversation = conversationMapper.insertConversation(forked);
         conversationMessageMapper.forkConversationMessages(source.getConversationId(), forked.getConversationId(), userId, sharing.getEndMessageId());
@@ -296,46 +294,33 @@ public class ConversationService implements IConversationRpcService
     {
         long userId = UserContextService.getCurrentUserId();
 
-        if (request == null || CollectionUtils.isEmpty(request.getConversationPinOrders()))
+        List<String> conversationIds = getPinConversationIds(request);
+        boolean pinned = request == null || request.getPinned() == null || request.getPinned();
+
+        if (CollectionUtils.isEmpty(conversationIds))
         {
-            conversationGroupRelationMapper.deletePinnedConversationRelations(userId);
+            if (!pinned)
+                conversationMapper.clearConversationPinned(userId);
             return ServiceResponse.buildSuccessResponse(true);
         }
 
-        Map<String, Integer> orderedConversations = new LinkedHashMap<>();
-        int nextSortOrder = 1;
-        for (ConversationPinOrder conversationPinOrder : request.getConversationPinOrders())
-        {
-            if (conversationPinOrder == null)
-                continue;
-
-            String conversationId = TextNormalizer.trimToNull(conversationPinOrder.getConversationId());
-            if (conversationId != null)
-                orderedConversations.put(conversationId, normalizePinSortOrder(conversationPinOrder.getSortOrder(), nextSortOrder++));
-        }
-
-        if (orderedConversations.isEmpty())
-        {
-            conversationGroupRelationMapper.deletePinnedConversationRelations(userId);
-            return ServiceResponse.buildSuccessResponse(true);
-        }
-
-        if (!conversationMapper.allOwnedConversationsExist(userId, orderedConversations.keySet()))
+        if (!conversationMapper.allOwnedConversationsExist(userId, conversationIds))
             return ServiceResponse.buildErrorResponse(ERROR_INVALID_CONVERSATION, "Some conversations do not exist.");
 
-        conversationGroupRelationMapper.deletePinnedConversationRelations(userId);
-        for (Map.Entry<String, Integer> entry : orderedConversations.entrySet())
-        {
-            ConversationGroupRelation relation = new ConversationGroupRelation();
-            relation.setCreatorId(userId);
-            relation.setModifierId(userId);
-            relation.setConversationId(entry.getKey());
-            relation.setConversationGroupId(null);
-            relation.setSortOrder(entry.getValue());
-            conversationGroupRelationMapper.insertPinnedConversationRelation(relation);
-        }
+        if (pinned && !conversationMapper.allOwnedUngroupedConversationsExist(userId, conversationIds))
+            return ServiceResponse.buildErrorResponse(ERROR_INVALID_CONVERSATION, "Grouped conversations cannot be pinned.");
+
+        conversationMapper.updateConversationPinnedByIds(userId, conversationIds, pinned);
 
         return ServiceResponse.buildSuccessResponse(true);
+    }
+
+    private List<String> getPinConversationIds(PinConversationRequest request)
+    {
+        if (request == null)
+            return new ArrayList<>();
+
+        return BusinessIdManager.normalizeIds(request.getConversationIds());
     }
 
     private ConversationMessageHistory buildConversationMessageHistory(Conversation conversation, Long endMessageId)
@@ -472,11 +457,6 @@ public class ConversationService implements IConversationRpcService
             return DEFAULT_PAGE_SIZE;
 
         return Math.min(pageSize, MAX_PAGE_SIZE);
-    }
-
-    private static int normalizePinSortOrder(int requestedSortOrder, int fallbackSortOrder)
-    {
-        return requestedSortOrder > 0 ? requestedSortOrder : fallbackSortOrder;
     }
 
     private record ExportPayload(String filename, String contentType, String content)
