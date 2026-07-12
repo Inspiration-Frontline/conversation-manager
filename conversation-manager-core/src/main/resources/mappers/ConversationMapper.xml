@@ -10,25 +10,26 @@
         <result column="conversation_id" property="conversationId"/>
         <result column="title" property="title"/>
         <result column="pinned" property="pinned"/>
+        <result column="latest_round_number" property="latestRoundNumber"/>
         <result column="deleted" property="deleted"/>
     </resultMap>
 
     <sql id="ConversationColumns">
         "id", "creator_id", "creation_time", "modifier_id", "modification_time",
-        "conversation_id", "title", "pinned", "deleted"
+        "conversation_id", "title", "pinned", "latest_round_number", "deleted"
     </sql>
 
     <sql id="ConversationColumnsWithAlias">
         c."id", c."creator_id", c."creation_time", c."modifier_id", c."modification_time",
-        c."conversation_id", c."title", c."pinned", c."deleted"
+        c."conversation_id", c."title", c."pinned", c."latest_round_number", c."deleted"
     </sql>
 
     <select id="insertConversation" resultMap="ConversationResultMap" affectData="true">
         INSERT INTO "conversation" (
-            "creator_id", "modifier_id", "conversation_id", "title", "pinned", "deleted"
+            "creator_id", "modifier_id", "conversation_id", "title", "pinned", "latest_round_number", "deleted"
         )
         VALUES (
-            #{creatorId}, #{modifierId}, #{conversationId}, #{title}, #{pinned}, #{deleted}
+            #{creatorId}, #{modifierId}, #{conversationId}, #{title}, #{pinned}, #{latestRoundNumber}, #{deleted}
         )
         RETURNING <include refid="ConversationColumns"/>
     </select>

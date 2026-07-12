@@ -1,5 +1,11 @@
 # Conversation Manager Next Steps
 
+> **Superseded RPC proposal:** The message-oriented RPC methods in this document predate the
+> finalized Round/Turn contract in `agent-breaker-protos`. Do not implement `appendMessages`,
+> `saveConversationTurn`, or `createConversationIfAbsent` as the new agent-runner RPC boundary.
+> Use [round-turn-persistence-design.md](round-turn-persistence-design.md) for the current
+> persistence review and the sibling `agent-breaker-protos` handoff for the finalized RPC surface.
+
 This document records the current maturity of `conversation-manager` and the next backend boundaries needed before it becomes the durable conversation store for `agent-runner`.
 
 ## Current State

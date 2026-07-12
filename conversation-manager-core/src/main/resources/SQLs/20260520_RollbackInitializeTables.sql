@@ -1,9 +1,14 @@
-DROP TRIGGER IF EXISTS "trg_message_file_refresh_modification_time" ON "message_file";
-DROP TRIGGER IF EXISTS "trg_conversation_sharing_refresh_modification_time" ON "conversation_sharing";
-DROP TRIGGER IF EXISTS "trg_conversation_group_relation_refresh_modification_time" ON "conversation_group_relation";
-DROP TRIGGER IF EXISTS "trg_conversation_group_refresh_modification_time" ON "conversation_group";
-DROP TRIGGER IF EXISTS "trg_conversation_message_refresh_modification_time" ON "conversation_message";
-DROP TRIGGER IF EXISTS "trg_conversation_refresh_modification_time" ON "conversation";
+ALTER TABLE IF EXISTS "conversation_round"
+    DROP CONSTRAINT IF EXISTS "fk_round_final_source_turn";
+
+DROP TABLE IF EXISTS "conversation_tool_call_execution";
+DROP TABLE IF EXISTS "conversation_llm_response_tool_call";
+DROP TABLE IF EXISTS "conversation_llm_tool_definition";
+DROP TABLE IF EXISTS "conversation_llm_request_message_tool_call";
+DROP TABLE IF EXISTS "conversation_llm_request_message";
+DROP TABLE IF EXISTS "conversation_llm_call";
+DROP TABLE IF EXISTS "conversation_turn";
+DROP TABLE IF EXISTS "conversation_round";
 
 DROP TABLE IF EXISTS "message_file";
 DROP TABLE IF EXISTS "conversation_sharing";

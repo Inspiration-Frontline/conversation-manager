@@ -23,6 +23,12 @@ public class Conversation extends EntityBase
     private boolean pinned;
 
     /**
+     * Highest round number ever assigned to this conversation.
+     * Logical deletion never decreases this value.
+     */
+    private long latestRoundNumber;
+
+    /**
      * Whether the conversation is deleted.
      */
     // Here we use a logic deletion instead of a hard deletion because the shared conversation may contain the deleted conversation, since the shared conversation is a snapshot of the parent conversation.
