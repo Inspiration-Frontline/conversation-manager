@@ -6,7 +6,7 @@ import lombok.EqualsAndHashCode;
 
 @Data
 @EqualsAndHashCode(callSuper = true)
-public class ConversationLlmRequestMessage extends ExecutionEntityBase
+public class ConversationLlmRequestMessage extends EntityBase
 {
     private long llmCallId;
     private int messageOrder;

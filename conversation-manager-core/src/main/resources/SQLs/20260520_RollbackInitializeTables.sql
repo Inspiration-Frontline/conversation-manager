@@ -1,3 +1,5 @@
+SET TIME ZONE 'UTC';
+
 ALTER TABLE IF EXISTS "conversation_round"
     DROP CONSTRAINT IF EXISTS "fk_round_final_source_turn";
 

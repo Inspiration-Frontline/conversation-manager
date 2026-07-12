@@ -4,19 +4,21 @@ import ifl.agentbreaker.conversationmanager.domain.constants.ToolCallExecutionSt
 import lombok.Data;
 import lombok.EqualsAndHashCode;
 
+import java.util.Date;
+
 @Data
 @EqualsAndHashCode(callSuper = true)
-public class ConversationToolCallExecution extends ExecutionEntityBase
+public class ConversationToolCallExecution extends EntityBase
 {
     private long turnId;
     private long responseToolCallId;
     private int executionOrder;
-    private String toolId;
+    private long toolId;
     private ToolCallExecutionStatus status;
     private String resultContent;
     private String resultContentParts;
     private String rawResult;
     private String errorMessage;
-    private long startTimeMs;
-    private long endTimeMs;
+    private Date startTime;
+    private Date endTime;
 }

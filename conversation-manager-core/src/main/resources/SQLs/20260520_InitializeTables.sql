@@ -1,3 +1,5 @@
+SET TIME ZONE 'UTC';
+
 CREATE TABLE IF NOT EXISTS "conversation"
 (
     "id"                BIGSERIAL PRIMARY KEY,
@@ -72,6 +74,8 @@ CREATE INDEX IF NOT EXISTS "idx_conversation_message_deleted"
 CREATE TABLE IF NOT EXISTS "conversation_round"
 (
     "id"                           BIGSERIAL PRIMARY KEY,
+    "creator_id"                   BIGINT       NOT NULL,
+    "modifier_id"                  BIGINT       NOT NULL,
     "conversation_id"              VARCHAR(64)  NOT NULL,
     "round_number"                 BIGINT       NOT NULL,
     "user_request_content"         TEXT,
@@ -81,8 +85,8 @@ CREATE TABLE IF NOT EXISTS "conversation_round"
     "final_source_turn_number"     BIGINT,
     "status"                       VARCHAR(16)  NOT NULL,
     "error_message"                TEXT         NOT NULL DEFAULT '',
-    "start_time_ms"                BIGINT       NOT NULL,
-    "end_time_ms"                  BIGINT       NOT NULL,
+    "start_time"                   TIMESTAMPTZ  NOT NULL,
+    "end_time"                     TIMESTAMPTZ  NOT NULL,
     "payload_hash_version"         SMALLINT     NOT NULL,
     "payload_hash"                 CHAR(64)     NOT NULL,
     "deleted"                      BOOLEAN      NOT NULL DEFAULT FALSE,
@@ -94,7 +98,7 @@ CREATE TABLE IF NOT EXISTS "conversation_round"
     CONSTRAINT "uk_round_conversation_number" UNIQUE ("conversation_id", "round_number"),
     CONSTRAINT "ck_round_number" CHECK ("round_number" > 0),
     CONSTRAINT "ck_round_status" CHECK ("status" IN ('COMPLETED', 'FAILED', 'CANCELLED')),
-    CONSTRAINT "ck_round_time" CHECK ("start_time_ms" > 0 AND "end_time_ms" >= "start_time_ms"),
+    CONSTRAINT "ck_round_time" CHECK ("end_time" >= "start_time"),
     CONSTRAINT "ck_round_payload_hash" CHECK (
         "payload_hash_version" > 0
         AND "payload_hash" ~ '^[0-9a-f]{64}$'
@@ -175,11 +179,13 @@ CREATE INDEX IF NOT EXISTS "idx_round_active_history"
     WHERE "deleted" = FALSE;
 
 CREATE INDEX IF NOT EXISTS "idx_round_conversation_deleted_end"
-    ON "conversation_round" ("conversation_id", "deleted", "end_time_ms");
+    ON "conversation_round" ("conversation_id", "deleted", "end_time");
 
 CREATE TABLE IF NOT EXISTS "conversation_turn"
 (
     "id"                BIGSERIAL PRIMARY KEY,
+    "creator_id"        BIGINT       NOT NULL,
+    "modifier_id"       BIGINT       NOT NULL,
     "round_id"          BIGINT       NOT NULL,
     "turn_number"       BIGINT       NOT NULL,
     "agent_id"          BIGINT       NOT NULL,
@@ -187,9 +193,10 @@ CREATE TABLE IF NOT EXISTS "conversation_turn"
     "agent_version"     INTEGER      NOT NULL,
     "status"            VARCHAR(16)  NOT NULL,
     "error_message"     TEXT         NOT NULL DEFAULT '',
-    "start_time_ms"     BIGINT       NOT NULL,
-    "end_time_ms"       BIGINT       NOT NULL,
+    "start_time"        TIMESTAMPTZ  NOT NULL,
+    "end_time"          TIMESTAMPTZ  NOT NULL,
     "creation_time"     TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+    "modification_time" TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
     CONSTRAINT "fk_turn_round" FOREIGN KEY ("round_id") REFERENCES "conversation_round" ("id") ON DELETE CASCADE,
     CONSTRAINT "uk_turn_round_number" UNIQUE ("round_id", "turn_number"),
     CONSTRAINT "ck_turn_number" CHECK ("turn_number" > 0),
@@ -203,7 +210,7 @@ CREATE TABLE IF NOT EXISTS "conversation_turn"
         OR ("status" = 'FAILED' AND NULLIF(BTRIM("error_message"), '') IS NOT NULL)
         OR "status" = 'CANCELLED'
     ),
-    CONSTRAINT "ck_turn_time" CHECK ("start_time_ms" > 0 AND "end_time_ms" >= "start_time_ms")
+    CONSTRAINT "ck_turn_time" CHECK ("end_time" >= "start_time")
 );
 
 DO $$
@@ -226,6 +233,8 @@ $$;
 CREATE TABLE IF NOT EXISTS "conversation_llm_call"
 (
     "id"                        BIGSERIAL PRIMARY KEY,
+    "creator_id"                BIGINT           NOT NULL,
+    "modifier_id"               BIGINT           NOT NULL,
     "turn_id"                   BIGINT           NOT NULL,
     "provider"                  VARCHAR(100)      NOT NULL,
     "model"                     VARCHAR(200)      NOT NULL,
@@ -239,8 +248,8 @@ CREATE TABLE IF NOT EXISTS "conversation_llm_call"
     "temperature"               DOUBLE PRECISION,
     "max_output_tokens"         BIGINT,
     "raw_request"               TEXT,
-    "start_time_ms"             BIGINT           NOT NULL,
-    "end_time_ms"               BIGINT           NOT NULL,
+    "start_time"                TIMESTAMPTZ      NOT NULL,
+    "end_time"                  TIMESTAMPTZ      NOT NULL,
     "response_message_present"  BOOLEAN           NOT NULL,
     "response_content"          TEXT,
     "response_content_parts"    JSONB,
@@ -253,7 +262,9 @@ CREATE TABLE IF NOT EXISTS "conversation_llm_call"
     "reasoning_tokens"          BIGINT,
     "raw_response"              TEXT,
     "response_error_message"    TEXT              NOT NULL DEFAULT '',
+    "reasoning_content"         TEXT,
     "creation_time"             TIMESTAMPTZ       NOT NULL DEFAULT NOW(),
+    "modification_time"         TIMESTAMPTZ       NOT NULL DEFAULT NOW(),
     CONSTRAINT "fk_llm_call_turn" FOREIGN KEY ("turn_id") REFERENCES "conversation_turn" ("id") ON DELETE CASCADE,
     CONSTRAINT "uk_llm_call_turn" UNIQUE ("turn_id"),
     CONSTRAINT "uk_llm_call_id_turn" UNIQUE ("id", "turn_id"),
@@ -282,7 +293,7 @@ CREATE TABLE IF NOT EXISTS "conversation_llm_call"
         )
     ),
     CONSTRAINT "ck_llm_call_max_output_tokens" CHECK ("max_output_tokens" IS NULL OR "max_output_tokens" > 0),
-    CONSTRAINT "ck_llm_call_time" CHECK ("start_time_ms" > 0 AND "end_time_ms" >= "start_time_ms"),
+    CONSTRAINT "ck_llm_call_time" CHECK ("end_time" >= "start_time"),
     CONSTRAINT "ck_llm_call_response_content" CHECK (
         NOT ("response_content" IS NOT NULL AND "response_content_parts" IS NOT NULL)
         AND (
@@ -338,6 +349,8 @@ CREATE TABLE IF NOT EXISTS "conversation_llm_call"
 CREATE TABLE IF NOT EXISTS "conversation_llm_request_message"
 (
     "id"                BIGSERIAL PRIMARY KEY,
+    "creator_id"        BIGINT       NOT NULL,
+    "modifier_id"       BIGINT       NOT NULL,
     "llm_call_id"       BIGINT       NOT NULL,
     "message_order"     INTEGER      NOT NULL,
     "role"              VARCHAR(16)  NOT NULL,
@@ -345,6 +358,7 @@ CREATE TABLE IF NOT EXISTS "conversation_llm_request_message"
     "content_parts"     JSONB,
     "tool_call_id"      VARCHAR(200),
     "creation_time"     TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+    "modification_time" TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
     CONSTRAINT "fk_llm_request_message_call" FOREIGN KEY ("llm_call_id") REFERENCES "conversation_llm_call" ("id") ON DELETE CASCADE,
     CONSTRAINT "uk_llm_request_message_order" UNIQUE ("llm_call_id", "message_order"),
     CONSTRAINT "ck_llm_request_message_order" CHECK ("message_order" >= 0),
@@ -377,6 +391,8 @@ CREATE INDEX IF NOT EXISTS "idx_llm_request_message_call"
 CREATE TABLE IF NOT EXISTS "conversation_llm_request_message_tool_call"
 (
     "id"                  BIGSERIAL PRIMARY KEY,
+    "creator_id"          BIGINT       NOT NULL,
+    "modifier_id"         BIGINT       NOT NULL,
     "request_message_id"  BIGINT       NOT NULL,
     "call_order"          INTEGER      NOT NULL,
     "tool_call_id"        VARCHAR(200) NOT NULL,
@@ -384,6 +400,7 @@ CREATE TABLE IF NOT EXISTS "conversation_llm_request_message_tool_call"
     "function_name"       VARCHAR(200) NOT NULL,
     "arguments"           TEXT         NOT NULL,
     "creation_time"       TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+    "modification_time"   TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
     CONSTRAINT "fk_request_message_tool_call_message" FOREIGN KEY ("request_message_id") REFERENCES "conversation_llm_request_message" ("id") ON DELETE CASCADE,
     CONSTRAINT "uk_request_message_tool_call_order" UNIQUE ("request_message_id", "call_order"),
     CONSTRAINT "uk_request_message_tool_call_id" UNIQUE ("request_message_id", "tool_call_id"),
@@ -402,21 +419,24 @@ CREATE INDEX IF NOT EXISTS "idx_request_message_tool_call_message"
 CREATE TABLE IF NOT EXISTS "conversation_llm_tool_definition"
 (
     "id"                BIGSERIAL PRIMARY KEY,
+    "creator_id"        BIGINT       NOT NULL,
+    "modifier_id"       BIGINT       NOT NULL,
     "llm_call_id"       BIGINT       NOT NULL,
     "tool_order"        INTEGER      NOT NULL,
-    "tool_id"           VARCHAR(200) NOT NULL,
+    "tool_id"           BIGINT       NOT NULL,
     "type"              VARCHAR(50)  NOT NULL,
     "name"              VARCHAR(200) NOT NULL,
     "description"       TEXT         NOT NULL DEFAULT '',
     "parameters_json"   TEXT         NOT NULL,
-    "strict"            BOOLEAN,
+    "strict"            BOOLEAN      NOT NULL DEFAULT FALSE,
     "creation_time"     TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+    "modification_time" TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
     CONSTRAINT "fk_llm_tool_definition_call" FOREIGN KEY ("llm_call_id") REFERENCES "conversation_llm_call" ("id") ON DELETE CASCADE,
     CONSTRAINT "uk_llm_tool_definition_order" UNIQUE ("llm_call_id", "tool_order"),
     CONSTRAINT "uk_llm_tool_definition_name" UNIQUE ("llm_call_id", "name"),
     CONSTRAINT "ck_llm_tool_definition_order" CHECK ("tool_order" >= 0),
     CONSTRAINT "ck_llm_tool_definition_values" CHECK (
-        NULLIF(BTRIM("tool_id"), '') IS NOT NULL
+        "tool_id" > 0
         AND NULLIF(BTRIM("type"), '') IS NOT NULL
         AND NULLIF(BTRIM("name"), '') IS NOT NULL
         AND NULLIF(BTRIM("parameters_json"), '') IS NOT NULL
@@ -429,6 +449,8 @@ CREATE INDEX IF NOT EXISTS "idx_llm_tool_definition_call"
 CREATE TABLE IF NOT EXISTS "conversation_llm_response_tool_call"
 (
     "id"                BIGSERIAL PRIMARY KEY,
+    "creator_id"        BIGINT       NOT NULL,
+    "modifier_id"       BIGINT       NOT NULL,
     "turn_id"           BIGINT       NOT NULL,
     "llm_call_id"       BIGINT       NOT NULL,
     "call_order"        INTEGER      NOT NULL,
@@ -437,6 +459,7 @@ CREATE TABLE IF NOT EXISTS "conversation_llm_response_tool_call"
     "function_name"     VARCHAR(200) NOT NULL,
     "arguments"         TEXT         NOT NULL,
     "creation_time"     TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+    "modification_time" TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
     CONSTRAINT "fk_response_tool_call_turn" FOREIGN KEY ("turn_id") REFERENCES "conversation_turn" ("id") ON DELETE CASCADE,
     CONSTRAINT "fk_response_tool_call_llm" FOREIGN KEY ("llm_call_id", "turn_id") REFERENCES "conversation_llm_call" ("id", "turn_id") ON DELETE CASCADE,
     CONSTRAINT "uk_response_tool_call_id_turn" UNIQUE ("id", "turn_id"),
@@ -457,24 +480,27 @@ CREATE INDEX IF NOT EXISTS "idx_response_tool_call_turn"
 CREATE TABLE IF NOT EXISTS "conversation_tool_call_execution"
 (
     "id"                      BIGSERIAL PRIMARY KEY,
+    "creator_id"              BIGINT       NOT NULL,
+    "modifier_id"             BIGINT       NOT NULL,
     "turn_id"                 BIGINT       NOT NULL,
     "response_tool_call_id"   BIGINT       NOT NULL,
     "execution_order"         INTEGER      NOT NULL,
-    "tool_id"                 VARCHAR(200) NOT NULL,
+    "tool_id"                 BIGINT       NOT NULL,
     "status"                  VARCHAR(16)  NOT NULL,
     "result_content"          TEXT,
     "result_content_parts"    JSONB,
     "raw_result"              TEXT,
     "error_message"           TEXT         NOT NULL DEFAULT '',
-    "start_time_ms"           BIGINT       NOT NULL,
-    "end_time_ms"             BIGINT       NOT NULL,
+    "start_time"              TIMESTAMPTZ  NOT NULL,
+    "end_time"                TIMESTAMPTZ  NOT NULL,
     "creation_time"           TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+    "modification_time"       TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
     CONSTRAINT "fk_tool_execution_turn" FOREIGN KEY ("turn_id") REFERENCES "conversation_turn" ("id") ON DELETE CASCADE,
     CONSTRAINT "fk_tool_execution_response_call" FOREIGN KEY ("response_tool_call_id", "turn_id") REFERENCES "conversation_llm_response_tool_call" ("id", "turn_id") ON DELETE CASCADE,
     CONSTRAINT "uk_tool_execution_response_call" UNIQUE ("response_tool_call_id"),
     CONSTRAINT "uk_tool_execution_order" UNIQUE ("turn_id", "execution_order"),
     CONSTRAINT "ck_tool_execution_order" CHECK ("execution_order" >= 0),
-    CONSTRAINT "ck_tool_execution_tool_id" CHECK (NULLIF(BTRIM("tool_id"), '') IS NOT NULL),
+    CONSTRAINT "ck_tool_execution_tool_id" CHECK ("tool_id" > 0),
     CONSTRAINT "ck_tool_execution_status" CHECK (
         ("status" = 'COMPLETED' AND "error_message" = '')
         OR ("status" = 'FAILED' AND NULLIF(BTRIM("error_message"), '') IS NOT NULL)
@@ -491,7 +517,7 @@ CREATE TABLE IF NOT EXISTS "conversation_tool_call_execution"
             END
         )
     ),
-    CONSTRAINT "ck_tool_execution_time" CHECK ("start_time_ms" > 0 AND "end_time_ms" >= "start_time_ms")
+    CONSTRAINT "ck_tool_execution_time" CHECK ("end_time" >= "start_time")
 );
 
 CREATE INDEX IF NOT EXISTS "idx_tool_execution_turn"
@@ -612,6 +638,48 @@ CREATE TRIGGER "trg_conversation_message_refresh_modification_time"
 DROP TRIGGER IF EXISTS "trg_conversation_round_refresh_modification_time" ON "conversation_round";
 CREATE TRIGGER "trg_conversation_round_refresh_modification_time"
     BEFORE UPDATE ON "conversation_round"
+    FOR EACH ROW
+    EXECUTE FUNCTION "refresh_modification_time"();
+
+DROP TRIGGER IF EXISTS "trg_conversation_turn_refresh_modification_time" ON "conversation_turn";
+CREATE TRIGGER "trg_conversation_turn_refresh_modification_time"
+    BEFORE UPDATE ON "conversation_turn"
+    FOR EACH ROW
+    EXECUTE FUNCTION "refresh_modification_time"();
+
+DROP TRIGGER IF EXISTS "trg_conversation_llm_call_refresh_modification_time" ON "conversation_llm_call";
+CREATE TRIGGER "trg_conversation_llm_call_refresh_modification_time"
+    BEFORE UPDATE ON "conversation_llm_call"
+    FOR EACH ROW
+    EXECUTE FUNCTION "refresh_modification_time"();
+
+DROP TRIGGER IF EXISTS "trg_llm_request_message_refresh_modification_time" ON "conversation_llm_request_message";
+CREATE TRIGGER "trg_llm_request_message_refresh_modification_time"
+    BEFORE UPDATE ON "conversation_llm_request_message"
+    FOR EACH ROW
+    EXECUTE FUNCTION "refresh_modification_time"();
+
+DROP TRIGGER IF EXISTS "trg_request_message_tool_call_refresh_modification_time" ON "conversation_llm_request_message_tool_call";
+CREATE TRIGGER "trg_request_message_tool_call_refresh_modification_time"
+    BEFORE UPDATE ON "conversation_llm_request_message_tool_call"
+    FOR EACH ROW
+    EXECUTE FUNCTION "refresh_modification_time"();
+
+DROP TRIGGER IF EXISTS "trg_llm_tool_definition_refresh_modification_time" ON "conversation_llm_tool_definition";
+CREATE TRIGGER "trg_llm_tool_definition_refresh_modification_time"
+    BEFORE UPDATE ON "conversation_llm_tool_definition"
+    FOR EACH ROW
+    EXECUTE FUNCTION "refresh_modification_time"();
+
+DROP TRIGGER IF EXISTS "trg_response_tool_call_refresh_modification_time" ON "conversation_llm_response_tool_call";
+CREATE TRIGGER "trg_response_tool_call_refresh_modification_time"
+    BEFORE UPDATE ON "conversation_llm_response_tool_call"
+    FOR EACH ROW
+    EXECUTE FUNCTION "refresh_modification_time"();
+
+DROP TRIGGER IF EXISTS "trg_tool_call_execution_refresh_modification_time" ON "conversation_tool_call_execution";
+CREATE TRIGGER "trg_tool_call_execution_refresh_modification_time"
+    BEFORE UPDATE ON "conversation_tool_call_execution"
     FOR EACH ROW
     EXECUTE FUNCTION "refresh_modification_time"();
 

@@ -4,9 +4,11 @@ import ifl.agentbreaker.conversationmanager.domain.constants.ConversationTurnSta
 import lombok.Data;
 import lombok.EqualsAndHashCode;
 
+import java.util.Date;
+
 @Data
 @EqualsAndHashCode(callSuper = true)
-public class ConversationTurn extends ExecutionEntityBase
+public class ConversationTurn extends EntityBase
 {
     private long roundId;
     private long turnNumber;
@@ -15,6 +17,6 @@ public class ConversationTurn extends ExecutionEntityBase
     private int agentVersion;
     private ConversationTurnStatus status;
     private String errorMessage;
-    private long startTimeMs; // TODO: Why don't we use Date?
-    private long endTimeMs; // TODO: Why don't we use Date?
+    private Date startTime;
+    private Date endTime;
 }

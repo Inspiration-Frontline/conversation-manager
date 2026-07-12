@@ -5,7 +5,7 @@ import lombok.EqualsAndHashCode;
 
 @Data
 @EqualsAndHashCode(callSuper = true)
-public class ConversationLlmResponseToolCall extends ExecutionEntityBase
+public class ConversationLlmResponseToolCall extends EntityBase
 {
     private long turnId;
     private long llmCallId;

@@ -114,9 +114,10 @@ conversation list queries do not need to order by it.
 
 ## New Tables
 
-All new tables use `BIGSERIAL` internal primary keys and database-generated `creation_time`. The
-external Proto identifiers remain business keys. Child tables do not repeat `creator_id`; ownership
-is derived from the parent `conversation` row.
+All new tables use `BIGSERIAL` internal primary keys and the same creator/modifier/time audit fields
+as `EntityBase`. Runtime rows are normally append-only, so creation and modification time initially
+match; database triggers keep modification time correct for retention or tombstone updates.
+Ownership is still authorized through the parent `conversation` row.
 
 ### `conversation_round`
 
@@ -134,8 +135,8 @@ One row represents one complete saved Round or its tombstone.
 | `final_source_turn_number` | `BIGINT` | Completed Round source Turn |
 | `status` | `VARCHAR(16)` | `COMPLETED`, `FAILED`, or `CANCELLED` |
 | `error_message` | `TEXT` | Empty for completed, non-empty for failed |
-| `start_time_ms` | `BIGINT` | Positive caller-supplied epoch milliseconds |
-| `end_time_ms` | `BIGINT` | Greater than or equal to start |
+| `start_time` | `TIMESTAMPTZ` | UTC instant converted from caller epoch milliseconds |
+| `end_time` | `TIMESTAMPTZ` | UTC instant, not earlier than start |
 | `payload_hash_version` | `SMALLINT` | Canonical hash algorithm version |
 | `payload_hash` | `CHAR(64)` | SHA-256 of the canonical persisted request |
 | `deleted` | `BOOLEAN` | Logical deletion flag |
@@ -173,8 +174,8 @@ The source-Turn relationship is enforced after both tables exist with a deferrab
 | `agent_version` | `INTEGER` | Positive resolved definition version |
 | `status` | `VARCHAR(16)` | Completed, failed, or cancelled |
 | `error_message` | `TEXT` | Status-consistent error value |
-| `start_time_ms` | `BIGINT` | Positive epoch milliseconds |
-| `end_time_ms` | `BIGINT` | Not earlier than start |
+| `start_time` | `TIMESTAMPTZ` | UTC instant converted from caller epoch milliseconds |
+| `end_time` | `TIMESTAMPTZ` | UTC instant, not earlier than start |
 | `creation_time` | `TIMESTAMPTZ` | Database default `NOW()` |
 
 The service validates a continuous ordered sequence from 1 through N. The unique constraint on
@@ -193,7 +194,7 @@ Request columns:
 - `response_format` as TEXT
 - nullable `temperature` and `max_output_tokens`
 - nullable `raw_request`; NULL means absent and empty TEXT means retained empty payload
-- `start_time_ms` and `end_time_ms`
+- `start_time` and `end_time` as UTC `TIMESTAMPTZ`
 
 Response columns:
 
@@ -203,6 +204,7 @@ Response columns:
 - `usage_present` plus prompt, completion, total, cached-prompt, and reasoning token counts
 - nullable `raw_response` with Proto-presence semantics
 - `response_error_message`
+- nullable normalized `reasoning_content`, separate from user-visible response content
 
 Checks enforce request storage mode, optional tool-choice consistency, non-negative token values,
 content representation exclusivity, and response success/error consistency. Time containment and
@@ -238,8 +240,8 @@ Stores the complete ordered tool definition list offered in one model request.
 
 - Unique `(llm_call_id, tool_order)`.
 - Unique `(llm_call_id, name)` enforces provider-visible name uniqueness.
-- Stores stable `tool_id`, provider `type`, `name`, description, exact `parameters_json` TEXT, and
-  nullable `strict`.
+- Stores positive `BIGINT tool_id`, provider `type`, `name`, description, exact `parameters_json`
+  TEXT, and non-null `strict` defaulting to false.
 
 ### `conversation_llm_response_tool_call`
 
@@ -259,8 +261,8 @@ Stores exactly one execution outcome for a current-response tool call.
 - Composite FK to the response tool call ensures both rows belong to the same Turn.
 - Unique `response_tool_call_id` prevents more than one execution for a model-emitted call.
 - Unique `(turn_id, execution_order)` preserves parallel-call reporting order.
-- Stores stable `tool_id`, status, normalized result content or content-parts, optional raw result,
-  error message, and start/end epoch milliseconds.
+- Stores positive `BIGINT tool_id`, status, normalized result content or content-parts, optional raw
+  result, error message, and UTC start/end timestamps.
 
 The database can enforce at most one execution per response call. The service must validate before
 commit that every emitted response call has exactly one execution, including failed and cancelled
@@ -274,7 +276,7 @@ Required indexes are intentionally read-path driven:
 | --- | --- | --- |
 | `conversation_round` | unique `(conversation_id, round_number)` | Idempotency and no reuse |
 | `conversation_round` | `(conversation_id, round_number) WHERE deleted = FALSE` | Active history/replay |
-| `conversation_round` | `(conversation_id, deleted, end_time_ms)` | Cleanup/analysis support |
+| `conversation_round` | `(conversation_id, deleted, end_time)` | Cleanup/analysis support |
 | `conversation_turn` | unique `(round_id, turn_number)` | Ordered Turn lookup |
 | `conversation_llm_call` | unique `(turn_id)` | One LLM call per Turn |
 | Request message | unique `(llm_call_id, message_order)` | Ordered replay |

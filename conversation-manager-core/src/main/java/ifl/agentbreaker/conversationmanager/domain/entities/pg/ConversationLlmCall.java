@@ -5,9 +5,11 @@ import ifl.agentbreaker.conversationmanager.domain.constants.ToolChoiceMode;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
 
+import java.util.Date;
+
 @Data
 @EqualsAndHashCode(callSuper = true)
-public class ConversationLlmCall extends ExecutionEntityBase
+public class ConversationLlmCall extends EntityBase
 {
     private long turnId;
     private String provider;
@@ -22,8 +24,8 @@ public class ConversationLlmCall extends ExecutionEntityBase
     private Double temperature;
     private Long maxOutputTokens;
     private String rawRequest;
-    private long startTimeMs; // TODO: Why don't we use Date?
-    private long endTimeMs; // TODO: Why don't we use Date?
+    private Date startTime;
+    private Date endTime;
     private boolean responseMessagePresent;
     private String responseContent;
     private String responseContentParts;
@@ -36,4 +38,5 @@ public class ConversationLlmCall extends ExecutionEntityBase
     private Long reasoningTokens;
     private String rawResponse;
     private String responseErrorMessage;
+    private String reasoningContent;
 }

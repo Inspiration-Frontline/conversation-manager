@@ -8,7 +8,7 @@ import java.util.Date;
 
 @Data
 @EqualsAndHashCode(callSuper = true)
-public class ConversationRound extends ExecutionEntityBase
+public class ConversationRound extends EntityBase
 {
     private String conversationId;
     private long roundNumber;
@@ -19,12 +19,11 @@ public class ConversationRound extends ExecutionEntityBase
     private Long finalSourceTurnNumber;
     private ConversationRoundStatus status;
     private String errorMessage;
-    private long startTimeMs;
-    private long endTimeMs;
+    private Date startTime;
+    private Date endTime;
     private short payloadHashVersion;
     private String payloadHash;
     private boolean deleted;
     private Date deletionTime;
     private Long deletedBy;
-    private Date modificationTime;
 }
