@@ -38,8 +38,8 @@ CREATE TABLE IF NOT EXISTS "conversation_message"
     "deleted"           BOOLEAN     NOT NULL DEFAULT FALSE
 );
 
-CREATE INDEX IF NOT EXISTS "idx_conversation_message_deleted"
-    ON "conversation_message" ("conversation_id", "deleted");
+CREATE INDEX IF NOT EXISTS "idx_conversation_message_history"
+    ON "conversation_message" ("conversation_id", "deleted", "id");
 
 CREATE TABLE IF NOT EXISTS "conversation_round"
 (
@@ -292,8 +292,6 @@ CREATE TABLE IF NOT EXISTS "conversation_llm_call"
         )
 );
 
-CREATE INDEX IF NOT EXISTS "idx_conversation_llm_call_turn" ON "conversation_llm_call" ("turn_id");
-
 CREATE TABLE IF NOT EXISTS "conversation_llm_request_message"
 (
     "id"                BIGSERIAL PRIMARY KEY,
@@ -332,9 +330,6 @@ CREATE TABLE IF NOT EXISTS "conversation_llm_request_message"
         )
 );
 
-CREATE INDEX IF NOT EXISTS "idx_llm_request_message_call"
-    ON "conversation_llm_request_message" ("llm_call_id");
-
 CREATE TABLE IF NOT EXISTS "conversation_llm_request_message_tool_call"
 (
     "id"                 BIGSERIAL PRIMARY KEY,
@@ -358,9 +353,6 @@ CREATE TABLE IF NOT EXISTS "conversation_llm_request_message_tool_call"
             AND NULLIF(BTRIM("arguments"), '') IS NOT NULL
         )
 );
-
-CREATE INDEX IF NOT EXISTS "idx_request_message_tool_call_message"
-    ON "conversation_llm_request_message_tool_call" ("request_message_id");
 
 CREATE TABLE IF NOT EXISTS "conversation_llm_tool_definition"
 (
@@ -390,9 +382,6 @@ CREATE TABLE IF NOT EXISTS "conversation_llm_tool_definition"
             AND NULLIF(BTRIM("parameters_json"), '') IS NOT NULL
         )
 );
-
-CREATE INDEX IF NOT EXISTS "idx_llm_tool_definition_call"
-    ON "conversation_llm_tool_definition" ("llm_call_id");
 
 CREATE TABLE IF NOT EXISTS "conversation_llm_response_tool_call"
 (
@@ -463,9 +452,6 @@ CREATE TABLE IF NOT EXISTS "conversation_tool_call_execution"
     CONSTRAINT "ck_tool_execution_time" CHECK ("end_time" >= "start_time")
 );
 
-CREATE INDEX IF NOT EXISTS "idx_tool_execution_turn"
-    ON "conversation_tool_call_execution" ("turn_id");
-
 CREATE TABLE IF NOT EXISTS "conversation_group"
 (
     "id"                BIGSERIAL PRIMARY KEY,
@@ -498,7 +484,7 @@ CREATE TABLE IF NOT EXISTS "conversation_group_relation"
 );
 
 CREATE INDEX IF NOT EXISTS "idx_conversation_group_relation_group_sort"
-    ON "conversation_group_relation" ("creator_id", "conversation_group_id", "sort_order", "id");
+    ON "conversation_group_relation" ("conversation_group_id", "sort_order" DESC, "id" DESC);
 
 CREATE INDEX IF NOT EXISTS "idx_conversation_group_relation_conversation"
     ON "conversation_group_relation" ("creator_id", "conversation_id");

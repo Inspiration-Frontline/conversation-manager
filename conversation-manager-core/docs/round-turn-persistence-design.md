@@ -290,8 +290,10 @@ Required indexes are intentionally read-path driven:
 | Tool execution | unique `(turn_id, execution_order)` | Ordered execution reconstruction |
 | Tool execution | unique `(response_tool_call_id)` | Exactly-at-most-one execution |
 
-Every logical parent-reference column used for joins receives a normal B-tree index. Raw payloads,
-JSON content, errors, and hashes do not receive general-purpose indexes.
+Every logical parent-reference column used for joins is covered by either an explicit B-tree index
+or the B-tree index PostgreSQL creates for a leading UNIQUE constraint. Do not add a second ordinary
+index when the same leading columns are already covered. Raw payloads, JSON content, errors, and
+hashes do not receive general-purpose indexes.
 
 ## Canonical Payload Hash
 
