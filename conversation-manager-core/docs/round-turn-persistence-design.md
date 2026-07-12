@@ -239,9 +239,13 @@ from earlier model invocations and must replay exactly as request context.
 Stores the complete ordered tool definition list offered in one model request.
 
 - Unique `(llm_call_id, tool_order)`.
-- Unique `(llm_call_id, name)` enforces provider-visible name uniqueness.
-- Stores positive `BIGINT tool_id`, provider `type`, `name`, description, exact `parameters_json`
-  TEXT, and non-null `strict` defaulting to false.
+- Unique `(llm_call_id, tool_key)` prevents duplicate logical Tools.
+- Unique `(llm_call_id, tool_name)` enforces provider-visible name uniqueness.
+- Stores the globally stable `tool_key`, provider-facing `tool_name`, execution provenance
+  `source_type`, description, exact `parameters_json` TEXT, non-null `strict`, and a lowercase
+  SHA-256 `definition_hash`.
+- `source_type` is restricted to `INTERNAL`, `BUSINESS`, or `MCP`. Provider adapters derive
+  protocol-specific wrappers such as OpenAI's `function`; that wrapper is not stored as provenance.
 
 ### `conversation_llm_response_tool_call`
 
@@ -261,8 +265,8 @@ Stores exactly one execution outcome for a current-response tool call.
 - Composite FK to the response tool call ensures both rows belong to the same Turn.
 - Unique `response_tool_call_id` prevents more than one execution for a model-emitted call.
 - Unique `(turn_id, execution_order)` preserves parallel-call reporting order.
-- Stores positive `BIGINT tool_id`, status, normalized result content or content-parts, optional raw
-  result, error message, and UTC start/end timestamps.
+- Stores the globally stable `tool_key`, status, normalized result content or content-parts,
+  optional raw result, error message, and UTC start/end timestamps.
 
 The database can enforce at most one execution per response call. The service must validate before
 commit that every emitted response call has exactly one execution, including failed and cancelled

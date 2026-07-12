@@ -13,7 +13,12 @@ public class ConversationToolCallExecution extends EntityBase
     private long turnId;
     private long responseToolCallId;
     private int executionOrder;
-    private long toolId;
+
+    /**
+     * Globally unique and permanently stable identity of the executed Tool.
+     */
+    private String toolKey;
+
     private ToolCallExecutionStatus status;
     private String resultContent;
     private String resultContentParts;

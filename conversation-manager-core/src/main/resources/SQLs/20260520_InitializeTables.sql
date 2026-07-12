@@ -423,25 +423,45 @@ CREATE TABLE IF NOT EXISTS "conversation_llm_tool_definition"
     "modifier_id"       BIGINT       NOT NULL,
     "llm_call_id"       BIGINT       NOT NULL,
     "tool_order"        INTEGER      NOT NULL,
-    "tool_id"           BIGINT       NOT NULL,
-    "type"              VARCHAR(50)  NOT NULL,
-    "name"              VARCHAR(200) NOT NULL,
+    "tool_key"          VARCHAR(200) NOT NULL,
+    "tool_name"         VARCHAR(200) NOT NULL,
+    "source_type"       VARCHAR(16)  NOT NULL,
     "description"       TEXT         NOT NULL DEFAULT '',
     "parameters_json"   TEXT         NOT NULL,
     "strict"            BOOLEAN      NOT NULL DEFAULT FALSE,
+    "definition_hash"   CHAR(64)     NOT NULL,
     "creation_time"     TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
     "modification_time" TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
     CONSTRAINT "fk_llm_tool_definition_call" FOREIGN KEY ("llm_call_id") REFERENCES "conversation_llm_call" ("id") ON DELETE CASCADE,
     CONSTRAINT "uk_llm_tool_definition_order" UNIQUE ("llm_call_id", "tool_order"),
-    CONSTRAINT "uk_llm_tool_definition_name" UNIQUE ("llm_call_id", "name"),
+    CONSTRAINT "uk_llm_tool_definition_key" UNIQUE ("llm_call_id", "tool_key"),
+    CONSTRAINT "uk_llm_tool_definition_name" UNIQUE ("llm_call_id", "tool_name"),
     CONSTRAINT "ck_llm_tool_definition_order" CHECK ("tool_order" >= 0),
+    CONSTRAINT "ck_llm_tool_definition_source_type" CHECK ("source_type" IN ('INTERNAL', 'BUSINESS', 'MCP')),
+    CONSTRAINT "ck_llm_tool_definition_hash" CHECK ("definition_hash" ~ '^[0-9a-f]{64}$'),
     CONSTRAINT "ck_llm_tool_definition_values" CHECK (
-        "tool_id" > 0
-        AND NULLIF(BTRIM("type"), '') IS NOT NULL
-        AND NULLIF(BTRIM("name"), '') IS NOT NULL
+        NULLIF(BTRIM("tool_key"), '') IS NOT NULL
+        AND NULLIF(BTRIM("tool_name"), '') IS NOT NULL
         AND NULLIF(BTRIM("parameters_json"), '') IS NOT NULL
     )
 );
+
+COMMENT ON COLUMN "conversation_llm_tool_definition"."tool_order"
+    IS 'Zero-based position of the Tool definition in the provider request.';
+COMMENT ON COLUMN "conversation_llm_tool_definition"."tool_key"
+    IS 'Globally unique and permanently stable Tool identity declared by agent-runner code.';
+COMMENT ON COLUMN "conversation_llm_tool_definition"."tool_name"
+    IS 'Provider-facing function name used by the LLM; unique within this LLM request.';
+COMMENT ON COLUMN "conversation_llm_tool_definition"."source_type"
+    IS 'Tool execution origin: INTERNAL, BUSINESS, or MCP. This is not a provider protocol type.';
+COMMENT ON COLUMN "conversation_llm_tool_definition"."description"
+    IS 'Human-readable Tool description frozen before the LLM call.';
+COMMENT ON COLUMN "conversation_llm_tool_definition"."parameters_json"
+    IS 'Exact JSON Schema text defining accepted Tool arguments.';
+COMMENT ON COLUMN "conversation_llm_tool_definition"."strict"
+    IS 'Whether strict JSON Schema argument generation was requested from the provider.';
+COMMENT ON COLUMN "conversation_llm_tool_definition"."definition_hash"
+    IS 'Lowercase SHA-256 digest of the canonical normalized Tool definition for audit comparison.';
 
 CREATE INDEX IF NOT EXISTS "idx_llm_tool_definition_call"
     ON "conversation_llm_tool_definition" ("llm_call_id");
@@ -485,7 +505,7 @@ CREATE TABLE IF NOT EXISTS "conversation_tool_call_execution"
     "turn_id"                 BIGINT       NOT NULL,
     "response_tool_call_id"   BIGINT       NOT NULL,
     "execution_order"         INTEGER      NOT NULL,
-    "tool_id"                 BIGINT       NOT NULL,
+    "tool_key"                VARCHAR(200) NOT NULL,
     "status"                  VARCHAR(16)  NOT NULL,
     "result_content"          TEXT,
     "result_content_parts"    JSONB,
@@ -500,7 +520,7 @@ CREATE TABLE IF NOT EXISTS "conversation_tool_call_execution"
     CONSTRAINT "uk_tool_execution_response_call" UNIQUE ("response_tool_call_id"),
     CONSTRAINT "uk_tool_execution_order" UNIQUE ("turn_id", "execution_order"),
     CONSTRAINT "ck_tool_execution_order" CHECK ("execution_order" >= 0),
-    CONSTRAINT "ck_tool_execution_tool_id" CHECK ("tool_id" > 0),
+    CONSTRAINT "ck_tool_execution_tool_key" CHECK (NULLIF(BTRIM("tool_key"), '') IS NOT NULL),
     CONSTRAINT "ck_tool_execution_status" CHECK (
         ("status" = 'COMPLETED' AND "error_message" = '')
         OR ("status" = 'FAILED' AND NULLIF(BTRIM("error_message"), '') IS NOT NULL)
@@ -519,6 +539,9 @@ CREATE TABLE IF NOT EXISTS "conversation_tool_call_execution"
     ),
     CONSTRAINT "ck_tool_execution_time" CHECK ("end_time" >= "start_time")
 );
+
+COMMENT ON COLUMN "conversation_tool_call_execution"."tool_key"
+    IS 'Globally unique and permanently stable identity of the executed Tool.';
 
 CREATE INDEX IF NOT EXISTS "idx_tool_execution_turn"
     ON "conversation_tool_call_execution" ("turn_id");
