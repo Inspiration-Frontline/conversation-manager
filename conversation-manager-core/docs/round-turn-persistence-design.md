@@ -117,7 +117,8 @@ conversation list queries do not need to order by it.
 All new tables use `BIGSERIAL` internal primary keys and the same creator/modifier/time audit fields
 as `EntityBase`. Runtime rows are normally append-only, so creation and modification time initially
 match; database triggers keep modification time correct for retention or tombstone updates.
-Ownership is still authorized through the parent `conversation` row.
+Ownership is authorized through the parent `conversation` row. Cross-table relationships are
+validated by conversation-manager services rather than PostgreSQL foreign keys.
 
 ### `conversation_round`
 
@@ -126,7 +127,7 @@ One row represents one complete saved Round or its tombstone.
 | Column | Type | Rules |
 | --- | --- | --- |
 | `id` | `BIGSERIAL` | Primary key |
-| `conversation_id` | `VARCHAR(64)` | FK to `conversation.conversation_id` |
+| `conversation_id` | `VARCHAR(64)` | Logical reference to `conversation.conversation_id` |
 | `round_number` | `BIGINT` | Positive, unique inside conversation |
 | `user_request_content` | `TEXT` | Text-only request representation |
 | `user_request_content_parts` | `JSONB` | Multimodal request representation |
@@ -155,7 +156,7 @@ Checks enforce:
 - Deletion metadata is either all absent for active rows or all populated for tombstones.
 - Content-parts values are non-empty JSON arrays when present.
 
-The source-Turn relationship is enforced after both tables exist with a deferrable composite FK:
+The save service validates the source-Turn relationship before commit:
 
 ```text
 (id, final_source_turn_number)
@@ -167,7 +168,7 @@ The source-Turn relationship is enforced after both tables exist with a deferrab
 | Column | Type | Rules |
 | --- | --- | --- |
 | `id` | `BIGSERIAL` | Primary key |
-| `round_id` | `BIGINT` | FK to `conversation_round`, cascade on physical purge |
+| `round_id` | `BIGINT` | Logical reference to `conversation_round.id` |
 | `turn_number` | `BIGINT` | Positive and unique inside Round |
 | `agent_id` | `BIGINT` | Positive stable database identity |
 | `agent_name` | `VARCHAR(200)` | Non-empty runtime/handoff name |
@@ -187,7 +188,7 @@ There is exactly one LLM call row per Turn.
 
 Request columns:
 
-- `turn_id` with a unique FK to `conversation_turn`
+- `turn_id` as a unique logical reference to `conversation_turn`
 - `provider`, `model`, `request_id`, and `trace_id`
 - `message_storage_mode`
 - `tool_choice_present`, `tool_choice_mode`, and `tool_choice_name`
@@ -226,7 +227,7 @@ Stores the ordered `LlmRequest.messages` array.
 
 Stores historical tool calls embedded in request-context assistant messages.
 
-- FK to `conversation_llm_request_message` with physical cascade.
+- Logical reference to `conversation_llm_request_message`.
 - Unique `(request_message_id, call_order)`.
 - Unique `(request_message_id, tool_call_id)`.
 - Stores `tool_call_id`, `type`, `function_name`, and exact `arguments` TEXT.
@@ -251,8 +252,7 @@ Stores the complete ordered tool definition list offered in one model request.
 
 Stores tool calls emitted by the current LLM response.
 
-- Includes `turn_id` and `llm_call_id` to support same-Turn composite integrity.
-- Has a unique `(turn_id, id)` key for the execution table's composite FK.
+- Includes `turn_id` and `llm_call_id` so the service can validate same-Turn integrity.
 - Unique `(llm_call_id, call_order)`.
 - Unique `(llm_call_id, tool_call_id)`.
 - Stores `tool_call_id`, `type`, `function_name`, and exact `arguments` TEXT.
@@ -261,16 +261,16 @@ Stores tool calls emitted by the current LLM response.
 
 Stores exactly one execution outcome for a current-response tool call.
 
-- FK to `conversation_turn`.
-- Composite FK to the response tool call ensures both rows belong to the same Turn.
+- Stores logical references to `conversation_turn` and the response Tool call.
+- The save service ensures the execution and response Tool call belong to the same Turn.
 - Unique `response_tool_call_id` prevents more than one execution for a model-emitted call.
 - Unique `(turn_id, execution_order)` preserves parallel-call reporting order.
 - Stores the globally stable `tool_key`, status, normalized result content or content-parts,
   optional raw result, error message, and UTC start/end timestamps.
 
-The database can enforce at most one execution per response call. The service must validate before
-commit that every emitted response call has exactly one execution, including failed and cancelled
-executions.
+The database can enforce at most one execution per response-call ID inside this table. The service
+must validate that the referenced response call exists, belongs to the same Turn, and has exactly
+one execution, including failed and cancelled executions.
 
 ## Indexes
 
@@ -290,8 +290,8 @@ Required indexes are intentionally read-path driven:
 | Tool execution | unique `(turn_id, execution_order)` | Ordered execution reconstruction |
 | Tool execution | unique `(response_tool_call_id)` | Exactly-at-most-one execution |
 
-Every non-leading FK used for joins receives a normal B-tree index. Raw payloads, JSON content,
-errors, and hashes do not receive general-purpose indexes.
+Every logical parent-reference column used for joins receives a normal B-tree index. Raw payloads,
+JSON content, errors, and hashes do not receive general-purpose indexes.
 
 ## Canonical Payload Hash
 
@@ -464,12 +464,11 @@ Forward order:
 1. Add `conversation.latest_round_number` with default and check.
 2. Create Round and Turn tables.
 3. Create LLM and tool child tables.
-4. Add deferred/composite FKs after referenced unique keys exist.
-5. Add checks and indexes.
-6. Add the Round modification-time trigger.
+4. Add single-table checks, uniqueness constraints, and indexes.
+5. Add modification-time triggers.
 
-Rollback order is the exact reverse. It drops only new Round/Turn objects and
-`latest_round_number`; it must not drop or rewrite legacy conversation/message/group/share data.
+Rollback order is the exact reverse. It drops all tables created by this clean-schema initialization
+and then drops the shared modification-time function.
 
 The migration is safe for existing conversations because their high-water mark starts at zero and
 no new Round rows exist.

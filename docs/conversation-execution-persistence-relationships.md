@@ -2,8 +2,9 @@
 
 Status: implemented schema model for AgentBreaker `0.0.1`
 
-This document describes the ownership hierarchy, foreign keys, and physical-delete cascade behavior
-of conversation-manager. It complements the detailed transaction and validation design in
+This document describes the logical ownership hierarchy and application-managed table relationships
+of conversation-manager. The schema intentionally has no PostgreSQL foreign keys. This document
+complements the detailed transaction and validation design in
 `conversation-manager-core/docs/round-turn-persistence-design.md`.
 
 ## Execution Aggregate
@@ -39,9 +40,10 @@ This tree is the quickest view of the execution aggregate:
 - parallel response Tool calls remain separate execution records inside the same Turn.
 
 The plural labels in this overview describe logical collections. The Mermaid diagram below uses the
-actual singular PostgreSQL table names and shows the concrete foreign-key paths.
+actual singular PostgreSQL table names and shows the ID fields that the application uses to connect
+records.
 
-### Physical Foreign Keys
+### Logical Table Links
 
 ```mermaid
 flowchart TD
@@ -55,16 +57,16 @@ flowchart TD
     RESPONSE_TOOL_CALL["conversation_llm_response_tool_call"]
     TOOL_EXECUTION["conversation_tool_call_execution"]
 
-    CONVERSATION -->|"conversation_id; ON DELETE CASCADE"| ROUND
-    ROUND -->|"round_id; ON DELETE CASCADE"| TURN
-    TURN -->|"turn_id; ON DELETE CASCADE"| LLM_CALL
-    LLM_CALL -->|"llm_call_id; ON DELETE CASCADE"| REQUEST_MESSAGE
-    REQUEST_MESSAGE -->|"request_message_id; ON DELETE CASCADE"| REQUEST_TOOL_CALL
-    LLM_CALL -->|"llm_call_id; ON DELETE CASCADE"| TOOL_DEFINITION
-    LLM_CALL -->|"llm_call_id; ON DELETE CASCADE"| RESPONSE_TOOL_CALL
-    TURN -->|"turn_id; same-Turn integrity"| RESPONSE_TOOL_CALL
-    TURN -->|"turn_id; ON DELETE CASCADE"| TOOL_EXECUTION
-    RESPONSE_TOOL_CALL -->|"response_tool_call_id; ON DELETE CASCADE"| TOOL_EXECUTION
+    CONVERSATION -->|"conversation_id"| ROUND
+    ROUND -->|"round_id"| TURN
+    TURN -->|"turn_id"| LLM_CALL
+    LLM_CALL -->|"llm_call_id"| REQUEST_MESSAGE
+    REQUEST_MESSAGE -->|"request_message_id"| REQUEST_TOOL_CALL
+    LLM_CALL -->|"llm_call_id"| TOOL_DEFINITION
+    LLM_CALL -->|"llm_call_id"| RESPONSE_TOOL_CALL
+    TURN -->|"turn_id"| RESPONSE_TOOL_CALL
+    TURN -->|"turn_id"| TOOL_EXECUTION
+    RESPONSE_TOOL_CALL -->|"response_tool_call_id"| TOOL_EXECUTION
 ```
 
 The structure has branches below an LLM call rather than one linear chain:
@@ -91,7 +93,22 @@ The structure has branches below an LLM call rather than one linear chain:
 Tool definitions and Tool executions use the globally unique and permanently stable `tool_key`.
 The database `id` inherited from `EntityBase` identifies only a local snapshot or execution row.
 
-## Logical Delete Versus Physical Cascade
+## No Database Foreign Keys
+
+The relationship columns in the diagrams are ordinary indexed values, not PostgreSQL foreign keys.
+This follows the service-owned data model:
+
+- the command service validates every parent and cross-table relationship before writing;
+- the complete Round aggregate is inserted in one transaction;
+- read services join by the documented logical IDs;
+- cleanup services explicitly delete child rows before parent rows;
+- database constraints remain limited to one table: primary keys, uniqueness, checks, nullability,
+  and indexes.
+
+This choice avoids database-level cascade behavior, but it also means ad hoc SQL can create orphan
+rows. Production writes and cleanup must go through conversation-manager services.
+
+## Logical Delete And Physical Cleanup
 
 Normal `DeleteRounds` behavior is logical:
 
@@ -100,22 +117,19 @@ Normal `DeleteRounds` behavior is logical:
 - normal history and replay queries exclude tombstoned Rounds;
 - it never decreases `conversation.latest_round_number`.
 
-The `ON DELETE CASCADE` relationships in the diagram apply only to physical deletion. They support
-a later authorized retention or purge job. A physical Conversation purge removes its Rounds and all
-execution descendants. A physical Round purge removes only that Round subtree.
-
-Soft deletion does not activate PostgreSQL foreign-key cascades.
+Physical cleanup is application-managed. An authorized retention job must delete the aggregate in
+reverse ownership order inside a transaction: Tool executions and leaf snapshots first, then LLM
+calls and Turns, then Rounds, and finally the Conversation when the entire Conversation is purged.
 
 ## Same-Turn Tool Integrity
 
 `conversation_llm_response_tool_call` stores both `llm_call_id` and `turn_id`.
 `conversation_tool_call_execution` stores both `response_tool_call_id` and `turn_id`.
-Composite foreign keys ensure that a Tool execution cannot point to a response Tool call from a
-different Turn.
-
-The database enforces at most one execution row for each response Tool call. The save service must
-also validate the inverse requirement before commit: every emitted response Tool call has one
-execution record, including failed and cancelled calls.
+The save service verifies that a Tool execution cannot point to a response Tool call from a
+different Turn. The database only enforces uniqueness of `response_tool_call_id` within the
+execution table. Before commit, the service must validate both existence and the inverse
+requirement: every emitted response Tool call has one execution record, including failed and
+cancelled calls.
 
 ## Existing Conversation-Owned Tables
 
@@ -130,12 +144,12 @@ flowchart TD
     SHARING["conversation_sharing"]
     FILE["message_file"]
 
-    CONVERSATION -->|"conversation_id; ON DELETE CASCADE"| MESSAGE
-    CONVERSATION -->|"conversation_id; ON DELETE CASCADE"| GROUP_RELATION
-    GROUP -->|"group_id; ON DELETE CASCADE"| GROUP_RELATION
-    CONVERSATION -->|"parent_conversation_id; ON DELETE CASCADE"| SHARING
+    CONVERSATION -->|"conversation_id"| MESSAGE
+    CONVERSATION -->|"conversation_id"| GROUP_RELATION
+    GROUP -->|"group_id"| GROUP_RELATION
+    CONVERSATION -->|"parent_conversation_id"| SHARING
 ```
 
 `conversation_message` is preserved for existing HTTP behavior and is not dual-written by the new
-Round/Turn RPC. `message_file` is deliberately shown without an edge because it currently has no
-database foreign key to a Conversation or message and therefore has no cascade behavior.
+Round/Turn RPC. All displayed edges are application-managed logical links. `message_file` is shown
+without an edge because it currently has no stored Conversation or message reference.

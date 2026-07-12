@@ -16,26 +16,6 @@ CREATE TABLE IF NOT EXISTS "conversation"
     CONSTRAINT "ck_conversation_latest_round_number" CHECK ("latest_round_number" >= 0)
 );
 
-ALTER TABLE "conversation"
-    ADD COLUMN IF NOT EXISTS "pinned" BOOLEAN NOT NULL DEFAULT FALSE;
-
-ALTER TABLE "conversation"
-    ADD COLUMN IF NOT EXISTS "latest_round_number" BIGINT NOT NULL DEFAULT 0;
-
-DO $$
-BEGIN
-    IF NOT EXISTS (
-        SELECT 1
-        FROM pg_constraint
-        WHERE conname = 'ck_conversation_latest_round_number'
-          AND conrelid = 'conversation'::regclass
-    ) THEN
-        ALTER TABLE "conversation"
-            ADD CONSTRAINT "ck_conversation_latest_round_number" CHECK ("latest_round_number" >= 0);
-    END IF;
-END;
-$$;
-
 CREATE INDEX IF NOT EXISTS "idx_conversation_creator_deleted_modified"
     ON "conversation" ("creator_id", "deleted", "modification_time" DESC);
 
@@ -61,8 +41,7 @@ CREATE TABLE IF NOT EXISTS "conversation_message"
     "tool_call_id"      VARCHAR(128),
     "agent_id"          BIGINT,
     "finish_reason"     VARCHAR(64),
-    "deleted"           BOOLEAN     NOT NULL DEFAULT FALSE,
-    CONSTRAINT "fk_conversation_message_conversation" FOREIGN KEY ("conversation_id") REFERENCES "conversation" ("conversation_id") ON DELETE CASCADE
+    "deleted"           BOOLEAN     NOT NULL DEFAULT FALSE
 );
 
 CREATE INDEX IF NOT EXISTS "idx_conversation_message_conversation_id"
@@ -94,7 +73,6 @@ CREATE TABLE IF NOT EXISTS "conversation_round"
     "deleted_by"                   BIGINT,
     "creation_time"                TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
     "modification_time"            TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
-    CONSTRAINT "fk_round_conversation" FOREIGN KEY ("conversation_id") REFERENCES "conversation" ("conversation_id") ON DELETE CASCADE,
     CONSTRAINT "uk_round_conversation_number" UNIQUE ("conversation_id", "round_number"),
     CONSTRAINT "ck_round_number" CHECK ("round_number" > 0),
     CONSTRAINT "ck_round_status" CHECK ("status" IN ('COMPLETED', 'FAILED', 'CANCELLED')),
@@ -197,7 +175,6 @@ CREATE TABLE IF NOT EXISTS "conversation_turn"
     "end_time"          TIMESTAMPTZ  NOT NULL,
     "creation_time"     TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
     "modification_time" TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
-    CONSTRAINT "fk_turn_round" FOREIGN KEY ("round_id") REFERENCES "conversation_round" ("id") ON DELETE CASCADE,
     CONSTRAINT "uk_turn_round_number" UNIQUE ("round_id", "turn_number"),
     CONSTRAINT "ck_turn_number" CHECK ("turn_number" > 0),
     CONSTRAINT "ck_turn_agent" CHECK (
@@ -212,23 +189,6 @@ CREATE TABLE IF NOT EXISTS "conversation_turn"
     ),
     CONSTRAINT "ck_turn_time" CHECK ("end_time" >= "start_time")
 );
-
-DO $$
-BEGIN
-    IF NOT EXISTS (
-        SELECT 1
-        FROM pg_constraint
-        WHERE conname = 'fk_round_final_source_turn'
-          AND conrelid = 'conversation_round'::regclass
-    ) THEN
-        ALTER TABLE "conversation_round"
-            ADD CONSTRAINT "fk_round_final_source_turn"
-            FOREIGN KEY ("id", "final_source_turn_number")
-            REFERENCES "conversation_turn" ("round_id", "turn_number")
-            DEFERRABLE INITIALLY DEFERRED;
-    END IF;
-END;
-$$;
 
 CREATE TABLE IF NOT EXISTS "conversation_llm_call"
 (
@@ -265,9 +225,7 @@ CREATE TABLE IF NOT EXISTS "conversation_llm_call"
     "reasoning_content"         TEXT,
     "creation_time"             TIMESTAMPTZ       NOT NULL DEFAULT NOW(),
     "modification_time"         TIMESTAMPTZ       NOT NULL DEFAULT NOW(),
-    CONSTRAINT "fk_llm_call_turn" FOREIGN KEY ("turn_id") REFERENCES "conversation_turn" ("id") ON DELETE CASCADE,
     CONSTRAINT "uk_llm_call_turn" UNIQUE ("turn_id"),
-    CONSTRAINT "uk_llm_call_id_turn" UNIQUE ("id", "turn_id"),
     CONSTRAINT "ck_llm_call_identity" CHECK (
         NULLIF(BTRIM("provider"), '') IS NOT NULL
         AND NULLIF(BTRIM("model"), '') IS NOT NULL
@@ -359,7 +317,6 @@ CREATE TABLE IF NOT EXISTS "conversation_llm_request_message"
     "tool_call_id"      VARCHAR(200),
     "creation_time"     TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
     "modification_time" TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
-    CONSTRAINT "fk_llm_request_message_call" FOREIGN KEY ("llm_call_id") REFERENCES "conversation_llm_call" ("id") ON DELETE CASCADE,
     CONSTRAINT "uk_llm_request_message_order" UNIQUE ("llm_call_id", "message_order"),
     CONSTRAINT "ck_llm_request_message_order" CHECK ("message_order" >= 0),
     CONSTRAINT "ck_llm_request_message_role" CHECK ("role" IN ('SYSTEM', 'USER', 'ASSISTANT', 'TOOL', 'DEVELOPER')),
@@ -401,7 +358,6 @@ CREATE TABLE IF NOT EXISTS "conversation_llm_request_message_tool_call"
     "arguments"           TEXT         NOT NULL,
     "creation_time"       TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
     "modification_time"   TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
-    CONSTRAINT "fk_request_message_tool_call_message" FOREIGN KEY ("request_message_id") REFERENCES "conversation_llm_request_message" ("id") ON DELETE CASCADE,
     CONSTRAINT "uk_request_message_tool_call_order" UNIQUE ("request_message_id", "call_order"),
     CONSTRAINT "uk_request_message_tool_call_id" UNIQUE ("request_message_id", "tool_call_id"),
     CONSTRAINT "ck_request_message_tool_call_order" CHECK ("call_order" >= 0),
@@ -432,7 +388,6 @@ CREATE TABLE IF NOT EXISTS "conversation_llm_tool_definition"
     "definition_hash"   CHAR(64)     NOT NULL,
     "creation_time"     TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
     "modification_time" TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
-    CONSTRAINT "fk_llm_tool_definition_call" FOREIGN KEY ("llm_call_id") REFERENCES "conversation_llm_call" ("id") ON DELETE CASCADE,
     CONSTRAINT "uk_llm_tool_definition_order" UNIQUE ("llm_call_id", "tool_order"),
     CONSTRAINT "uk_llm_tool_definition_key" UNIQUE ("llm_call_id", "tool_key"),
     CONSTRAINT "uk_llm_tool_definition_name" UNIQUE ("llm_call_id", "tool_name"),
@@ -445,23 +400,6 @@ CREATE TABLE IF NOT EXISTS "conversation_llm_tool_definition"
         AND NULLIF(BTRIM("parameters_json"), '') IS NOT NULL
     )
 );
-
-COMMENT ON COLUMN "conversation_llm_tool_definition"."tool_order"
-    IS 'Zero-based position of the Tool definition in the provider request.';
-COMMENT ON COLUMN "conversation_llm_tool_definition"."tool_key"
-    IS 'Globally unique and permanently stable Tool identity declared by agent-runner code.';
-COMMENT ON COLUMN "conversation_llm_tool_definition"."tool_name"
-    IS 'Provider-facing function name used by the LLM; unique within this LLM request.';
-COMMENT ON COLUMN "conversation_llm_tool_definition"."source_type"
-    IS 'Tool execution origin: INTERNAL, BUSINESS, or MCP. This is not a provider protocol type.';
-COMMENT ON COLUMN "conversation_llm_tool_definition"."description"
-    IS 'Human-readable Tool description frozen before the LLM call.';
-COMMENT ON COLUMN "conversation_llm_tool_definition"."parameters_json"
-    IS 'Exact JSON Schema text defining accepted Tool arguments.';
-COMMENT ON COLUMN "conversation_llm_tool_definition"."strict"
-    IS 'Whether strict JSON Schema argument generation was requested from the provider.';
-COMMENT ON COLUMN "conversation_llm_tool_definition"."definition_hash"
-    IS 'Lowercase SHA-256 digest of the canonical normalized Tool definition for audit comparison.';
 
 CREATE INDEX IF NOT EXISTS "idx_llm_tool_definition_call"
     ON "conversation_llm_tool_definition" ("llm_call_id");
@@ -480,9 +418,6 @@ CREATE TABLE IF NOT EXISTS "conversation_llm_response_tool_call"
     "arguments"         TEXT         NOT NULL,
     "creation_time"     TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
     "modification_time" TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
-    CONSTRAINT "fk_response_tool_call_turn" FOREIGN KEY ("turn_id") REFERENCES "conversation_turn" ("id") ON DELETE CASCADE,
-    CONSTRAINT "fk_response_tool_call_llm" FOREIGN KEY ("llm_call_id", "turn_id") REFERENCES "conversation_llm_call" ("id", "turn_id") ON DELETE CASCADE,
-    CONSTRAINT "uk_response_tool_call_id_turn" UNIQUE ("id", "turn_id"),
     CONSTRAINT "uk_response_tool_call_order" UNIQUE ("llm_call_id", "call_order"),
     CONSTRAINT "uk_response_tool_call_external_id" UNIQUE ("llm_call_id", "tool_call_id"),
     CONSTRAINT "ck_response_tool_call_order" CHECK ("call_order" >= 0),
@@ -515,8 +450,6 @@ CREATE TABLE IF NOT EXISTS "conversation_tool_call_execution"
     "end_time"                TIMESTAMPTZ  NOT NULL,
     "creation_time"           TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
     "modification_time"       TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
-    CONSTRAINT "fk_tool_execution_turn" FOREIGN KEY ("turn_id") REFERENCES "conversation_turn" ("id") ON DELETE CASCADE,
-    CONSTRAINT "fk_tool_execution_response_call" FOREIGN KEY ("response_tool_call_id", "turn_id") REFERENCES "conversation_llm_response_tool_call" ("id", "turn_id") ON DELETE CASCADE,
     CONSTRAINT "uk_tool_execution_response_call" UNIQUE ("response_tool_call_id"),
     CONSTRAINT "uk_tool_execution_order" UNIQUE ("turn_id", "execution_order"),
     CONSTRAINT "ck_tool_execution_order" CHECK ("execution_order" >= 0),
@@ -539,9 +472,6 @@ CREATE TABLE IF NOT EXISTS "conversation_tool_call_execution"
     ),
     CONSTRAINT "ck_tool_execution_time" CHECK ("end_time" >= "start_time")
 );
-
-COMMENT ON COLUMN "conversation_tool_call_execution"."tool_key"
-    IS 'Globally unique and permanently stable identity of the executed Tool.';
 
 CREATE INDEX IF NOT EXISTS "idx_tool_execution_turn"
     ON "conversation_tool_call_execution" ("turn_id");
@@ -573,29 +503,9 @@ CREATE TABLE IF NOT EXISTS "conversation_group_relation"
     "conversation_id"       VARCHAR(64) NOT NULL,
     "conversation_group_id" VARCHAR(64) NOT NULL,
     "sort_order"            INTEGER     NOT NULL DEFAULT 0,
-    CONSTRAINT "fk_conversation_group_relation_conversation" FOREIGN KEY ("conversation_id") REFERENCES "conversation" ("conversation_id") ON DELETE CASCADE,
-    CONSTRAINT "fk_conversation_group_relation_group" FOREIGN KEY ("conversation_group_id") REFERENCES "conversation_group" ("group_id") ON DELETE CASCADE
+    CONSTRAINT "uk_conversation_group_relation_group"
+        UNIQUE ("creator_id", "conversation_group_id", "conversation_id")
 );
-
-UPDATE "conversation" c
-SET "pinned" = TRUE
-FROM "conversation_group_relation" r
-WHERE r."conversation_group_id" IS NULL
-  AND r."creator_id" = c."creator_id"
-  AND r."conversation_id" = c."conversation_id"
-  AND c."deleted" = FALSE;
-
-DELETE FROM "conversation_group_relation"
-WHERE "conversation_group_id" IS NULL;
-
-DROP INDEX IF EXISTS "uk_conversation_group_relation_pin";
-
-ALTER TABLE "conversation_group_relation"
-    ALTER COLUMN "conversation_group_id" SET NOT NULL;
-
-CREATE UNIQUE INDEX IF NOT EXISTS "uk_conversation_group_relation_group"
-    ON "conversation_group_relation" ("creator_id", "conversation_group_id", "conversation_id")
-    WHERE "conversation_group_id" IS NOT NULL;
 
 CREATE INDEX IF NOT EXISTS "idx_conversation_group_relation_group_sort"
     ON "conversation_group_relation" ("creator_id", "conversation_group_id", "sort_order", "id");
@@ -614,7 +524,6 @@ CREATE TABLE IF NOT EXISTS "conversation_sharing"
     "shared_conversation_id"     VARCHAR(64) NOT NULL,
     "end_message_id"             BIGINT      NOT NULL DEFAULT 0,
     "accessible_after_deleted"   BOOLEAN     NOT NULL DEFAULT FALSE,
-    CONSTRAINT "fk_conversation_sharing_parent" FOREIGN KEY ("parent_conversation_id") REFERENCES "conversation" ("conversation_id") ON DELETE CASCADE,
     CONSTRAINT "uk_conversation_sharing_shared_id" UNIQUE ("shared_conversation_id")
 );
 

@@ -1,8 +1,5 @@
 SET TIME ZONE 'UTC';
 
-ALTER TABLE IF EXISTS "conversation_round"
-    DROP CONSTRAINT IF EXISTS "fk_round_final_source_turn";
-
 DROP TABLE IF EXISTS "conversation_tool_call_execution";
 DROP TABLE IF EXISTS "conversation_llm_response_tool_call";
 DROP TABLE IF EXISTS "conversation_llm_tool_definition";
