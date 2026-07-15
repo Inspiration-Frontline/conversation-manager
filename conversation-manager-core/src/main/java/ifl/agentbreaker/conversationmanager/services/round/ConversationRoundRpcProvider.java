@@ -2,6 +2,7 @@ package ifl.agentbreaker.conversationmanager.services.round;
 
 import ifl.agentbreaker.commons.api.dto.ResponseBase;
 import ifl.agentbreaker.conversationmanager.domain.dtos.responses.ConversationRoundHistoryResult;
+import ifl.agentbreaker.conversationmanager.domain.dtos.responses.ConversationReplayResult;
 import ifl.agentbreaker.conversationmanager.domain.entities.pg.ConversationRound;
 import ifl.agentbreaker.conversationmanager.rpc.*;
 import org.apache.dubbo.config.annotation.DubboService;
@@ -111,11 +112,32 @@ public class ConversationRoundRpcProvider implements ConversationRpcService
     @Override
     public GetConversationReplayResponse getConversationReplay(GetConversationReplayRequest request)
     {
-        return GetConversationReplayResponse.newBuilder()
-            .setBase(errorBase(ConversationErrorCode.CONVERSATION_ERROR_CODE_INVALID_REQUEST_VALUE,
-                "Replay is not exposed in Phase 3."))
-            .setData(ConversationReplay.getDefaultInstance())
-            .build();
+        try
+        {
+            if (request.getDetailLevel() != ReplayDetailLevel.REPLAY_DETAIL_LEVEL_MODEL_CONTEXT)
+                throw new RoundPersistenceException(
+                    ConversationErrorCode.CONVERSATION_ERROR_CODE_INVALID_REQUEST_VALUE,
+                    "Phase 4 supports MODEL_CONTEXT replay only.");
+            if (request.hasEndTurnNumber() && request.getEndTurnNumber() != 1)
+                throw new RoundPersistenceException(
+                    ConversationErrorCode.CONVERSATION_ERROR_CODE_INVALID_REQUEST_VALUE,
+                    "The current one-turn runtime supports only end_turn_number 1.");
+            ConversationReplayResult conversationReplayResult = conversationRoundQueryService.getModelContext(
+                request.getUserId(), request.getConversationId(), request.getEndRoundNumber());
+            return GetConversationReplayResponse.newBuilder()
+                .setBase(successBase())
+                .setData(ConversationReplay.newBuilder()
+                    .setConversationId(conversationReplayResult.conversationId())
+                    .addAllContextMessages(conversationReplayResult.contextMessages()))
+                .build();
+        }
+        catch (RoundPersistenceException e)
+        {
+            return GetConversationReplayResponse.newBuilder()
+                .setBase(errorBase(e.getCode(), e.getMessage()))
+                .setData(ConversationReplay.newBuilder().setConversationId(request.getConversationId()))
+                .build();
+        }
     }
 
     @Override
@@ -144,17 +166,19 @@ public class ConversationRoundRpcProvider implements ConversationRpcService
     private ifl.agentbreaker.conversationmanager.rpc.ConversationRound toProtoRound(
         SaveConversationRoundRequest request)
     {
-        return ifl.agentbreaker.conversationmanager.rpc.ConversationRound.newBuilder()
+        ifl.agentbreaker.conversationmanager.rpc.ConversationRound.Builder conversationRound =
+            ifl.agentbreaker.conversationmanager.rpc.ConversationRound.newBuilder()
             .setConversationId(request.getConversationId())
             .setRoundNumber(request.getRoundNumber())
             .setUserRequest(request.getUserRequest())
             .addAllTurns(request.getTurnsList())
-            .setFinalAnswer(request.getFinalAnswer())
             .setStatus(request.getStatus())
             .setErrorMessage(request.getErrorMessage())
             .setStartTime(request.getStartTime())
-            .setEndTime(request.getEndTime())
-            .build();
+            .setEndTime(request.getEndTime());
+        if (request.hasFinalAnswer())
+            conversationRound.setFinalAnswer(request.getFinalAnswer());
+        return conversationRound.build();
     }
 
     private ConversationRoundSummary toSummary(ConversationRound round)
@@ -169,7 +193,7 @@ public class ConversationRoundRpcProvider implements ConversationRpcService
                 case FAILED -> RoundStatus.ROUND_STATUS_FAILED;
                 case CANCELLED -> RoundStatus.ROUND_STATUS_CANCELLED;
             })
-            .setTurnCount(1)
+            .setTurnCount(conversationRoundQueryService.getTurnCount(round.getId()))
             .setErrorMessage(round.getErrorMessage())
             .setStartTime(round.getStartTime().getTime())
             .setEndTime(round.getEndTime().getTime());

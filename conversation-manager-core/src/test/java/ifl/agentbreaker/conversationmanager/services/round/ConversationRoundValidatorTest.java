@@ -14,7 +14,7 @@ class ConversationRoundValidatorTest
     @Test
     void acceptsOneCompletedTextTurn()
     {
-        assertDoesNotThrow(() -> validator.validatePhaseThree(validRequest(1, "answer")));
+        assertDoesNotThrow(() -> validator.validatePhaseFour(validRequest(1, "answer")));
     }
 
     @Test
@@ -25,8 +25,27 @@ class ConversationRoundValidatorTest
             .build();
 
         RoundPersistenceException error = assertThrows(
-            RoundPersistenceException.class, () -> validator.validatePhaseThree(request));
+            RoundPersistenceException.class, () -> validator.validatePhaseFour(request));
         assertEquals(ConversationErrorCode.CONVERSATION_ERROR_CODE_INVALID_REQUEST_VALUE, error.getCode());
+    }
+
+    @Test
+    void acceptsFailedAndCancelledRoundsBeforeTheFirstCompletedTurn()
+    {
+        SaveConversationRoundRequest base = validRequest(1, "answer");
+        SaveConversationRoundRequest failed = base.toBuilder()
+            .clearTurns().clearFinalAnswer()
+            .setStatus(RoundStatus.ROUND_STATUS_FAILED)
+            .setErrorMessage("provider unavailable")
+            .build();
+        SaveConversationRoundRequest cancelled = base.toBuilder()
+            .clearTurns().clearFinalAnswer()
+            .setStatus(RoundStatus.ROUND_STATUS_CANCELLED)
+            .clearErrorMessage()
+            .build();
+
+        assertDoesNotThrow(() -> validator.validatePhaseFour(failed));
+        assertDoesNotThrow(() -> validator.validatePhaseFour(cancelled));
     }
 
     @Test

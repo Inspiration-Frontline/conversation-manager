@@ -2,9 +2,14 @@ package ifl.agentbreaker.conversationmanager.dao;
 
 import ifl.agentbreaker.conversationmanager.domain.entities.pg.ConversationLlmRequestMessage;
 import org.apache.ibatis.annotations.Mapper;
+import org.apache.ibatis.annotations.Param;
+
+import java.util.List;
 
 @Mapper
 public interface ConversationLlmRequestMessageMapper
 {
     ConversationLlmRequestMessage insertRequestMessage(ConversationLlmRequestMessage message);
+
+    List<ConversationLlmRequestMessage> listRequestMessages(@Param("llmCallId") long llmCallId);
 }

@@ -63,6 +63,17 @@
         ORDER BY "round_number" ASC
     </select>
 
+    <select id="getLatestCompletedRoundAtOrBefore" resultMap="RoundResultMap">
+        SELECT <include refid="RoundColumns"/>
+        FROM "conversation_round"
+        WHERE "conversation_id" = #{conversationId}
+          AND "round_number" &lt;= #{endRoundNumber}
+          AND "status" = 'COMPLETED'
+          AND "deleted" = FALSE
+        ORDER BY "round_number" DESC
+        LIMIT 1
+    </select>
+
     <select id="countTurns" resultType="long">
         SELECT COUNT(1)
         FROM "conversation_turn"

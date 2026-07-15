@@ -55,4 +55,8 @@
         )
         RETURNING *
     </select>
+
+    <select id="getLlmCallByTurnId" resultMap="LlmCallResultMap">
+        SELECT * FROM "conversation_llm_call" WHERE "turn_id" = #{turnId}
+    </select>
 </mapper>

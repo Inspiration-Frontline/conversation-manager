@@ -28,4 +28,12 @@
         )
         RETURNING *
     </select>
+
+    <select id="getCompletedTurn" resultMap="TurnResultMap">
+        SELECT *
+        FROM "conversation_turn"
+        WHERE "round_id" = #{roundId}
+          AND "turn_number" = #{turnNumber}
+          AND "status" = 'COMPLETED'
+    </select>
 </mapper>

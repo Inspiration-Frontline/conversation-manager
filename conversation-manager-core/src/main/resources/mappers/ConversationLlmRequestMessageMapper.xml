@@ -25,4 +25,11 @@
         )
         RETURNING *
     </select>
+
+    <select id="listRequestMessages" resultMap="RequestMessageResultMap">
+        SELECT *
+        FROM "conversation_llm_request_message"
+        WHERE "llm_call_id" = #{llmCallId}
+        ORDER BY "message_order" ASC
+    </select>
 </mapper>

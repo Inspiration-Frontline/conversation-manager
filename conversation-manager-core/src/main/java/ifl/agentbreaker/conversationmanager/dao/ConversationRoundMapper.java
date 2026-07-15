@@ -16,5 +16,8 @@ public interface ConversationRoundMapper
 
     List<ConversationRound> listActiveRounds(@Param("conversationId") String conversationId);
 
+    ConversationRound getLatestCompletedRoundAtOrBefore(@Param("conversationId") String conversationId,
+                                                         @Param("endRoundNumber") long endRoundNumber);
+
     long countTurns(@Param("roundId") long roundId);
 }

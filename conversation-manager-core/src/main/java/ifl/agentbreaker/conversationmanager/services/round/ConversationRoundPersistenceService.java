@@ -52,7 +52,7 @@ public class ConversationRoundPersistenceService
      */
     public SaveConversationRoundRequest save(SaveConversationRoundRequest request)
     {
-        conversationRoundValidator.validatePhaseThree(request);
+        conversationRoundValidator.validatePhaseFour(request);
         String payloadHash = conversationRoundPayloadHasher.hash(request);
         try (ConversationMutationLock.LockHandle ignored =
                  conversationMutationLock.acquire(request.getConversationId()))
@@ -97,23 +97,28 @@ public class ConversationRoundPersistenceService
         if (savedRound == null)
             throw new IllegalStateException("Round insert returned no row.");
 
-        ifl.agentbreaker.conversationmanager.domain.entities.pg.ConversationTurn conversationTurn =
-            conversationTurnMapper.insertTurn(toTurn(
-                request.getTurns(0), savedRound.getId(), request.getUserId()));
-        if (conversationTurn == null)
-            throw new IllegalStateException("Turn insert returned no row.");
-
-        ConversationLlmCall conversationLlmCall = conversationLlmCallMapper.insertLlmCall(
-            toLlmCall(request.getTurns(0).getLlmCall(), conversationTurn.getId(), request.getUserId()));
-        if (conversationLlmCall == null)
-            throw new IllegalStateException("LLM call insert returned no row.");
-
-        int messageOrder = 0;
-        for (LlmConversationMessage llmConversationMessage :
-            request.getTurns(0).getLlmCall().getRequest().getMessagesList())
+        if (request.getTurnsCount() == 1)
         {
-            conversationLlmRequestMessageMapper.insertRequestMessage(toRequestMessage(
-                llmConversationMessage, conversationLlmCall.getId(), messageOrder++, request.getUserId()));
+            ifl.agentbreaker.conversationmanager.domain.entities.pg.ConversationTurn conversationTurn =
+                conversationTurnMapper.insertTurn(toTurn(
+                    request.getTurns(0), savedRound.getId(), request.getUserId()));
+            if (conversationTurn == null)
+                throw new IllegalStateException("Turn insert returned no row.");
+
+            ConversationLlmCall conversationLlmCall = conversationLlmCallMapper.insertLlmCall(
+                toLlmCall(request.getTurns(0).getLlmCall(), conversationTurn.getId(), request.getUserId()));
+            if (conversationLlmCall == null)
+                throw new IllegalStateException("LLM call insert returned no row.");
+
+            // TODO: Replace repeated cross-Round FULL_SNAPSHOT rows with context_id plus the current
+            // Round delta when the deferred Context checkpoint/compaction model is designed.
+            int messageOrder = 0;
+            for (LlmConversationMessage llmConversationMessage :
+                request.getTurns(0).getLlmCall().getRequest().getMessagesList())
+            {
+                conversationLlmRequestMessageMapper.insertRequestMessage(toRequestMessage(
+                    llmConversationMessage, conversationLlmCall.getId(), messageOrder++, request.getUserId()));
+            }
         }
 
         if (conversationMapper.advanceLatestRoundNumber(request.getConversationId(), request.getUserId(),
@@ -132,10 +137,17 @@ public class ConversationRoundPersistenceService
         conversationRound.setConversationId(request.getConversationId());
         conversationRound.setRoundNumber(request.getRoundNumber());
         conversationRound.setUserRequestContent(request.getUserRequest().getContent());
-        conversationRound.setFinalAnswerContent(request.getFinalAnswer().getContent());
-        conversationRound.setFinalSourceTurnNumber(request.getFinalAnswer().getSourceTurnNumber());
-        conversationRound.setStatus(ConversationRoundStatus.COMPLETED);
-        conversationRound.setErrorMessage("");
+        conversationRound.setFinalAnswerContent(request.hasFinalAnswer() ? request.getFinalAnswer().getContent() : null);
+        conversationRound.setFinalSourceTurnNumber(
+            request.hasFinalAnswer() ? request.getFinalAnswer().getSourceTurnNumber() : null);
+        conversationRound.setStatus(switch (request.getStatus())
+        {
+            case ROUND_STATUS_COMPLETED -> ConversationRoundStatus.COMPLETED;
+            case ROUND_STATUS_FAILED -> ConversationRoundStatus.FAILED;
+            case ROUND_STATUS_CANCELLED -> ConversationRoundStatus.CANCELLED;
+            default -> throw new IllegalArgumentException("Unsupported round status.");
+        });
+        conversationRound.setErrorMessage(request.getErrorMessage());
         conversationRound.setStartTime(new Date(request.getStartTime()));
         conversationRound.setEndTime(new Date(request.getEndTime()));
         conversationRound.setPayloadHashVersion(ConversationRoundPayloadHasher.CURRENT_VERSION);
