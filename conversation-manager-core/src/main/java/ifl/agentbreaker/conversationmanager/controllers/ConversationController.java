@@ -1,12 +1,15 @@
 package ifl.agentbreaker.conversationmanager.controllers;
 
+import ifl.agentbreaker.authcenter.session.UserContextService;
 import ifl.agentbreaker.conversationmanager.api.dto.responses.ConversationAbstract;
 import ifl.agentbreaker.conversationmanager.api.dto.responses.ConversationMessageHistory;
 import ifl.agentbreaker.conversationmanager.api.dto.requests.DeleteMessagesRequest;
 import ifl.agentbreaker.conversationmanager.api.dto.requests.UpdateTitleRequest;
 import ifl.agentbreaker.conversationmanager.domain.dtos.requests.*;
 import ifl.agentbreaker.conversationmanager.domain.dtos.responses.ConversationSharingResult;
+import ifl.agentbreaker.conversationmanager.domain.dtos.responses.RoundHistoryView;
 import ifl.agentbreaker.conversationmanager.services.ConversationService;
+import ifl.agentbreaker.conversationmanager.services.round.ConversationRoundQueryService;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
 import lombok.extern.slf4j.Slf4j;
@@ -24,6 +27,9 @@ public class ConversationController
 {
     @Autowired
     private ConversationService conversationService;
+
+    @Autowired
+    private ConversationRoundQueryService conversationRoundQueryService;
 
     @PostMapping("/new")
     public ServiceResponse<ConversationAbstract> createConversation()
@@ -47,6 +53,12 @@ public class ConversationController
     public ServiceResponse<ConversationMessageHistory> getConversationMessages(@PathVariable String conversationId)
     {
         return conversationService.getConversationMessageHistory(conversationId);
+    }
+
+    @GetMapping("/{conversationId}/rounds")
+    public ServiceResponse<RoundHistoryView> getConversationRounds(@PathVariable String conversationId)
+    {
+        return conversationRoundQueryService.getHttpHistory(UserContextService.getCurrentUserId(), conversationId);
     }
 
     @PutMapping("/title")

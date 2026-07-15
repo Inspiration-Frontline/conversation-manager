@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="ifl.agentbreaker.conversationmanager.dao.ConversationTurnMapper">
+    <resultMap id="TurnResultMap" type="ifl.agentbreaker.conversationmanager.domain.entities.pg.ConversationTurn">
+        <id column="id" property="id"/>
+        <result column="creator_id" property="creatorId"/>
+        <result column="creation_time" property="creationTime"/>
+        <result column="modifier_id" property="modifierId"/>
+        <result column="modification_time" property="modificationTime"/>
+        <result column="round_id" property="roundId"/>
+        <result column="turn_number" property="turnNumber"/>
+        <result column="agent_id" property="agentId"/>
+        <result column="agent_name" property="agentName"/>
+        <result column="agent_version" property="agentVersion"/>
+        <result column="status" property="status"/>
+        <result column="error_message" property="errorMessage"/>
+        <result column="start_time" property="startTime"/>
+        <result column="end_time" property="endTime"/>
+    </resultMap>
+
+    <select id="insertTurn" resultMap="TurnResultMap" affectData="true">
+        INSERT INTO "conversation_turn" (
+            "creator_id", "modifier_id", "round_id", "turn_number", "agent_id", "agent_name",
+            "agent_version", "status", "error_message", "start_time", "end_time"
+        ) VALUES (
+            #{creatorId}, #{modifierId}, #{roundId}, #{turnNumber}, #{agentId}, #{agentName},
+            #{agentVersion}, #{status}, #{errorMessage}, #{startTime}, #{endTime}
+        )
+        RETURNING *
+    </select>
+</mapper>

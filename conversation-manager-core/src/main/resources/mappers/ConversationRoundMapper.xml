@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="ifl.agentbreaker.conversationmanager.dao.ConversationRoundMapper">
+    <resultMap id="RoundResultMap" type="ifl.agentbreaker.conversationmanager.domain.entities.pg.ConversationRound">
+        <id column="id" property="id"/>
+        <result column="creator_id" property="creatorId"/>
+        <result column="creation_time" property="creationTime"/>
+        <result column="modifier_id" property="modifierId"/>
+        <result column="modification_time" property="modificationTime"/>
+        <result column="conversation_id" property="conversationId"/>
+        <result column="round_number" property="roundNumber"/>
+        <result column="user_request_content" property="userRequestContent"/>
+        <result column="user_request_content_parts" property="userRequestContentParts"/>
+        <result column="final_answer_content" property="finalAnswerContent"/>
+        <result column="final_answer_content_parts" property="finalAnswerContentParts"/>
+        <result column="final_source_turn_number" property="finalSourceTurnNumber"/>
+        <result column="status" property="status"/>
+        <result column="error_message" property="errorMessage"/>
+        <result column="start_time" property="startTime"/>
+        <result column="end_time" property="endTime"/>
+        <result column="payload_hash_version" property="payloadHashVersion"/>
+        <result column="payload_hash" property="payloadHash"/>
+        <result column="deleted" property="deleted"/>
+        <result column="deletion_time" property="deletionTime"/>
+        <result column="deleted_by" property="deletedBy"/>
+    </resultMap>
+
+    <sql id="RoundColumns">
+        "id", "creator_id", "creation_time", "modifier_id", "modification_time",
+        "conversation_id", "round_number", "user_request_content", "user_request_content_parts",
+        "final_answer_content", "final_answer_content_parts", "final_source_turn_number", "status",
+        "error_message", "start_time", "end_time", "payload_hash_version", "payload_hash", "deleted",
+        "deletion_time", "deleted_by"
+    </sql>
+
+    <select id="insertRound" resultMap="RoundResultMap" affectData="true">
+        INSERT INTO "conversation_round" (
+            "creator_id", "modifier_id", "conversation_id", "round_number", "user_request_content",
+            "user_request_content_parts", "final_answer_content", "final_answer_content_parts",
+            "final_source_turn_number", "status", "error_message", "start_time", "end_time",
+            "payload_hash_version", "payload_hash", "deleted"
+        ) VALUES (
+            #{creatorId}, #{modifierId}, #{conversationId}, #{roundNumber}, #{userRequestContent},
+            CAST(#{userRequestContentParts} AS JSONB), #{finalAnswerContent},
+            CAST(#{finalAnswerContentParts} AS JSONB), #{finalSourceTurnNumber}, #{status}, #{errorMessage},
+            #{startTime}, #{endTime}, #{payloadHashVersion}, #{payloadHash}, #{deleted}
+        )
+        RETURNING <include refid="RoundColumns"/>
+    </select>
+
+    <select id="getRound" resultMap="RoundResultMap">
+        SELECT <include refid="RoundColumns"/>
+        FROM "conversation_round"
+        WHERE "conversation_id" = #{conversationId}
+          AND "round_number" = #{roundNumber}
+    </select>
+
+    <select id="listActiveRounds" resultMap="RoundResultMap">
+        SELECT <include refid="RoundColumns"/>
+        FROM "conversation_round"
+        WHERE "conversation_id" = #{conversationId}
+          AND "deleted" = FALSE
+        ORDER BY "round_number" ASC
+    </select>
+
+    <select id="countTurns" resultType="long">
+        SELECT COUNT(1)
+        FROM "conversation_turn"
+        WHERE "round_id" = #{roundId}
+    </select>
+</mapper>

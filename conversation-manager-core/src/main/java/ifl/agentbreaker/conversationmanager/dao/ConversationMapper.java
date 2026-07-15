@@ -16,6 +16,11 @@ public interface ConversationMapper
 
     Conversation getConversationByIdAndUser(@Param("conversationId") String conversationId, @Param("userId") long userId);
 
+    Long getLatestRoundNumberByIdAndUser(@Param("conversationId") String conversationId,
+                                         @Param("userId") long userId);
+
+    Conversation lockConversationByIdAndUser(@Param("conversationId") String conversationId, @Param("userId") long userId);
+
     boolean existsByIdAndUser(@Param("conversationId") String conversationId, @Param("userId") long userId);
 
     List<Conversation> listConversations(@Param("userId") long userId, @Param("keyword") String keyword, @Param("limit") int limit, @Param("offset") int offset);
@@ -37,4 +42,8 @@ public interface ConversationMapper
     int clearConversationPinnedByIds(@Param("userId") long userId, @Param("conversationIds") Collection<String> conversationIds);
 
     int clearConversationPinned(@Param("userId") long userId);
+
+    int advanceLatestRoundNumber(@Param("conversationId") String conversationId,
+                                 @Param("userId") long userId,
+                                 @Param("roundNumber") long roundNumber);
 }

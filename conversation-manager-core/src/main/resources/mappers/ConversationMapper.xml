@@ -48,6 +48,23 @@
           AND "deleted" = FALSE
     </select>
 
+    <select id="getLatestRoundNumberByIdAndUser" resultType="java.lang.Long">
+        SELECT "latest_round_number"
+        FROM "conversation"
+        WHERE "conversation_id" = #{conversationId}
+          AND "creator_id" = #{userId}
+          AND "deleted" = FALSE
+    </select>
+
+    <select id="lockConversationByIdAndUser" resultMap="ConversationResultMap">
+        SELECT <include refid="ConversationColumns"/>
+        FROM "conversation"
+        WHERE "conversation_id" = #{conversationId}
+          AND "creator_id" = #{userId}
+          AND "deleted" = FALSE
+        FOR UPDATE
+    </select>
+
     <select id="existsByIdAndUser" resultType="boolean">
         SELECT EXISTS (
             SELECT 1
@@ -214,5 +231,15 @@
         WHERE "creator_id" = #{userId}
           AND "deleted" = FALSE
           AND "pinned" = TRUE
+    </update>
+
+    <update id="advanceLatestRoundNumber">
+        UPDATE "conversation"
+        SET "latest_round_number" = #{roundNumber},
+            "modifier_id" = #{userId}
+        WHERE "conversation_id" = #{conversationId}
+          AND "creator_id" = #{userId}
+          AND "deleted" = FALSE
+          AND "latest_round_number" = #{roundNumber} - 1
     </update>
 </mapper>

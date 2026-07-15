@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="ifl.agentbreaker.conversationmanager.dao.ConversationLlmCallMapper">
+    <resultMap id="LlmCallResultMap" type="ifl.agentbreaker.conversationmanager.domain.entities.pg.ConversationLlmCall">
+        <id column="id" property="id"/>
+        <result column="creator_id" property="creatorId"/>
+        <result column="creation_time" property="creationTime"/>
+        <result column="modifier_id" property="modifierId"/>
+        <result column="modification_time" property="modificationTime"/>
+        <result column="turn_id" property="turnId"/>
+        <result column="provider" property="provider"/>
+        <result column="model" property="model"/>
+        <result column="request_id" property="requestId"/>
+        <result column="trace_id" property="traceId"/>
+        <result column="message_storage_mode" property="messageStorageMode"/>
+        <result column="tool_choice_present" property="toolChoicePresent"/>
+        <result column="tool_choice_mode" property="toolChoiceMode"/>
+        <result column="tool_choice_name" property="toolChoiceName"/>
+        <result column="response_format" property="responseFormat"/>
+        <result column="temperature" property="temperature"/>
+        <result column="max_output_tokens" property="maxOutputTokens"/>
+        <result column="raw_request" property="rawRequest"/>
+        <result column="start_time" property="startTime"/>
+        <result column="end_time" property="endTime"/>
+        <result column="response_message_present" property="responseMessagePresent"/>
+        <result column="response_content" property="responseContent"/>
+        <result column="response_content_parts" property="responseContentParts"/>
+        <result column="finish_reason" property="finishReason"/>
+        <result column="usage_present" property="usagePresent"/>
+        <result column="prompt_tokens" property="promptTokens"/>
+        <result column="completion_tokens" property="completionTokens"/>
+        <result column="total_tokens" property="totalTokens"/>
+        <result column="cached_prompt_tokens" property="cachedPromptTokens"/>
+        <result column="reasoning_tokens" property="reasoningTokens"/>
+        <result column="raw_response" property="rawResponse"/>
+        <result column="response_error_message" property="responseErrorMessage"/>
+        <result column="reasoning_content" property="reasoningContent"/>
+    </resultMap>
+
+    <select id="insertLlmCall" resultMap="LlmCallResultMap" affectData="true">
+        INSERT INTO "conversation_llm_call" (
+            "creator_id", "modifier_id", "turn_id", "provider", "model", "request_id", "trace_id",
+            "message_storage_mode", "tool_choice_present", "tool_choice_mode", "tool_choice_name",
+            "response_format", "temperature", "max_output_tokens", "raw_request", "start_time", "end_time",
+            "response_message_present", "response_content", "response_content_parts", "finish_reason",
+            "usage_present", "prompt_tokens", "completion_tokens", "total_tokens", "cached_prompt_tokens",
+            "reasoning_tokens", "raw_response", "response_error_message", "reasoning_content"
+        ) VALUES (
+            #{creatorId}, #{modifierId}, #{turnId}, #{provider}, #{model}, #{requestId}, #{traceId},
+            #{messageStorageMode}, #{toolChoicePresent}, #{toolChoiceMode}, #{toolChoiceName},
+            #{responseFormat}, #{temperature}, #{maxOutputTokens}, #{rawRequest}, #{startTime}, #{endTime},
+            #{responseMessagePresent}, #{responseContent}, CAST(#{responseContentParts} AS JSONB), #{finishReason},
+            #{usagePresent}, #{promptTokens}, #{completionTokens}, #{totalTokens}, #{cachedPromptTokens},
+            #{reasoningTokens}, #{rawResponse}, #{responseErrorMessage}, #{reasoningContent}
+        )
+        RETURNING *
+    </select>
+</mapper>
