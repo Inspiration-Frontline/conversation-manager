@@ -34,4 +34,15 @@
         WHERE "llm_call_id" = #{llmCallId}
         ORDER BY "message_order" ASC
     </select>
+
+    <select id="listRequestMessagesForRound" resultMap="RequestMessageResultMap">
+        SELECT message."id", message."creator_id", message."creation_time", message."modifier_id",
+               message."modification_time", message."llm_call_id", message."message_order", message."role",
+               message."content", message."content_parts", message."tool_call_id"
+        FROM "conversation_llm_request_message" message
+        JOIN "conversation_llm_call" call ON call."id" = message."llm_call_id"
+        JOIN "conversation_turn" turn ON turn."id" = call."turn_id"
+        WHERE turn."round_id" = #{roundId}
+        ORDER BY turn."turn_number", message."message_order"
+    </select>
 </mapper>

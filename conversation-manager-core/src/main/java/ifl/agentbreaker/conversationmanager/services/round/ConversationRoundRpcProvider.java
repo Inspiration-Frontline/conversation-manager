@@ -4,7 +4,30 @@ import ifl.agentbreaker.commons.api.dto.ResponseBase;
 import ifl.agentbreaker.conversationmanager.domain.dtos.responses.ConversationRoundHistoryResult;
 import ifl.agentbreaker.conversationmanager.domain.dtos.responses.ConversationReplayResult;
 import ifl.agentbreaker.conversationmanager.domain.entities.pg.ConversationRound;
-import ifl.agentbreaker.conversationmanager.rpc.*;
+import ifl.agentbreaker.conversationmanager.rpc.AssistantAnswer;
+import ifl.agentbreaker.conversationmanager.rpc.ConversationAbstract;
+import ifl.agentbreaker.conversationmanager.rpc.ConversationErrorCode;
+import ifl.agentbreaker.conversationmanager.rpc.ConversationReplay;
+import ifl.agentbreaker.conversationmanager.rpc.ConversationRoundHistory;
+import ifl.agentbreaker.conversationmanager.rpc.ConversationRoundSummary;
+import ifl.agentbreaker.conversationmanager.rpc.ConversationRpcService;
+import ifl.agentbreaker.conversationmanager.rpc.ConversationTurnHistory;
+import ifl.agentbreaker.conversationmanager.rpc.CreateConversationRequest;
+import ifl.agentbreaker.conversationmanager.rpc.CreateConversationResponse;
+import ifl.agentbreaker.conversationmanager.rpc.DeleteRoundsRequest;
+import ifl.agentbreaker.conversationmanager.rpc.DeleteRoundsResponse;
+import ifl.agentbreaker.conversationmanager.rpc.DeleteRoundsResult;
+import ifl.agentbreaker.conversationmanager.rpc.GetConversationReplayRequest;
+import ifl.agentbreaker.conversationmanager.rpc.GetConversationReplayResponse;
+import ifl.agentbreaker.conversationmanager.rpc.GetConversationRoundHistoryRequest;
+import ifl.agentbreaker.conversationmanager.rpc.GetConversationRoundHistoryResponse;
+import ifl.agentbreaker.conversationmanager.rpc.GetConversationTurnHistoryRequest;
+import ifl.agentbreaker.conversationmanager.rpc.GetConversationTurnHistoryResponse;
+import ifl.agentbreaker.conversationmanager.rpc.ReplayDetailLevel;
+import ifl.agentbreaker.conversationmanager.rpc.RoundStatus;
+import ifl.agentbreaker.conversationmanager.rpc.SaveConversationRoundRequest;
+import ifl.agentbreaker.conversationmanager.rpc.SaveConversationRoundResponse;
+import ifl.agentbreaker.conversationmanager.rpc.UserRequest;
 import org.apache.dubbo.config.annotation.DubboService;
 import org.springframework.beans.factory.annotation.Autowired;
 
@@ -21,7 +44,7 @@ public class ConversationRoundRpcProvider implements ConversationRpcService
     {
         return CreateConversationResponse.newBuilder()
             .setBase(errorBase(ConversationErrorCode.CONVERSATION_ERROR_CODE_INVALID_REQUEST_VALUE,
-                "CreateConversation is not exposed by the Phase 3 provider."))
+                "CreateConversation is not exposed by this Round persistence provider."))
             .setData(ConversationAbstract.getDefaultInstance())
             .build();
     }
@@ -94,7 +117,7 @@ public class ConversationRoundRpcProvider implements ConversationRpcService
     {
         return GetConversationTurnHistoryResponse.newBuilder()
             .setBase(errorBase(ConversationErrorCode.CONVERSATION_ERROR_CODE_INVALID_REQUEST_VALUE,
-                "Turn history is not exposed in Phase 3."))
+                "FULL_TURNS history is not implemented yet."))
             .setData(ConversationTurnHistory.getDefaultInstance())
             .build();
     }
@@ -114,11 +137,7 @@ public class ConversationRoundRpcProvider implements ConversationRpcService
             if (request.getDetailLevel() != ReplayDetailLevel.REPLAY_DETAIL_LEVEL_MODEL_CONTEXT)
                 throw new RoundPersistenceException(
                     ConversationErrorCode.CONVERSATION_ERROR_CODE_INVALID_REQUEST_VALUE,
-                    "Phase 4 supports MODEL_CONTEXT replay only.");
-            if (request.hasEndTurnNumber() && request.getEndTurnNumber() != 1)
-                throw new RoundPersistenceException(
-                    ConversationErrorCode.CONVERSATION_ERROR_CODE_INVALID_REQUEST_VALUE,
-                    "The current one-turn runtime supports only end_turn_number 1.");
+                    "Only MODEL_CONTEXT replay is implemented.");
             ConversationReplayResult conversationReplayResult = conversationRoundService.getModelContext(
                 request.getUserId(), request.getConversationId(), request.getEndRoundNumber());
             return GetConversationReplayResponse.newBuilder()
@@ -149,7 +168,7 @@ public class ConversationRoundRpcProvider implements ConversationRpcService
     {
         return DeleteRoundsResponse.newBuilder()
             .setBase(errorBase(ConversationErrorCode.CONVERSATION_ERROR_CODE_INVALID_REQUEST_VALUE,
-                "Round deletion is not exposed in Phase 3."))
+                "Round deletion is not implemented yet."))
             .setData(DeleteRoundsResult.getDefaultInstance())
             .build();
     }

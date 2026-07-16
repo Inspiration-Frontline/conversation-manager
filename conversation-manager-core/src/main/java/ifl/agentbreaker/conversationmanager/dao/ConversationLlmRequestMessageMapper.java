@@ -12,4 +12,6 @@ public interface ConversationLlmRequestMessageMapper
     ConversationLlmRequestMessage insertRequestMessage(ConversationLlmRequestMessage message);
 
     List<ConversationLlmRequestMessage> listRequestMessages(@Param("llmCallId") long llmCallId);
+
+    List<ConversationLlmRequestMessage> listRequestMessagesForRound(@Param("roundId") long roundId);
 }

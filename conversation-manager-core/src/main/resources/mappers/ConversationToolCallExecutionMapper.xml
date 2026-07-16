@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="ifl.agentbreaker.conversationmanager.dao.ConversationToolCallExecutionMapper">
+    <resultMap id="ToolCallExecutionResultMap" type="ifl.agentbreaker.conversationmanager.domain.entities.pg.ConversationToolCallExecution">
+        <id column="id" property="id"/>
+        <result column="creator_id" property="creatorId"/>
+        <result column="creation_time" property="creationTime"/>
+        <result column="modifier_id" property="modifierId"/>
+        <result column="modification_time" property="modificationTime"/>
+        <result column="turn_id" property="turnId"/>
+        <result column="response_tool_call_id" property="responseToolCallId"/>
+        <result column="execution_order" property="executionOrder"/>
+        <result column="tool_key" property="toolKey"/>
+        <result column="status" property="status"/>
+        <result column="result_content" property="resultContent"/>
+        <result column="result_content_parts" property="resultContentParts"/>
+        <result column="raw_result" property="rawResult"/>
+        <result column="error_message" property="errorMessage"/>
+        <result column="start_time" property="startTime"/>
+        <result column="end_time" property="endTime"/>
+    </resultMap>
+
+    <select id="insertToolCallExecution" resultMap="ToolCallExecutionResultMap" affectData="true">
+        INSERT INTO "conversation_tool_call_execution" (
+            "creator_id", "modifier_id", "turn_id", "response_tool_call_id", "execution_order",
+            "tool_key", "status", "result_content", "result_content_parts", "raw_result",
+            "error_message", "start_time", "end_time"
+        ) VALUES (
+            #{creatorId}, #{modifierId}, #{turnId}, #{responseToolCallId}, #{executionOrder},
+            #{toolKey}, #{status}, #{resultContent}, CAST(#{resultContentParts} AS JSONB), #{rawResult},
+            #{errorMessage}, #{startTime}, #{endTime}
+        )
+        RETURNING "id", "creator_id", "creation_time", "modifier_id", "modification_time", "turn_id",
+                  "response_tool_call_id", "execution_order", "tool_key", "status", "result_content",
+                  "result_content_parts", "raw_result", "error_message", "start_time", "end_time"
+    </select>
+</mapper>

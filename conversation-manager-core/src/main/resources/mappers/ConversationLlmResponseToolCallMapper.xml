@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="ifl.agentbreaker.conversationmanager.dao.ConversationLlmResponseToolCallMapper">
+    <resultMap id="ResponseToolCallResultMap" type="ifl.agentbreaker.conversationmanager.domain.entities.pg.ConversationLlmResponseToolCall">
+        <id column="id" property="id"/>
+        <result column="creator_id" property="creatorId"/>
+        <result column="creation_time" property="creationTime"/>
+        <result column="modifier_id" property="modifierId"/>
+        <result column="modification_time" property="modificationTime"/>
+        <result column="turn_id" property="turnId"/>
+        <result column="llm_call_id" property="llmCallId"/>
+        <result column="call_order" property="callOrder"/>
+        <result column="tool_call_id" property="toolCallId"/>
+        <result column="type" property="type"/>
+        <result column="function_name" property="functionName"/>
+        <result column="arguments" property="arguments"/>
+    </resultMap>
+
+    <select id="insertResponseToolCall" resultMap="ResponseToolCallResultMap" affectData="true">
+        INSERT INTO "conversation_llm_response_tool_call" (
+            "creator_id", "modifier_id", "turn_id", "llm_call_id", "call_order", "tool_call_id",
+            "type", "function_name", "arguments"
+        ) VALUES (
+            #{creatorId}, #{modifierId}, #{turnId}, #{llmCallId}, #{callOrder}, #{toolCallId},
+            #{type}, #{functionName}, #{arguments}
+        )
+        RETURNING "id", "creator_id", "creation_time", "modifier_id", "modification_time", "turn_id",
+                  "llm_call_id", "call_order", "tool_call_id", "type", "function_name", "arguments"
+    </select>
+</mapper>

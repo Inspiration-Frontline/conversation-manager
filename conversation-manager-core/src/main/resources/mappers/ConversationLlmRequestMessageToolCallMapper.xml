@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="ifl.agentbreaker.conversationmanager.dao.ConversationLlmRequestMessageToolCallMapper">
+    <resultMap id="RequestMessageToolCallResultMap" type="ifl.agentbreaker.conversationmanager.domain.entities.pg.ConversationLlmRequestMessageToolCall">
+        <id column="id" property="id"/>
+        <result column="creator_id" property="creatorId"/>
+        <result column="creation_time" property="creationTime"/>
+        <result column="modifier_id" property="modifierId"/>
+        <result column="modification_time" property="modificationTime"/>
+        <result column="request_message_id" property="requestMessageId"/>
+        <result column="call_order" property="callOrder"/>
+        <result column="tool_call_id" property="toolCallId"/>
+        <result column="type" property="type"/>
+        <result column="function_name" property="functionName"/>
+        <result column="arguments" property="arguments"/>
+    </resultMap>
+
+    <select id="insertRequestMessageToolCall" resultMap="RequestMessageToolCallResultMap" affectData="true">
+        INSERT INTO "conversation_llm_request_message_tool_call" (
+            "creator_id", "modifier_id", "request_message_id", "call_order", "tool_call_id",
+            "type", "function_name", "arguments"
+        ) VALUES (
+            #{creatorId}, #{modifierId}, #{requestMessageId}, #{callOrder}, #{toolCallId},
+            #{type}, #{functionName}, #{arguments}
+        )
+        RETURNING "id", "creator_id", "creation_time", "modifier_id", "modification_time",
+                  "request_message_id", "call_order", "tool_call_id", "type", "function_name", "arguments"
+    </select>
+
+    <select id="listRequestMessageToolCallsForRound" resultMap="RequestMessageToolCallResultMap">
+        SELECT tc."id", tc."creator_id", tc."creation_time", tc."modifier_id", tc."modification_time",
+               tc."request_message_id", tc."call_order", tc."tool_call_id", tc."type",
+               tc."function_name", tc."arguments"
+        FROM "conversation_llm_request_message_tool_call" tc
+        JOIN "conversation_llm_request_message" message ON message."id" = tc."request_message_id"
+        JOIN "conversation_llm_call" call ON call."id" = message."llm_call_id"
+        JOIN "conversation_turn" turn ON turn."id" = call."turn_id"
+        WHERE turn."round_id" = #{roundId}
+        ORDER BY turn."turn_number", message."message_order", tc."call_order"
+    </select>
+</mapper>
