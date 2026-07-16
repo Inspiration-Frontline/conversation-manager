@@ -23,11 +23,13 @@
             #{creatorId}, #{modifierId}, #{llmCallId}, #{messageOrder}, #{role}, #{content},
             CAST(#{contentParts} AS JSONB), #{toolCallId}
         )
-        RETURNING *
+        RETURNING "id", "creator_id", "creation_time", "modifier_id", "modification_time", "llm_call_id",
+                  "message_order", "role", "content", "content_parts", "tool_call_id"
     </select>
 
     <select id="listRequestMessages" resultMap="RequestMessageResultMap">
-        SELECT *
+        SELECT "id", "creator_id", "creation_time", "modifier_id", "modification_time", "llm_call_id",
+               "message_order", "role", "content", "content_parts", "tool_call_id"
         FROM "conversation_llm_request_message"
         WHERE "llm_call_id" = #{llmCallId}
         ORDER BY "message_order" ASC

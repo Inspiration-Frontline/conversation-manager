@@ -10,14 +10,11 @@ import org.springframework.beans.factory.annotation.Autowired;
 
 import java.util.concurrent.CompletableFuture;
 
-@DubboService(interfaceClass = ConversationRpcService.class)
+@DubboService
 public class ConversationRoundRpcProvider implements ConversationRpcService
 {
     @Autowired
-    private ConversationRoundPersistenceService conversationRoundPersistenceService;
-
-    @Autowired
-    private ConversationRoundQueryService conversationRoundQueryService;
+    private ConversationRoundService conversationRoundService;
 
     @Override
     public CreateConversationResponse createConversation(CreateConversationRequest request)
@@ -40,7 +37,7 @@ public class ConversationRoundRpcProvider implements ConversationRpcService
     {
         try
         {
-            SaveConversationRoundRequest savedRequest = conversationRoundPersistenceService.save(request);
+            SaveConversationRoundRequest savedRequest = conversationRoundService.save(request);
             return SaveConversationRoundResponse.newBuilder()
                 .setBase(successBase())
                 .setData(toProtoRound(savedRequest))
@@ -67,7 +64,7 @@ public class ConversationRoundRpcProvider implements ConversationRpcService
     {
         try
         {
-            ConversationRoundHistoryResult conversationRoundHistoryResult = conversationRoundQueryService.getHistory(
+            ConversationRoundHistoryResult conversationRoundHistoryResult = conversationRoundService.getHistory(
                 request.getUserId(), request.getConversationId());
             ConversationRoundHistory.Builder data = ConversationRoundHistory.newBuilder()
                 .setConversationId(request.getConversationId())
@@ -122,7 +119,7 @@ public class ConversationRoundRpcProvider implements ConversationRpcService
                 throw new RoundPersistenceException(
                     ConversationErrorCode.CONVERSATION_ERROR_CODE_INVALID_REQUEST_VALUE,
                     "The current one-turn runtime supports only end_turn_number 1.");
-            ConversationReplayResult conversationReplayResult = conversationRoundQueryService.getModelContext(
+            ConversationReplayResult conversationReplayResult = conversationRoundService.getModelContext(
                 request.getUserId(), request.getConversationId(), request.getEndRoundNumber());
             return GetConversationReplayResponse.newBuilder()
                 .setBase(successBase())
@@ -193,7 +190,7 @@ public class ConversationRoundRpcProvider implements ConversationRpcService
                 case FAILED -> RoundStatus.ROUND_STATUS_FAILED;
                 case CANCELLED -> RoundStatus.ROUND_STATUS_CANCELLED;
             })
-            .setTurnCount(conversationRoundQueryService.getTurnCount(round.getId()))
+        .setTurnCount(round.getTurnCount())
             .setErrorMessage(round.getErrorMessage())
             .setStartTime(round.getStartTime().getTime())
             .setEndTime(round.getEndTime().getTime());

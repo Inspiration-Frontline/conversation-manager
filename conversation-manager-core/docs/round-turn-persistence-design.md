@@ -445,7 +445,7 @@ Mapper containing unrelated CRUD.
 Recommended service split:
 
 - `ConversationRoundCommandService`: create/save validation and transaction orchestration.
-- `ConversationRoundQueryService`: history and replay reads.
+- `ConversationRoundService`: Round persistence, history, and replay reads.
 - `ConversationRoundDeletionService`: lock-held suffix orchestration.
 - `ConversationRoundDeletionTransaction`: one `REQUIRES_NEW` tombstone operation.
 - `ConversationMutationLock`: Redis token/lease lifecycle.

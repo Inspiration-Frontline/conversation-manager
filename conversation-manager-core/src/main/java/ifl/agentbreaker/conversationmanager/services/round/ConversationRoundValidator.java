@@ -7,6 +7,7 @@ import org.springframework.util.StringUtils;
 @Component
 public class ConversationRoundValidator
 {
+    // TODO: Rename to validate() once the remaining Round/Turn phases share this contract.
     public void validatePhaseFour(SaveConversationRoundRequest request)
     {
         require(request.getUserId() > 0, "user_id must be positive.");

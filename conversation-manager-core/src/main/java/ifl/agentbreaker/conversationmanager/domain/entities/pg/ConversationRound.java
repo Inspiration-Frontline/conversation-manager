@@ -92,4 +92,9 @@ public class ConversationRound extends EntityBase
      * ID of the user who logically deleted the Round.
      */
     private Long deletedBy;
+
+    /**
+     * Number of persisted Turns, populated by history projections.
+     */
+    private long turnCount;
 }

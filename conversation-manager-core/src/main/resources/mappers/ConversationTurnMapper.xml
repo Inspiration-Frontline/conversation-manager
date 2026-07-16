@@ -26,11 +26,15 @@
             #{creatorId}, #{modifierId}, #{roundId}, #{turnNumber}, #{agentId}, #{agentName},
             #{agentVersion}, #{status}, #{errorMessage}, #{startTime}, #{endTime}
         )
-        RETURNING *
+        RETURNING "id", "creator_id", "creation_time", "modifier_id", "modification_time", "round_id",
+                  "turn_number", "agent_id", "agent_name", "agent_version", "status", "error_message",
+                  "start_time", "end_time"
     </select>
 
     <select id="getCompletedTurn" resultMap="TurnResultMap">
-        SELECT *
+        SELECT "id", "creator_id", "creation_time", "modifier_id", "modification_time", "round_id",
+               "turn_number", "agent_id", "agent_name", "agent_version", "status", "error_message",
+               "start_time", "end_time"
         FROM "conversation_turn"
         WHERE "round_id" = #{roundId}
           AND "turn_number" = #{turnNumber}

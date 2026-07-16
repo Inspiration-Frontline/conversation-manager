@@ -53,10 +53,24 @@
             #{usagePresent}, #{promptTokens}, #{completionTokens}, #{totalTokens}, #{cachedPromptTokens},
             #{reasoningTokens}, #{rawResponse}, #{responseErrorMessage}, #{reasoningContent}
         )
-        RETURNING *
+        RETURNING "id", "creator_id", "creation_time", "modifier_id", "modification_time", "turn_id",
+                  "provider", "model", "request_id", "trace_id", "message_storage_mode", "tool_choice_present",
+                  "tool_choice_mode", "tool_choice_name", "response_format", "temperature", "max_output_tokens",
+                  "raw_request", "start_time", "end_time", "response_message_present", "response_content",
+                  "response_content_parts", "finish_reason", "usage_present", "prompt_tokens", "completion_tokens",
+                  "total_tokens", "cached_prompt_tokens", "reasoning_tokens", "raw_response",
+                  "response_error_message", "reasoning_content"
     </select>
 
     <select id="getLlmCallByTurnId" resultMap="LlmCallResultMap">
-        SELECT * FROM "conversation_llm_call" WHERE "turn_id" = #{turnId}
+        SELECT "id", "creator_id", "creation_time", "modifier_id", "modification_time", "turn_id",
+               "provider", "model", "request_id", "trace_id", "message_storage_mode", "tool_choice_present",
+               "tool_choice_mode", "tool_choice_name", "response_format", "temperature", "max_output_tokens",
+               "raw_request", "start_time", "end_time", "response_message_present", "response_content",
+               "response_content_parts", "finish_reason", "usage_present", "prompt_tokens", "completion_tokens",
+               "total_tokens", "cached_prompt_tokens", "reasoning_tokens", "raw_response",
+               "response_error_message", "reasoning_content"
+        FROM "conversation_llm_call"
+        WHERE "turn_id" = #{turnId}
     </select>
 </mapper>

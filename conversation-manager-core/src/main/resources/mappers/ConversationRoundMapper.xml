@@ -23,6 +23,7 @@
         <result column="deleted" property="deleted"/>
         <result column="deletion_time" property="deletionTime"/>
         <result column="deleted_by" property="deletedBy"/>
+        <result column="turn_count" property="turnCount"/>
     </resultMap>
 
     <sql id="RoundColumns">
@@ -56,11 +57,16 @@
     </select>
 
     <select id="listActiveRounds" resultMap="RoundResultMap">
-        SELECT <include refid="RoundColumns"/>
-        FROM "conversation_round"
-        WHERE "conversation_id" = #{conversationId}
-          AND "deleted" = FALSE
-        ORDER BY "round_number" ASC
+        SELECT <include refid="RoundColumns"/>, COALESCE(turn_counts."turn_count", 0) AS "turn_count"
+        FROM "conversation_round" r
+        LEFT JOIN (
+            SELECT "round_id", COUNT(*) AS "turn_count"
+            FROM "conversation_turn"
+            GROUP BY "round_id"
+        ) turn_counts ON turn_counts."round_id" = r."id"
+        WHERE r."conversation_id" = #{conversationId}
+          AND r."deleted" = FALSE
+        ORDER BY r."round_number" ASC
     </select>
 
     <select id="getLatestCompletedRoundAtOrBefore" resultMap="RoundResultMap">
@@ -74,9 +80,4 @@
         LIMIT 1
     </select>
 
-    <select id="countTurns" resultType="long">
-        SELECT COUNT(1)
-        FROM "conversation_turn"
-        WHERE "round_id" = #{roundId}
-    </select>
 </mapper>
