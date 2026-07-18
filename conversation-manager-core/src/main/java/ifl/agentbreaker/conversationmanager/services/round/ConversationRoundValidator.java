@@ -7,6 +7,7 @@ import ifl.agentbreaker.commons.api.dto.AgentIdentity;
 import ifl.agentbreaker.conversationmanager.rpc.AssistantMessage;
 import ifl.agentbreaker.conversationmanager.rpc.ConversationErrorCode;
 import ifl.agentbreaker.conversationmanager.rpc.ConversationTurn;
+import ifl.agentbreaker.conversationmanager.rpc.ContentPart;
 import ifl.agentbreaker.conversationmanager.rpc.LlmCall;
 import ifl.agentbreaker.conversationmanager.rpc.LlmConversationMessage;
 import ifl.agentbreaker.conversationmanager.rpc.LlmMessageStorageMode;
@@ -44,10 +45,11 @@ public class ConversationRoundValidator
         require(request.getUserId() > 0, "user_id must be positive.");
         require(StringUtils.hasText(request.getConversationId()), "conversation_id is required.");
         require(request.getRoundNumber() > 0, "round_number must be positive.");
-        require(request.hasUserRequest() && StringUtils.hasText(request.getUserRequest().getContent()),
-            "A text user request is required.");
-        require(request.getUserRequest().getContentPartsCount() == 0,
-            "Multimodal user requests are not supported yet.");
+        require(request.hasUserRequest(), "A user request is required.");
+        validateContentPayload(
+            request.getUserRequest().getContent(),
+            request.getUserRequest().getContentPartsList(),
+            "user request");
         require(request.getStatus() != RoundStatus.ROUND_STATUS_UNSPECIFIED,
             "A terminal round status is required.");
         requireTime(request.getStartTime(), request.getEndTime(), "round");
@@ -218,8 +220,6 @@ public class ConversationRoundValidator
         {
             require(message.getRole() != MessageRole.MESSAGE_ROLE_UNSPECIFIED,
                 "Every request message requires a role.");
-            require(message.getContentPartsCount() == 0,
-                "Multimodal LLM request messages are not supported yet.");
             if (message.getRole() == MessageRole.MESSAGE_ROLE_ASSISTANT)
             {
                 for (ToolCall toolCall : message.getToolCallsList())
@@ -228,8 +228,12 @@ public class ConversationRoundValidator
                     require(priorToolCallIds.add(toolCall.getId()),
                         "Historical Tool call IDs must be unique in request order.");
                 }
-                require(StringUtils.hasText(message.getContent()) || message.getToolCallsCount() > 0,
-                    "Assistant messages require text or Tool calls.");
+                require(StringUtils.hasText(message.getContent())
+                        || message.getContentPartsCount() > 0
+                        || message.getToolCallsCount() > 0,
+                    "Assistant messages require content or Tool calls.");
+                if (message.getContentPartsCount() > 0)
+                    validateContentPayload(message.getContent(), message.getContentPartsList(), "Assistant message");
                 require(message.getToolCallId().isEmpty(),
                     "Assistant messages cannot contain tool_call_id.");
             }
@@ -240,12 +244,13 @@ public class ConversationRoundValidator
                 require(priorToolCallIds.contains(message.getToolCallId()),
                     "Tool messages must reference an earlier assistant Tool call.");
                 require(StringUtils.hasText(message.getContent()), "Tool messages require result content.");
+                require(message.getContentPartsCount() == 0, "Tool messages do not support content parts yet.");
             }
             else
             {
                 require(message.getToolCallsCount() == 0 && message.getToolCallId().isEmpty(),
                     "Only assistant and Tool messages may contain Tool metadata.");
-                require(StringUtils.hasText(message.getContent()), "Request messages require text content.");
+                validateContentPayload(message.getContent(), message.getContentPartsList(), "request message");
             }
         }
     }
@@ -325,6 +330,35 @@ public class ConversationRoundValidator
                 && StringUtils.hasText(toolCall.getFunction().getArguments())
                 && isJson(toolCall.getFunction().getArguments()),
             "Tool calls require an ID, type, function name, and JSON arguments.");
+    }
+
+    private void validateContentPayload(String content, List<ContentPart> contentParts, String label)
+    {
+        boolean hasContent = StringUtils.hasText(content);
+        boolean hasContentParts = contentParts != null && !contentParts.isEmpty();
+        require(hasContent != hasContentParts, label + " must contain text or content parts, but not both.");
+        if (!hasContentParts)
+            return;
+
+        for (ContentPart contentPart : contentParts)
+        {
+            require(contentPart.getType().equals("text")
+                    || contentPart.getType().equals("image_url")
+                    || contentPart.getType().equals("file_url"),
+                label + " contains an unsupported content part type.");
+            if (contentPart.getType().equals("text"))
+            {
+                require(StringUtils.hasText(contentPart.getText()) && !contentPart.hasFileUrl(),
+                    label + " text parts require text only.");
+            }
+            else
+            {
+                require(contentPart.getText().isEmpty()
+                        && contentPart.hasFileUrl()
+                        && StringUtils.hasText(contentPart.getFileUrl().getUrl()),
+                    label + " file parts require a file URL only.");
+            }
+        }
     }
 
     private boolean jsonEquals(String first, String second)

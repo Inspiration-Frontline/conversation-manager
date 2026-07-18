@@ -33,6 +33,8 @@ public interface ConversationMapper
 
     int deleteConversationsByGroupId(@Param("groupId") String groupId, @Param("userId") long userId);
 
+    List<String> listConversationIdsByGroupId(@Param("groupId") String groupId, @Param("userId") long userId);
+
     boolean allOwnedConversationsExist(@Param("userId") long userId, @Param("conversationIds") Collection<String> conversationIds);
 
     boolean allOwnedUngroupedConversationsExist(@Param("userId") long userId, @Param("conversationIds") Collection<String> conversationIds);

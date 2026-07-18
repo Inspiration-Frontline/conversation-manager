@@ -4,6 +4,7 @@ import ifl.agentbreaker.authcenter.session.UserContextService;
 import ifl.agentbreaker.conversationmanager.dao.ConversationGroupMapper;
 import ifl.agentbreaker.conversationmanager.dao.ConversationGroupRelationMapper;
 import ifl.agentbreaker.conversationmanager.dao.ConversationMapper;
+import ifl.agentbreaker.conversationmanager.services.files.ConversationFileService;
 import ifl.agentbreaker.conversationmanager.domain.dtos.requests.AddConversationToGroupRequest;
 import ifl.agentbreaker.conversationmanager.domain.dtos.requests.CreateConversationGroupRequest;
 import ifl.agentbreaker.conversationmanager.domain.dtos.requests.DeleteConversationGroupRequest;
@@ -41,6 +42,9 @@ public class ConversationGroupService
 
     @Autowired
     private ConversationMapper conversationMapper;
+
+    @Autowired
+    private ConversationFileService conversationFileService;
 
     @Autowired
     private ConversationGroupMapper conversationGroupMapper;
@@ -123,7 +127,12 @@ public class ConversationGroupService
             return ServiceResponse.buildErrorResponse(ERROR_GROUP_NOT_FOUND, "Conversation group does not exist.");
 
         if (request.isDeleteConversations())
+        {
+            List<String> conversationIds = conversationMapper.listConversationIdsByGroupId(request.getGroupId(), userId);
             conversationMapper.deleteConversationsByGroupId(request.getGroupId(), userId);
+            for (String conversationId : conversationIds)
+                conversationFileService.releaseConversationReferences(conversationId, userId);
+        }
 
         conversationGroupRelationMapper.deleteConversationGroupRelationsByGroupId(request.getGroupId(), userId);
         conversationGroupMapper.deleteConversationGroup(request.getGroupId(), userId);

@@ -1,0 +1,84 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="ifl.agentbreaker.conversationmanager.dao.FileProcessingTaskMapper">
+    <resultMap id="FileProcessingTaskResultMap" type="ifl.agentbreaker.conversationmanager.domain.entities.pg.FileProcessingTask">
+        <id column="id" property="id"/>
+        <result column="creator_id" property="creatorId"/>
+        <result column="modifier_id" property="modifierId"/>
+        <result column="creation_time" property="creationTime"/>
+        <result column="modification_time" property="modificationTime"/>
+        <result column="file_resource_id" property="fileResourceId"/>
+        <result column="status" property="status"/>
+        <result column="attempt" property="attempt"/>
+        <result column="execute_after" property="executeAfter"/>
+        <result column="lease_token" property="leaseToken"/>
+        <result column="lease_until" property="leaseUntil"/>
+        <result column="last_error" property="lastError"/>
+    </resultMap>
+
+    <sql id="FileProcessingTaskColumns">
+        "id", "creator_id", "modifier_id", "creation_time", "modification_time",
+        "file_resource_id", "status", "attempt", "execute_after", "lease_token", "lease_until", "last_error"
+    </sql>
+
+    <insert id="upsertPendingTask">
+        INSERT INTO "file_processing_task" (
+            "creator_id", "modifier_id", "file_resource_id", "status", "execute_after"
+        ) VALUES (#{userId}, #{userId}, #{fileResourceId}, 'PENDING', NOW())
+        ON CONFLICT ("file_resource_id") DO UPDATE
+        SET "status" = 'PENDING',
+            "modifier_id" = EXCLUDED."modifier_id",
+            "execute_after" = NOW(),
+            "lease_token" = NULL,
+            "lease_until" = NULL,
+            "last_error" = ''
+        WHERE "file_processing_task"."status" IN ('FAILED', 'CANCELLED')
+    </insert>
+
+    <select id="claimTasks" resultMap="FileProcessingTaskResultMap" affectData="true">
+        WITH candidates AS (
+            SELECT "id"
+            FROM "file_processing_task"
+            WHERE ("status" = 'PENDING' AND "execute_after" &lt;= NOW())
+               OR ("status" = 'RUNNING' AND "lease_until" &lt; NOW())
+            ORDER BY "execute_after", "id"
+            FOR UPDATE SKIP LOCKED
+            LIMIT #{limit}
+        )
+        UPDATE "file_processing_task" task
+        SET "status" = 'RUNNING',
+            "attempt" = task."attempt" + 1,
+            "lease_token" = #{leaseToken},
+            "lease_until" = NOW() + (#{leaseSeconds} * INTERVAL '1 second'),
+            "modifier_id" = task."creator_id"
+        FROM candidates
+        WHERE task."id" = candidates."id"
+        RETURNING task."id", task."creator_id", task."modifier_id", task."creation_time",
+            task."modification_time", task."file_resource_id", task."status", task."attempt",
+            task."execute_after", task."lease_token", task."lease_until", task."last_error"
+    </select>
+
+    <update id="markCompleted">
+        UPDATE "file_processing_task"
+        SET "status" = 'COMPLETED', "lease_token" = NULL, "lease_until" = NULL, "last_error" = ''
+        WHERE "id" = #{id} AND "status" = 'RUNNING' AND "lease_token" = #{leaseToken}
+    </update>
+
+    <update id="markFailed">
+        UPDATE "file_processing_task"
+        SET "status" = 'FAILED', "lease_token" = NULL, "lease_until" = NULL, "last_error" = #{lastError}
+        WHERE "id" = #{id} AND "status" = 'RUNNING' AND "lease_token" = #{leaseToken}
+    </update>
+
+    <update id="renewLease">
+        UPDATE "file_processing_task"
+        SET "lease_until" = NOW() + (#{leaseSeconds} * INTERVAL '1 second')
+        WHERE "id" = #{id} AND "status" = 'RUNNING' AND "lease_token" = #{leaseToken}
+    </update>
+
+    <update id="cancelByFileResourceId">
+        UPDATE "file_processing_task"
+        SET "status" = 'CANCELLED', "lease_token" = NULL, "lease_until" = NULL
+        WHERE "file_resource_id" = #{fileResourceId} AND "status" IN ('PENDING', 'FAILED')
+    </update>
+</mapper>

@@ -26,4 +26,13 @@ public final class ConversationTitleManager
         String title = normalize(message);
         return title.isEmpty() ? DEFAULT_TITLE : title;
     }
+
+    public static String deriveFromAttachmentFilename(String filename)
+    {
+        String normalized = normalize(filename);
+        int dot = normalized.lastIndexOf('.');
+        if (dot > 0)
+            normalized = normalized.substring(0, dot);
+        return normalized.isEmpty() ? DEFAULT_TITLE : normalized;
+    }
 }

@@ -9,6 +9,7 @@ public final class BusinessIdManager
     private static final String CONVERSATION_PREFIX = "conv";
     private static final String CONVERSATION_GROUP_PREFIX = "group";
     private static final String CONVERSATION_SHARING_PREFIX = "share";
+    private static final String FILE_PREFIX = "file";
 
     private BusinessIdManager()
     {
@@ -27,6 +28,11 @@ public final class BusinessIdManager
     public static String newConversationSharingId()
     {
         return newId(CONVERSATION_SHARING_PREFIX);
+    }
+
+    public static String newFileId()
+    {
+        return newId(FILE_PREFIX);
     }
 
     private static String newId(String prefix)

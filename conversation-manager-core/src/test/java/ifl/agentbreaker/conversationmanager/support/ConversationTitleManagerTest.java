@@ -27,4 +27,11 @@ class ConversationTitleManagerTest
         assertEquals(ConversationTitleManager.DEFAULT_TITLE,
             ConversationTitleManager.deriveFromFirstUserMessage(" \n\t "));
     }
+
+    @Test
+    void attachmentTitleRemovesOnlyTheLastExtension()
+    {
+        assertEquals("quarterly.report",
+            ConversationTitleManager.deriveFromAttachmentFilename("quarterly.report.pdf"));
+    }
 }

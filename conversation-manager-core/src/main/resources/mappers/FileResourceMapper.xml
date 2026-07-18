@@ -1,0 +1,244 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="ifl.agentbreaker.conversationmanager.dao.FileResourceMapper">
+    <resultMap id="FileResourceResultMap" type="ifl.agentbreaker.conversationmanager.domain.entities.pg.FileResource">
+        <id column="id" property="id"/>
+        <result column="creator_id" property="creatorId"/>
+        <result column="modifier_id" property="modifierId"/>
+        <result column="creation_time" property="creationTime"/>
+        <result column="modification_time" property="modificationTime"/>
+        <result column="file_id" property="fileId"/>
+        <result column="kind" property="kind"/>
+        <result column="status" property="status"/>
+        <result column="status_revision" property="statusRevision"/>
+        <result column="bucket_name" property="bucketName"/>
+        <result column="object_key" property="objectKey"/>
+        <result column="original_filename" property="originalFilename"/>
+        <result column="file_extension" property="fileExtension"/>
+        <result column="declared_mime_type" property="declaredMimeType"/>
+        <result column="detected_mime_type" property="detectedMimeType"/>
+        <result column="file_size" property="fileSize"/>
+        <result column="sha256" property="sha256"/>
+        <result column="extracted_text" property="extractedText"/>
+        <result column="extraction_metadata" property="extractionMetadata"/>
+        <result column="extraction_truncated" property="extractionTruncated"/>
+        <result column="width" property="width"/>
+        <result column="height" property="height"/>
+        <result column="error_code" property="errorCode"/>
+        <result column="error_message" property="errorMessage"/>
+        <result column="upload_expires_at" property="uploadExpiresAt"/>
+        <result column="confirmed_time" property="confirmedTime"/>
+        <result column="ready_time" property="readyTime"/>
+        <result column="orphaned_time" property="orphanedTime"/>
+        <result column="reserved_conversation_id" property="reservedConversationId"/>
+        <result column="reserved_request_id" property="reservedRequestId"/>
+        <result column="reserved_until" property="reservedUntil"/>
+        <result column="deleted" property="deleted"/>
+    </resultMap>
+
+    <sql id="FileResourceColumns">
+        "id", "creator_id", "modifier_id", "creation_time", "modification_time", "file_id",
+        "kind", "status", "status_revision", "bucket_name", "object_key", "original_filename",
+        "file_extension", "declared_mime_type", "detected_mime_type", "file_size", "sha256",
+        "extracted_text", "extraction_metadata", "extraction_truncated", "width", "height",
+        "error_code", "error_message", "upload_expires_at", "confirmed_time", "ready_time",
+        "orphaned_time", "reserved_conversation_id", "reserved_request_id", "reserved_until", "deleted"
+    </sql>
+
+    <select id="insertFileResource" resultMap="FileResourceResultMap" affectData="true">
+        INSERT INTO "file_resource" (
+            "creator_id", "modifier_id", "file_id", "kind", "status", "status_revision",
+            "bucket_name", "object_key", "original_filename", "file_extension", "declared_mime_type",
+            "file_size", "upload_expires_at", "deleted"
+        ) VALUES (
+            #{creatorId}, #{modifierId}, #{fileId}, #{kind}, #{status}, #{statusRevision},
+            #{bucketName}, #{objectKey}, #{originalFilename}, #{fileExtension}, #{declaredMimeType},
+            #{fileSize}, #{uploadExpiresAt}, FALSE
+        )
+        RETURNING <include refid="FileResourceColumns"/>
+    </select>
+
+    <select id="getFileResourceById" resultMap="FileResourceResultMap">
+        SELECT <include refid="FileResourceColumns"/>
+        FROM "file_resource"
+        WHERE "id" = #{id}
+    </select>
+
+    <select id="getOwnedFileResource" resultMap="FileResourceResultMap">
+        SELECT <include refid="FileResourceColumns"/>
+        FROM "file_resource"
+        WHERE "file_id" = #{fileId}
+          AND "creator_id" = #{userId}
+          AND "deleted" = FALSE
+    </select>
+
+    <select id="listOwnedFileResources" resultMap="FileResourceResultMap">
+        SELECT <include refid="FileResourceColumns"/>
+        FROM "file_resource"
+        WHERE "creator_id" = #{userId}
+          AND "deleted" = FALSE
+          AND "file_id" IN
+        <foreach collection="fileIds" item="fileId" open="(" separator="," close=")">
+            #{fileId}
+        </foreach>
+        ORDER BY ARRAY_POSITION(
+            ARRAY[
+            <foreach collection="fileIds" item="fileId" separator=",">
+                CAST(#{fileId} AS VARCHAR)
+            </foreach>
+            ], "file_id")
+    </select>
+
+    <select id="confirmUpload" resultMap="FileResourceResultMap" affectData="true">
+        UPDATE "file_resource"
+        SET "status" = 'VALIDATING',
+            "status_revision" = "status_revision" + 1,
+            "modifier_id" = #{userId},
+            "detected_mime_type" = #{detectedMimeType},
+            "file_size" = #{fileSize},
+            "sha256" = #{sha256},
+            "confirmed_time" = NOW(),
+            "orphaned_time" = NOW(),
+            "error_code" = '',
+            "error_message" = ''
+        WHERE "file_id" = #{fileId}
+          AND "creator_id" = #{userId}
+          AND "deleted" = FALSE
+          AND "status" = 'PENDING_UPLOAD'
+          AND "upload_expires_at" >= NOW()
+        RETURNING <include refid="FileResourceColumns"/>
+    </select>
+
+    <update id="reserveFileResources">
+        UPDATE "file_resource"
+        SET "reserved_conversation_id" = #{conversationId},
+            "reserved_request_id" = #{requestId},
+            "reserved_until" = NOW() + (#{reservationSeconds} * INTERVAL '1 second'),
+            "modifier_id" = #{userId}
+        WHERE "creator_id" = #{userId}
+          AND "deleted" = FALSE
+          AND "confirmed_time" IS NOT NULL
+          AND "status" IN ('VALIDATING', 'PROCESSING', 'READY', 'FAILED')
+          AND (
+              "reserved_until" IS NULL
+              OR "reserved_until" &lt; NOW()
+              OR "reserved_conversation_id" = #{conversationId}
+          )
+          AND "file_id" IN
+        <foreach collection="fileIds" item="fileId" open="(" separator="," close=")">
+            #{fileId}
+        </foreach>
+    </update>
+
+    <update id="markProcessing">
+        UPDATE "file_resource"
+        SET "status" = 'PROCESSING',
+            "status_revision" = "status_revision" + 1,
+            "modifier_id" = #{userId}
+        WHERE "id" = #{id}
+          AND "creator_id" = #{userId}
+          AND "deleted" = FALSE
+          AND "status" = 'VALIDATING'
+    </update>
+
+    <update id="markReady">
+        UPDATE "file_resource"
+        SET "status" = 'READY',
+            "status_revision" = "status_revision" + 1,
+            "modifier_id" = #{userId},
+            "detected_mime_type" = #{detectedMimeType},
+            "sha256" = #{sha256},
+            "extracted_text" = #{extractedText},
+            "extraction_metadata" = CAST(#{extractionMetadata} AS JSONB),
+            "extraction_truncated" = #{extractionTruncated},
+            "width" = #{width},
+            "height" = #{height},
+            "ready_time" = NOW(),
+            "error_code" = '',
+            "error_message" = ''
+        WHERE "id" = #{id}
+          AND "creator_id" = #{userId}
+          AND "deleted" = FALSE
+          AND "status" = 'PROCESSING'
+    </update>
+
+    <update id="markFailed">
+        UPDATE "file_resource"
+        SET "status" = 'FAILED',
+            "status_revision" = "status_revision" + 1,
+            "modifier_id" = #{userId},
+            "error_code" = #{errorCode},
+            "error_message" = #{errorMessage}
+        WHERE "id" = #{id}
+          AND "creator_id" = #{userId}
+          AND "deleted" = FALSE
+          AND "status" IN ('VALIDATING', 'PROCESSING')
+    </update>
+
+    <update id="resetFailedForRetry">
+        UPDATE "file_resource"
+        SET "status" = 'VALIDATING',
+            "status_revision" = "status_revision" + 1,
+            "modifier_id" = #{userId},
+            "error_code" = '',
+            "error_message" = ''
+        WHERE "id" = #{id}
+          AND "creator_id" = #{userId}
+          AND "deleted" = FALSE
+          AND "status" = 'FAILED'
+    </update>
+
+    <update id="requestDelete">
+        UPDATE "file_resource" f
+        SET "status" = 'DELETE_REQUESTED',
+            "status_revision" = f."status_revision" + 1,
+            "modifier_id" = #{userId},
+            "reserved_conversation_id" = NULL,
+            "reserved_request_id" = NULL,
+            "reserved_until" = NULL
+        WHERE f."file_id" = #{fileId}
+          AND f."creator_id" = #{userId}
+          AND f."deleted" = FALSE
+          AND f."status" NOT IN ('DELETE_REQUESTED', 'DELETED')
+          AND (f."reserved_until" IS NULL OR f."reserved_until" &lt; NOW())
+          AND NOT EXISTS (
+              SELECT 1
+              FROM "conversation_round_file" rf
+              WHERE rf."file_resource_id" = f."id"
+          )
+    </update>
+
+    <update id="clearReservationsForConversation">
+        UPDATE "file_resource"
+        SET "reserved_conversation_id" = NULL,
+            "reserved_request_id" = NULL,
+            "reserved_until" = NULL
+        WHERE "creator_id" = #{userId}
+          AND "reserved_conversation_id" = #{conversationId}
+          AND "deleted" = FALSE
+    </update>
+
+    <update id="markDeleted">
+        UPDATE "file_resource"
+        SET "status" = 'DELETED',
+            "status_revision" = "status_revision" + 1,
+            "modifier_id" = #{userId},
+            "deleted" = TRUE,
+            "extracted_text" = NULL,
+            "extraction_metadata" = NULL,
+            "reserved_conversation_id" = NULL,
+            "reserved_request_id" = NULL,
+            "reserved_until" = NULL
+        WHERE "id" = #{id}
+          AND "creator_id" = #{userId}
+          AND "deleted" = FALSE
+    </update>
+
+    <select id="hasRoundReferences" resultType="boolean">
+        SELECT EXISTS (
+            SELECT 1
+            FROM "conversation_round_file"
+            WHERE "file_resource_id" = #{id}
+        )
+    </select>
+</mapper>

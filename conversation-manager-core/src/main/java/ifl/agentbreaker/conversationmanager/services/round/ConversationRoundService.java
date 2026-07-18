@@ -1,5 +1,11 @@
 package ifl.agentbreaker.conversationmanager.services.round;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import ifl.agentbreaker.conversationmanager.dao.ConversationRoundFileMapper;
+import ifl.agentbreaker.conversationmanager.dao.FileCleanupTaskMapper;
+import ifl.agentbreaker.conversationmanager.dao.FileResourceMapper;
 import ifl.agentbreaker.conversationmanager.dao.ConversationLlmCallMapper;
 import ifl.agentbreaker.conversationmanager.dao.ConversationLlmRequestMessageMapper;
 import ifl.agentbreaker.conversationmanager.dao.ConversationLlmRequestMessageToolCallMapper;
@@ -10,6 +16,7 @@ import ifl.agentbreaker.conversationmanager.dao.ConversationRoundMapper;
 import ifl.agentbreaker.conversationmanager.dao.ConversationTurnMapper;
 import ifl.agentbreaker.conversationmanager.dao.ConversationToolCallExecutionMapper;
 import ifl.agentbreaker.conversationmanager.domain.constants.ConversationRoundStatus;
+import ifl.agentbreaker.conversationmanager.domain.constants.ConversationFileStatus;
 import ifl.agentbreaker.conversationmanager.domain.constants.ConversationTurnStatus;
 import ifl.agentbreaker.conversationmanager.domain.constants.LlmMessageRole;
 import ifl.agentbreaker.conversationmanager.domain.constants.LlmMessageStorageMode;
@@ -18,6 +25,7 @@ import ifl.agentbreaker.conversationmanager.domain.constants.ToolSourceType;
 import ifl.agentbreaker.conversationmanager.domain.dtos.responses.ConversationReplayResult;
 import ifl.agentbreaker.conversationmanager.domain.dtos.responses.ConversationRoundHistoryResult;
 import ifl.agentbreaker.conversationmanager.domain.dtos.responses.RoundHistoryView;
+import ifl.agentbreaker.conversationmanager.domain.dtos.responses.RoundFileHistory;
 import ifl.agentbreaker.conversationmanager.domain.entities.pg.Conversation;
 import ifl.agentbreaker.conversationmanager.domain.entities.pg.ConversationLlmCall;
 import ifl.agentbreaker.conversationmanager.domain.entities.pg.ConversationLlmRequestMessage;
@@ -28,10 +36,14 @@ import ifl.agentbreaker.conversationmanager.domain.entities.pg.ConversationRound
 import ifl.agentbreaker.conversationmanager.domain.entities.pg.ConversationTurn;
 import ifl.agentbreaker.conversationmanager.domain.entities.pg.ConversationToolCallExecution;
 import ifl.agentbreaker.conversationmanager.domain.entities.pg.EntityBase;
+import ifl.agentbreaker.conversationmanager.domain.entities.pg.FileResource;
 import ifl.agentbreaker.conversationmanager.support.ConversationTitleManager;
 import ifl.agentbreaker.conversationmanager.rpc.ConversationErrorCode;
+import ifl.agentbreaker.conversationmanager.rpc.ContentPart;
+import ifl.agentbreaker.conversationmanager.rpc.FileUrl;
 import ifl.agentbreaker.conversationmanager.rpc.FunctionCall;
 import ifl.agentbreaker.conversationmanager.rpc.MessageRole;
+import ifl.agentbreaker.conversationmanager.rpc.RoundStatus;
 import ifl.agentbreaker.conversationmanager.rpc.LlmCall;
 import ifl.agentbreaker.conversationmanager.rpc.LlmConversationMessage;
 import ifl.agentbreaker.conversationmanager.rpc.LlmRequest;
@@ -41,9 +53,11 @@ import ifl.agentbreaker.conversationmanager.rpc.TokenUsage;
 import ifl.agentbreaker.conversationmanager.rpc.ToolCall;
 import ifl.agentbreaker.conversationmanager.rpc.ToolCallExecution;
 import ifl.agentbreaker.conversationmanager.rpc.ToolDefinition;
+import ifl.agentbreaker.conversationmanager.rpc.UserRequest;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionTemplate;
+import org.springframework.util.StringUtils;
 import stark.dataworks.boot.web.ServiceResponse;
 
 import java.util.ArrayList;
@@ -51,6 +65,8 @@ import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.LinkedHashSet;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 @Service
@@ -84,10 +100,22 @@ public class ConversationRoundService
     private ConversationToolCallExecutionMapper conversationToolCallExecutionMapper;
 
     @Autowired
+    private ConversationRoundFileMapper conversationRoundFileMapper;
+
+    @Autowired
+    private FileResourceMapper fileResourceMapper;
+
+    @Autowired
+    private FileCleanupTaskMapper fileCleanupTaskMapper;
+
+    @Autowired
     private ConversationRoundValidator conversationRoundValidator;
 
     @Autowired
     private ConversationRoundPayloadHasher conversationRoundPayloadHasher;
+
+    @Autowired
+    private ObjectMapper objectMapper;
 
     @Autowired
     private ConversationMutationLock conversationMutationLock;
@@ -111,13 +139,22 @@ public class ConversationRoundService
         try
         {
             ConversationRoundHistoryResult history = getHistory(userId, conversationId);
+            Map<Long, List<RoundFileHistory>> filesByRound = conversationRoundFileMapper
+                .listRoundFiles(conversationId)
+                .stream()
+                .collect(Collectors.groupingBy(RoundFileHistory::roundNumber));
             return ServiceResponse.buildSuccessResponse(new RoundHistoryView(
                 conversationId,
                 history.latestRoundNumber(),
                 history.rounds().stream().map(round -> new RoundHistoryView.RoundView(
                     round.getRoundNumber(), round.getUserRequestContent(), round.getFinalAnswerContent(),
                     round.getStatus().name(), round.getErrorMessage(), round.getTurnCount(),
-                    round.getStartTime().getTime(), round.getEndTime().getTime())).toList()));
+                    round.getStartTime().getTime(), round.getEndTime().getTime(),
+                    filesByRound.getOrDefault(round.getRoundNumber(), List.of()).stream()
+                        .map(file -> new RoundHistoryView.FileView(
+                            file.fileId(), file.originalFilename(), file.mimeType(), file.fileSize(),
+                            file.kind(), file.status()))
+                        .toList())).toList()));
         }
         catch (RoundPersistenceException e)
         {
@@ -174,7 +211,7 @@ public class ConversationRoundService
         ConversationLlmRequestMessage message,
         List<ConversationLlmRequestMessageToolCall> toolCalls)
     {
-        return LlmConversationMessage.newBuilder()
+        LlmConversationMessage.Builder builder = LlmConversationMessage.newBuilder()
             .setRole(switch (message.getRole())
             {
                 case SYSTEM -> MessageRole.MESSAGE_ROLE_SYSTEM;
@@ -191,8 +228,9 @@ public class ConversationRoundService
                     .setName(toolCall.getFunctionName())
                     .setArguments(toolCall.getArguments()))
                 .build()).toList())
-            .setToolCallId(message.getToolCallId() == null ? "" : message.getToolCallId())
-            .build();
+            .setToolCallId(message.getToolCallId() == null ? "" : message.getToolCallId());
+        builder.addAllContentParts(deserializeContentParts(message.getContentParts()));
+        return builder.build();
     }
 
     /**
@@ -248,14 +286,18 @@ public class ConversationRoundService
         if (savedRound == null)
             throw new IllegalStateException("Round insert returned no row.");
 
+        List<FileResource> roundFiles = persistRoundFiles(request, savedRound.getId());
         persistTurnsAndChildren(request, savedRound.getId());
 
         // TODO: Replace repeated cross-Round FULL_SNAPSHOT rows with context_id plus the current
         // Round delta when the deferred Context checkpoint/compaction model is designed.
 
         // Keep auto-title in the high-water transaction so failed Rounds never rename a Conversation.
-        String automaticTitle = ConversationTitleManager.deriveFromFirstUserMessage(
-            request.getUserRequest().getContent());
+        String automaticTitle = StringUtils.hasText(request.getUserRequest().getContent())
+            ? ConversationTitleManager.deriveFromFirstUserMessage(request.getUserRequest().getContent())
+            : roundFiles.isEmpty()
+                ? ConversationTitleManager.DEFAULT_TITLE
+                : ConversationTitleManager.deriveFromAttachmentFilename(roundFiles.get(0).getOriginalFilename());
         if (conversationMapper.advanceLatestRoundNumber(
             request.getConversationId(), request.getUserId(), request.getRoundNumber(),
             automaticTitle, ConversationTitleManager.DEFAULT_TITLE) != 1)
@@ -270,6 +312,48 @@ public class ConversationRoundService
      * <p>PostgreSQL does not contractually preserve input order for RETURNING rows. Associations
      * are therefore rebuilt from persisted business keys instead of list positions.</p>
      */
+    private List<FileResource> persistRoundFiles(SaveConversationRoundRequest request, long roundId)
+    {
+        Set<String> fileIds = new LinkedHashSet<>();
+        int filePartCount = 0;
+        for (ContentPart contentPart : request.getUserRequest().getContentPartsList())
+        {
+            if (contentPart.getType().equals("text"))
+                continue;
+            filePartCount++;
+            if (!contentPart.hasFileUrl())
+                throw error(ConversationErrorCode.CONVERSATION_ERROR_CODE_INVALID_FILE_SELECTION,
+                    "Every Round file part must contain a stable AgentBreaker file URL.");
+            String url = contentPart.getFileUrl().getUrl();
+            String prefix = "agentbreaker-file://";
+            if (!url.startsWith(prefix) || url.length() == prefix.length()
+                || !fileIds.add(url.substring(prefix.length())))
+                throw error(ConversationErrorCode.CONVERSATION_ERROR_CODE_INVALID_FILE_SELECTION,
+                    "Round file parts must contain unique stable AgentBreaker file URLs.");
+        }
+        if (fileIds.isEmpty())
+            return List.of();
+
+        List<FileResource> fileResources = fileResourceMapper.listOwnedFileResources(fileIds, request.getUserId());
+        if (fileResources.size() != filePartCount
+            || fileResources.stream().anyMatch(fileResource -> fileResource.getConfirmedTime() == null))
+            throw error(ConversationErrorCode.CONVERSATION_ERROR_CODE_INVALID_FILE_SELECTION,
+                "Every Round file must exist, be owned by the user, and have a confirmed upload.");
+        if (request.getStatus() == RoundStatus.ROUND_STATUS_COMPLETED
+            && fileResources.stream().anyMatch(fileResource -> fileResource.getStatus() != ConversationFileStatus.READY))
+            throw error(ConversationErrorCode.CONVERSATION_ERROR_CODE_INVALID_FILE_SELECTION,
+                "A completed Round can reference only READY files.");
+
+        List<Long> fileResourceIds = fileResources.stream().map(FileResource::getId).toList();
+        requireAffectedRows(
+            "Round file",
+            fileResourceIds.size(),
+            conversationRoundFileMapper.insertRoundFiles(roundId, request.getUserId(), fileResourceIds));
+        for (Long fileResourceId : fileResourceIds)
+            fileCleanupTaskMapper.cancelByFileResourceId(fileResourceId);
+        return fileResources;
+    }
+
     private void persistTurnsAndChildren(SaveConversationRoundRequest request, long roundId)
     {
         if (request.getTurnsList().isEmpty())
@@ -316,8 +400,16 @@ public class ConversationRoundService
         applyAudit(conversationRound, request.getUserId());
         conversationRound.setConversationId(request.getConversationId());
         conversationRound.setRoundNumber(request.getRoundNumber());
-        conversationRound.setUserRequestContent(request.getUserRequest().getContent());
-        conversationRound.setFinalAnswerContent(request.hasFinalAnswer() ? request.getFinalAnswer().getContent() : null);
+        conversationRound.setUserRequestContent(
+            StringUtils.hasText(request.getUserRequest().getContent()) ? request.getUserRequest().getContent() : null);
+        conversationRound.setUserRequestContentParts(serializeContentParts(request.getUserRequest().getContentPartsList()));
+        conversationRound.setFinalAnswerContent(request.hasFinalAnswer()
+            && StringUtils.hasText(request.getFinalAnswer().getContent())
+            ? request.getFinalAnswer().getContent()
+            : null);
+        conversationRound.setFinalAnswerContentParts(request.hasFinalAnswer()
+            ? serializeContentParts(request.getFinalAnswer().getContentPartsList())
+            : null);
         conversationRound.setFinalSourceTurnNumber(
             request.hasFinalAnswer() ? request.getFinalAnswer().getSourceTurnNumber() : null);
         conversationRound.setStatus(switch (request.getStatus())
@@ -422,7 +514,8 @@ public class ConversationRoundService
             case MESSAGE_ROLE_DEVELOPER -> LlmMessageRole.DEVELOPER;
             default -> throw new IllegalArgumentException("Unsupported request message role.");
         });
-        conversationLlmRequestMessage.setContent(source.getContent());
+        conversationLlmRequestMessage.setContent(StringUtils.hasText(source.getContent()) ? source.getContent() : null);
+        conversationLlmRequestMessage.setContentParts(serializeContentParts(source.getContentPartsList()));
         conversationLlmRequestMessage.setToolCallId(
             source.getToolCallId().isEmpty() ? null : source.getToolCallId());
         return conversationLlmRequestMessage;
@@ -559,6 +652,77 @@ public class ConversationRoundService
         }
         requireAffectedRows("Tool execution", executions.size(),
             conversationToolCallExecutionMapper.insertToolCallExecutions(executions));
+    }
+
+    private String serializeContentParts(List<ContentPart> contentParts)
+    {
+        if (contentParts == null || contentParts.isEmpty())
+            return null;
+        List<Map<String, Object>> values = new ArrayList<>();
+        for (ContentPart contentPart : contentParts)
+        {
+            Map<String, Object> value = new HashMap<>();
+            value.put("type", contentPart.getType());
+            if (contentPart.getType().equals("text"))
+                value.put("text", contentPart.getText());
+            else
+            {
+                Map<String, Object> fileValue = new HashMap<>();
+                fileValue.put("url", contentPart.getFileUrl().getUrl());
+                fileValue.put("detail", contentPart.getFileUrl().getDetail());
+                value.put("file_url", fileValue);
+            }
+            values.add(value);
+        }
+        try
+        {
+            return objectMapper.writeValueAsString(values);
+        }
+        catch (JsonProcessingException e)
+        {
+            throw new IllegalArgumentException("Content parts could not be serialized.", e);
+        }
+    }
+
+    private List<ContentPart> deserializeContentParts(String json)
+    {
+        if (!StringUtils.hasText(json))
+            return List.of();
+        try
+        {
+            JsonNode root = objectMapper.readTree(json);
+            List<ContentPart> contentParts = new ArrayList<>();
+            for (JsonNode item : root)
+            {
+                String type = item.path("type").asText();
+                ContentPart.Builder contentPart = ContentPart.newBuilder().setType(type);
+                if (type.equals("text"))
+                    contentPart.setText(item.path("text").asText());
+                else
+                {
+                    JsonNode fileValue = item.path("file_url");
+                    contentPart.setFileUrl(FileUrl.newBuilder()
+                        .setUrl(fileValue.path("url").asText())
+                        .setDetail(fileValue.path("detail").asText()));
+                }
+                contentParts.add(contentPart.build());
+            }
+            return contentParts;
+        }
+        catch (JsonProcessingException e)
+        {
+            throw new IllegalStateException("Persisted content parts are invalid.", e);
+        }
+    }
+
+    UserRequest toProtoUserRequest(ConversationRound round)
+    {
+        UserRequest.Builder userRequest = UserRequest.newBuilder();
+        if (StringUtils.hasText(round.getUserRequestContent()))
+            userRequest.setContent(round.getUserRequestContent());
+        else
+            userRequest.addAllContentParts(deserializeContentParts(round.getUserRequestContentParts()));
+        return userRequest.build();
     }
 
     private ConversationToolCallExecution toToolCallExecution(

@@ -15,6 +15,7 @@ import ifl.agentbreaker.conversationmanager.dao.ConversationGroupRelationMapper;
 import ifl.agentbreaker.conversationmanager.dao.ConversationMapper;
 import ifl.agentbreaker.conversationmanager.dao.ConversationMessageMapper;
 import ifl.agentbreaker.conversationmanager.dao.ConversationSharingMapper;
+import ifl.agentbreaker.conversationmanager.services.files.ConversationFileService;
 import ifl.agentbreaker.conversationmanager.domain.constants.ExportFormat;
 import ifl.agentbreaker.conversationmanager.domain.dtos.requests.ExportConversationRequest;
 import ifl.agentbreaker.conversationmanager.domain.dtos.requests.ForkConversationRequest;
@@ -89,6 +90,9 @@ public class ConversationService implements IConversationRpcService
 
     @Autowired
     private ConversationSharingMapper conversationSharingMapper;
+
+    @Autowired
+    private ConversationFileService conversationFileService;
 
     /**
      * Create a new conversation.
@@ -272,6 +276,7 @@ public class ConversationService implements IConversationRpcService
             return ServiceResponse.buildErrorResponse(ERROR_CONVERSATION_NOT_FOUND, "Conversation does not exist.");
 
         conversationGroupRelationMapper.deleteConversationGroupRelationsByConversationId(conversationId, userId);
+        conversationFileService.releaseConversationReferences(conversationId, userId);
         return ServiceResponse.buildSuccessResponse(true);
     }
 

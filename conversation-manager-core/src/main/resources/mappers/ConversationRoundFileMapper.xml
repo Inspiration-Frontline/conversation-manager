@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="ifl.agentbreaker.conversationmanager.dao.ConversationRoundFileMapper">
+    <insert id="insertRoundFiles">
+        INSERT INTO "conversation_round_file" (
+            "creator_id", "modifier_id", "round_id", "file_resource_id", "file_order"
+        ) VALUES
+        <foreach collection="fileResourceIds" item="fileResourceId" index="fileOrder" separator=",">
+            (#{userId}, #{userId}, #{roundId}, #{fileResourceId}, #{fileOrder})
+        </foreach>
+        ON CONFLICT DO NOTHING
+    </insert>
+
+    <select id="listRoundFiles" resultType="ifl.agentbreaker.conversationmanager.domain.dtos.responses.RoundFileHistory">
+        SELECT round."round_number" AS "roundNumber",
+               file."file_id" AS "fileId",
+               file."original_filename" AS "originalFilename",
+               COALESCE(file."detected_mime_type", file."declared_mime_type") AS "mimeType",
+               file."file_size" AS "fileSize",
+               file."kind" AS "kind",
+               file."status" AS "status"
+        FROM "conversation_round" round
+        INNER JOIN "conversation_round_file" relation ON relation."round_id" = round."id"
+        INNER JOIN "file_resource" file ON file."id" = relation."file_resource_id"
+        WHERE round."conversation_id" = #{conversationId}
+          AND round."deleted" = FALSE
+        ORDER BY round."round_number", relation."file_order"
+    </select>
+
+    <select id="listFileResourceIdsByConversation" resultType="long">
+        SELECT DISTINCT relation."file_resource_id"
+        FROM "conversation_round_file" relation
+        INNER JOIN "conversation_round" round ON round."id" = relation."round_id"
+        INNER JOIN "conversation" conversation ON conversation."conversation_id" = round."conversation_id"
+        WHERE round."conversation_id" = #{conversationId}
+          AND conversation."creator_id" = #{userId}
+    </select>
+
+    <delete id="deleteByConversationId">
+        DELETE FROM "conversation_round_file" relation
+        USING "conversation_round" round, "conversation" conversation
+        WHERE relation."round_id" = round."id"
+          AND round."conversation_id" = #{conversationId}
+          AND conversation."conversation_id" = round."conversation_id"
+          AND conversation."creator_id" = #{userId}
+    </delete>
+</mapper>

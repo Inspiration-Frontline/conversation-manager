@@ -4,6 +4,8 @@ import ifl.agentbreaker.commons.api.dto.ResponseBase;
 import ifl.agentbreaker.conversationmanager.domain.dtos.responses.ConversationRoundHistoryResult;
 import ifl.agentbreaker.conversationmanager.domain.dtos.responses.ConversationReplayResult;
 import ifl.agentbreaker.conversationmanager.domain.entities.pg.ConversationRound;
+import ifl.agentbreaker.conversationmanager.domain.entities.pg.FileResource;
+import ifl.agentbreaker.conversationmanager.dao.ConversationMapper;
 import ifl.agentbreaker.conversationmanager.rpc.AssistantAnswer;
 import ifl.agentbreaker.conversationmanager.rpc.ConversationAbstract;
 import ifl.agentbreaker.conversationmanager.rpc.ConversationErrorCode;
@@ -14,6 +16,8 @@ import ifl.agentbreaker.conversationmanager.rpc.ConversationRpcService;
 import ifl.agentbreaker.conversationmanager.rpc.ConversationTurnHistory;
 import ifl.agentbreaker.conversationmanager.rpc.CreateConversationRequest;
 import ifl.agentbreaker.conversationmanager.rpc.CreateConversationResponse;
+import ifl.agentbreaker.conversationmanager.rpc.ConversationFileKind;
+import ifl.agentbreaker.conversationmanager.rpc.ConversationFileStatus;
 import ifl.agentbreaker.conversationmanager.rpc.DeleteRoundsRequest;
 import ifl.agentbreaker.conversationmanager.rpc.DeleteRoundsResponse;
 import ifl.agentbreaker.conversationmanager.rpc.DeleteRoundsResult;
@@ -24,20 +28,34 @@ import ifl.agentbreaker.conversationmanager.rpc.GetConversationRoundHistoryRespo
 import ifl.agentbreaker.conversationmanager.rpc.GetConversationTurnHistoryRequest;
 import ifl.agentbreaker.conversationmanager.rpc.GetConversationTurnHistoryResponse;
 import ifl.agentbreaker.conversationmanager.rpc.ReplayDetailLevel;
+import ifl.agentbreaker.conversationmanager.rpc.PrepareConversationFilesRequest;
+import ifl.agentbreaker.conversationmanager.rpc.PrepareConversationFilesResponse;
+import ifl.agentbreaker.conversationmanager.rpc.PrepareConversationFilesResult;
+import ifl.agentbreaker.conversationmanager.rpc.PreparedConversationFile;
 import ifl.agentbreaker.conversationmanager.rpc.RoundStatus;
 import ifl.agentbreaker.conversationmanager.rpc.SaveConversationRoundRequest;
 import ifl.agentbreaker.conversationmanager.rpc.SaveConversationRoundResponse;
 import ifl.agentbreaker.conversationmanager.rpc.UserRequest;
+import ifl.agentbreaker.conversationmanager.services.files.ConversationFileService;
 import org.apache.dubbo.config.annotation.DubboService;
 import org.springframework.beans.factory.annotation.Autowired;
 
 import java.util.concurrent.CompletableFuture;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
 
 @DubboService
 public class ConversationRoundRpcProvider implements ConversationRpcService
 {
     @Autowired
     private ConversationRoundService conversationRoundService;
+
+    @Autowired
+    private ConversationFileService conversationFileService;
+
+    @Autowired
+    private ConversationMapper conversationMapper;
 
     @Override
     public CreateConversationResponse createConversation(CreateConversationRequest request)
@@ -179,6 +197,66 @@ public class ConversationRoundRpcProvider implements ConversationRpcService
         return CompletableFuture.completedFuture(deleteRounds(request));
     }
 
+    @Override
+    public PrepareConversationFilesResponse prepareConversationFiles(PrepareConversationFilesRequest request)
+    {
+        PrepareConversationFilesResult.Builder data = PrepareConversationFilesResult.newBuilder()
+            .setRequestId(request.getRequestId());
+        try
+        {
+            validatePrepareConversationFiles(request);
+            List<FileResource> fileResources = conversationFileService.listOwnedFiles(
+                request.getFileIdsList(), request.getUserId());
+            if (fileResources.size() != request.getFileIdsCount())
+                return prepareFilesError(data, ConversationErrorCode.CONVERSATION_ERROR_CODE_FILE_NOT_FOUND,
+                    "One or more files do not exist.");
+
+            long totalBytes = 0;
+            for (FileResource fileResource : fileResources)
+            {
+                if (fileResource.getConfirmedTime() == null)
+                    return prepareFilesError(data, ConversationErrorCode.CONVERSATION_ERROR_CODE_INVALID_FILE_SELECTION,
+                        "Every selected file must have a confirmed upload.");
+                totalBytes += fileResource.getFileSize();
+            }
+            if (totalBytes > conversationFileService.getFileProperties().getMaxTotalBytesPerMessage())
+                return prepareFilesError(data, ConversationErrorCode.CONVERSATION_ERROR_CODE_INVALID_FILE_SELECTION,
+                    "The selected files exceed the total size limit.");
+            if (!conversationFileService.reserveFiles(
+                request.getFileIdsList(),
+                request.getUserId(),
+                request.getConversationId(),
+                request.getRequestId()))
+                return prepareFilesError(data, ConversationErrorCode.CONVERSATION_ERROR_CODE_INVALID_FILE_SELECTION,
+                    "One or more files are reserved by another request.");
+
+            boolean allReady = true;
+            boolean anyFailed = false;
+            for (FileResource fileResource : fileResources)
+            {
+                PreparedConversationFile preparedFile = toPreparedFile(fileResource);
+                data.addFiles(preparedFile);
+                allReady &= preparedFile.getStatus() == ConversationFileStatus.CONVERSATION_FILE_STATUS_READY;
+                anyFailed |= isTerminalFileFailure(preparedFile.getStatus());
+            }
+            data.setAllReady(allReady);
+            data.setAnyFailed(anyFailed);
+            return PrepareConversationFilesResponse.newBuilder().setBase(successBase()).setData(data).build();
+        }
+        catch (IllegalArgumentException e)
+        {
+            return prepareFilesError(data, ConversationErrorCode.CONVERSATION_ERROR_CODE_INVALID_FILE_SELECTION,
+                e.getMessage());
+        }
+    }
+
+    @Override
+    public CompletableFuture<PrepareConversationFilesResponse> prepareConversationFilesAsync(
+        PrepareConversationFilesRequest request)
+    {
+        return CompletableFuture.completedFuture(prepareConversationFiles(request));
+    }
+
     private ifl.agentbreaker.conversationmanager.rpc.ConversationRound toProtoRound(
         SaveConversationRoundRequest request)
     {
@@ -197,12 +275,76 @@ public class ConversationRoundRpcProvider implements ConversationRpcService
         return conversationRound.build();
     }
 
+    private void validatePrepareConversationFiles(PrepareConversationFilesRequest request)
+    {
+        if (request.getUserId() <= 0
+            || request.getConversationId().isBlank()
+            || request.getRequestId().isBlank()
+            || request.getFileIdsCount() <= 0
+            || request.getFileIdsCount() > conversationFileService.getFileProperties().getMaxCountPerMessage())
+            throw new IllegalArgumentException("The file preparation request is invalid.");
+        Set<String> uniqueFileIds = new HashSet<>(request.getFileIdsList());
+        if (uniqueFileIds.size() != request.getFileIdsCount() || uniqueFileIds.stream().anyMatch(String::isBlank))
+            throw new IllegalArgumentException("File IDs must be non-empty and unique.");
+        if (!conversationMapper.existsByIdAndUser(request.getConversationId(), request.getUserId()))
+            throw new IllegalArgumentException("The conversation does not exist.");
+    }
+
+    private PreparedConversationFile toPreparedFile(FileResource fileResource)
+    {
+        ConversationFileStatus status = ConversationFileStatus.valueOf(
+            "CONVERSATION_FILE_STATUS_" + fileResource.getStatus().name());
+        ConversationFileKind kind = ConversationFileKind.valueOf(
+            "CONVERSATION_FILE_KIND_" + fileResource.getKind().name());
+        PreparedConversationFile.Builder preparedFile = PreparedConversationFile.newBuilder()
+            .setFileId(fileResource.getFileId())
+            .setOriginalFilename(fileResource.getOriginalFilename())
+            .setMimeType(fileResource.getDetectedMimeType() == null
+                ? fileResource.getDeclaredMimeType()
+                : fileResource.getDetectedMimeType())
+            .setFileSize(fileResource.getFileSize())
+            .setKind(kind)
+            .setStatus(status)
+            .setRevision(fileResource.getStatusRevision())
+            .setErrorCode(fileResource.getErrorCode())
+            .setErrorMessage(fileResource.getErrorMessage())
+            .setExtractionTruncated(fileResource.isExtractionTruncated());
+        if (fileResource.getSha256() != null)
+            preparedFile.setSha256(fileResource.getSha256());
+        if (fileResource.getStatus() == ifl.agentbreaker.conversationmanager.domain.constants.ConversationFileStatus.READY)
+        {
+            if (fileResource.getKind() == ifl.agentbreaker.conversationmanager.domain.constants.ConversationFileKind.IMAGE)
+                preparedFile.setDownloadUrl(conversationFileService.createSignedGetUrl(fileResource));
+            else if (fileResource.getExtractedText() != null)
+                preparedFile.setExtractedText(fileResource.getExtractedText());
+        }
+        return preparedFile.build();
+    }
+
+    private boolean isTerminalFileFailure(ConversationFileStatus status)
+    {
+        return status == ConversationFileStatus.CONVERSATION_FILE_STATUS_FAILED
+            || status == ConversationFileStatus.CONVERSATION_FILE_STATUS_CANCELLED
+            || status == ConversationFileStatus.CONVERSATION_FILE_STATUS_DELETE_REQUESTED
+            || status == ConversationFileStatus.CONVERSATION_FILE_STATUS_DELETED
+            || status == ConversationFileStatus.CONVERSATION_FILE_STATUS_EXPIRED;
+    }
+
+    private PrepareConversationFilesResponse prepareFilesError(
+        PrepareConversationFilesResult.Builder data, ConversationErrorCode code, String message)
+    {
+        return PrepareConversationFilesResponse.newBuilder()
+            .setBase(errorBase(code.getNumber(), message))
+            .setData(data)
+            .build();
+    }
+
     private ConversationRoundSummary toSummary(ConversationRound round)
     {
         ConversationRoundSummary.Builder summary = ConversationRoundSummary.newBuilder()
             .setConversationId(round.getConversationId())
             .setRoundNumber(round.getRoundNumber())
-            .setUserRequest(UserRequest.newBuilder().setContent(round.getUserRequestContent()))
+            .setUserRequest(conversationRoundService.toProtoUserRequest(round))
             .setStatus(switch (round.getStatus())
             {
                 case COMPLETED -> RoundStatus.ROUND_STATUS_COMPLETED;

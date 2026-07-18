@@ -146,6 +146,18 @@
           )
     </update>
 
+    <select id="listConversationIdsByGroupId" resultType="string">
+        SELECT conversation."conversation_id"
+        FROM "conversation" conversation
+        INNER JOIN "conversation_group_relation" relation
+            ON relation."conversation_id" = conversation."conversation_id"
+           AND relation."creator_id" = conversation."creator_id"
+        WHERE conversation."creator_id" = #{userId}
+          AND conversation."deleted" = FALSE
+          AND relation."conversation_group_id" = #{groupId}
+          AND relation."creator_id" = #{userId}
+    </select>
+
     <select id="allOwnedConversationsExist" resultType="boolean">
         SELECT NOT EXISTS (
             SELECT 1
