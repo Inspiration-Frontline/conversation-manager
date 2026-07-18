@@ -236,7 +236,11 @@
     <update id="advanceLatestRoundNumber">
         UPDATE "conversation"
         SET "latest_round_number" = #{roundNumber},
-            "modifier_id" = #{userId}
+            "modifier_id" = #{userId},
+            "title" = CASE
+                WHEN "latest_round_number" = 0 AND "title" = #{defaultTitle} THEN #{automaticTitle}
+                ELSE "title"
+            END
         WHERE "conversation_id" = #{conversationId}
           AND "creator_id" = #{userId}
           AND "deleted" = FALSE

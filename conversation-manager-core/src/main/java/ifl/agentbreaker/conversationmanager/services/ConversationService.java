@@ -26,6 +26,7 @@ import ifl.agentbreaker.conversationmanager.domain.entities.pg.Conversation;
 import ifl.agentbreaker.conversationmanager.domain.entities.pg.ConversationMessage;
 import ifl.agentbreaker.conversationmanager.domain.entities.pg.ConversationSharing;
 import ifl.agentbreaker.conversationmanager.support.BusinessIdManager;
+import ifl.agentbreaker.conversationmanager.support.ConversationTitleManager;
 import ifl.agentbreaker.conversationmanager.support.TextNormalizer;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
@@ -66,9 +67,6 @@ public class ConversationService implements IConversationRpcService
     private static final int DEFAULT_PAGE_INDEX = 1;
     private static final int DEFAULT_PAGE_SIZE = 20;
     private static final int MAX_PAGE_SIZE = 100;
-    private static final int MAX_TITLE_LENGTH = 200;
-    private static final String DEFAULT_TITLE = "New Conversation";
-
     private static final TypeReference<List<ContentPart>> CONTENT_PARTS_TYPE = new TypeReference<>()
     {
     };
@@ -105,7 +103,7 @@ public class ConversationService implements IConversationRpcService
         conversation.setCreatorId(userId);
         conversation.setModifierId(userId);
         conversation.setConversationId(BusinessIdManager.newConversationId());
-        conversation.setTitle(DEFAULT_TITLE);
+        conversation.setTitle(ConversationTitleManager.DEFAULT_TITLE);
         conversation.setPinned(false);
         conversation.setDeleted(false);
 
@@ -168,7 +166,7 @@ public class ConversationService implements IConversationRpcService
         forked.setCreatorId(userId);
         forked.setModifierId(userId);
         forked.setConversationId(BusinessIdManager.newConversationId());
-        forked.setTitle(TextNormalizer.trimToMaxLength(source.getTitle() + " Fork", MAX_TITLE_LENGTH));
+        forked.setTitle(ConversationTitleManager.normalize(source.getTitle() + " Fork"));
         forked.setPinned(false);
         forked.setDeleted(false);
         Conversation createdConversation = conversationMapper.insertConversation(forked);
@@ -256,7 +254,7 @@ public class ConversationService implements IConversationRpcService
     {
         long userId = UserContextService.getCurrentUserId();
 
-        String title = TextNormalizer.trimToMaxLength(request.getTitle(), MAX_TITLE_LENGTH);
+        String title = ConversationTitleManager.normalize(request.getTitle());
         Conversation conversation = conversationMapper.updateConversationTitle(request.getConversationId(), userId, title);
         if (conversation == null)
             return ServiceResponse.buildErrorResponse(ERROR_CONVERSATION_NOT_FOUND, "Conversation does not exist.");

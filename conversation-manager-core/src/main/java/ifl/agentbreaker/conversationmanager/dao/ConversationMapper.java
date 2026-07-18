@@ -45,5 +45,7 @@ public interface ConversationMapper
 
     int advanceLatestRoundNumber(@Param("conversationId") String conversationId,
                                  @Param("userId") long userId,
-                                 @Param("roundNumber") long roundNumber);
+                                 @Param("roundNumber") long roundNumber,
+                                 @Param("automaticTitle") String automaticTitle,
+                                 @Param("defaultTitle") String defaultTitle);
 }

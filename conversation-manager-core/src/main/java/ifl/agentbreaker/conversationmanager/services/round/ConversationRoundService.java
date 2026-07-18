@@ -28,6 +28,7 @@ import ifl.agentbreaker.conversationmanager.domain.entities.pg.ConversationRound
 import ifl.agentbreaker.conversationmanager.domain.entities.pg.ConversationTurn;
 import ifl.agentbreaker.conversationmanager.domain.entities.pg.ConversationToolCallExecution;
 import ifl.agentbreaker.conversationmanager.domain.entities.pg.EntityBase;
+import ifl.agentbreaker.conversationmanager.support.ConversationTitleManager;
 import ifl.agentbreaker.conversationmanager.rpc.ConversationErrorCode;
 import ifl.agentbreaker.conversationmanager.rpc.FunctionCall;
 import ifl.agentbreaker.conversationmanager.rpc.MessageRole;
@@ -252,8 +253,12 @@ public class ConversationRoundService
         // TODO: Replace repeated cross-Round FULL_SNAPSHOT rows with context_id plus the current
         // Round delta when the deferred Context checkpoint/compaction model is designed.
 
-        if (conversationMapper.advanceLatestRoundNumber(request.getConversationId(), request.getUserId(),
-            request.getRoundNumber()) != 1)
+        // Keep auto-title in the high-water transaction so failed Rounds never rename a Conversation.
+        String automaticTitle = ConversationTitleManager.deriveFromFirstUserMessage(
+            request.getUserRequest().getContent());
+        if (conversationMapper.advanceLatestRoundNumber(
+            request.getConversationId(), request.getUserId(), request.getRoundNumber(),
+            automaticTitle, ConversationTitleManager.DEFAULT_TITLE) != 1)
             throw new IllegalStateException("Failed to advance conversation round high-water mark.");
 
         return request;
