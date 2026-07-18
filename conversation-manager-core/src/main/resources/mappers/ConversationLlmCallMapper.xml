@@ -37,7 +37,7 @@
         <result column="reasoning_content" property="reasoningContent"/>
     </resultMap>
 
-    <select id="insertLlmCall" resultMap="LlmCallResultMap" affectData="true">
+    <select id="insertLlmCalls" resultMap="LlmCallResultMap" affectData="true">
         INSERT INTO "conversation_llm_call" (
             "creator_id", "modifier_id", "turn_id", "provider", "model", "request_id", "trace_id",
             "message_storage_mode", "tool_choice_present", "tool_choice_mode", "tool_choice_name",
@@ -45,14 +45,20 @@
             "response_message_present", "response_content", "response_content_parts", "finish_reason",
             "usage_present", "prompt_tokens", "completion_tokens", "total_tokens", "cached_prompt_tokens",
             "reasoning_tokens", "raw_response", "response_error_message", "reasoning_content"
-        ) VALUES (
-            #{creatorId}, #{modifierId}, #{turnId}, #{provider}, #{model}, #{requestId}, #{traceId},
-            #{messageStorageMode}, #{toolChoicePresent}, #{toolChoiceMode}, #{toolChoiceName},
-            #{responseFormat}, #{temperature}, #{maxOutputTokens}, #{rawRequest}, #{startTime}, #{endTime},
-            #{responseMessagePresent}, #{responseContent}, CAST(#{responseContentParts} AS JSONB), #{finishReason},
-            #{usagePresent}, #{promptTokens}, #{completionTokens}, #{totalTokens}, #{cachedPromptTokens},
-            #{reasoningTokens}, #{rawResponse}, #{responseErrorMessage}, #{reasoningContent}
-        )
+        ) VALUES
+        <foreach collection="items" item="item" separator=",">
+            (
+                #{item.creatorId}, #{item.modifierId}, #{item.turnId}, #{item.provider}, #{item.model},
+                #{item.requestId}, #{item.traceId}, #{item.messageStorageMode}, #{item.toolChoicePresent},
+                #{item.toolChoiceMode}, #{item.toolChoiceName}, #{item.responseFormat}, #{item.temperature},
+                #{item.maxOutputTokens}, #{item.rawRequest}, #{item.startTime}, #{item.endTime},
+                #{item.responseMessagePresent}, #{item.responseContent},
+                CAST(#{item.responseContentParts} AS JSONB), #{item.finishReason}, #{item.usagePresent},
+                #{item.promptTokens}, #{item.completionTokens}, #{item.totalTokens},
+                #{item.cachedPromptTokens}, #{item.reasoningTokens}, #{item.rawResponse},
+                #{item.responseErrorMessage}, #{item.reasoningContent}
+            )
+        </foreach>
         RETURNING "id", "creator_id", "creation_time", "modifier_id", "modification_time", "turn_id",
                   "provider", "model", "request_id", "trace_id", "message_storage_mode", "tool_choice_present",
                   "tool_choice_mode", "tool_choice_name", "response_format", "temperature", "max_output_tokens",

@@ -18,14 +18,18 @@
         <result column="end_time" property="endTime"/>
     </resultMap>
 
-    <select id="insertTurn" resultMap="TurnResultMap" affectData="true">
+    <select id="insertTurns" resultMap="TurnResultMap" affectData="true">
         INSERT INTO "conversation_turn" (
             "creator_id", "modifier_id", "round_id", "turn_number", "agent_id", "agent_name",
             "agent_version", "status", "error_message", "start_time", "end_time"
-        ) VALUES (
-            #{creatorId}, #{modifierId}, #{roundId}, #{turnNumber}, #{agentId}, #{agentName},
-            #{agentVersion}, #{status}, #{errorMessage}, #{startTime}, #{endTime}
-        )
+        ) VALUES
+        <foreach collection="items" item="item" separator=",">
+            (
+                #{item.creatorId}, #{item.modifierId}, #{item.roundId}, #{item.turnNumber},
+                #{item.agentId}, #{item.agentName}, #{item.agentVersion}, #{item.status},
+                #{item.errorMessage}, #{item.startTime}, #{item.endTime}
+            )
+        </foreach>
         RETURNING "id", "creator_id", "creation_time", "modifier_id", "modification_time", "round_id",
                   "turn_number", "agent_id", "agent_name", "agent_version", "status", "error_message",
                   "start_time", "end_time"

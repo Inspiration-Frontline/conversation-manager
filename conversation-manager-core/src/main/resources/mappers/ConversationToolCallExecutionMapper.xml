@@ -20,18 +20,19 @@
         <result column="end_time" property="endTime"/>
     </resultMap>
 
-    <select id="insertToolCallExecution" resultMap="ToolCallExecutionResultMap" affectData="true">
+    <insert id="insertToolCallExecutions">
         INSERT INTO "conversation_tool_call_execution" (
             "creator_id", "modifier_id", "turn_id", "response_tool_call_id", "execution_order",
             "tool_key", "status", "result_content", "result_content_parts", "raw_result",
             "error_message", "start_time", "end_time"
-        ) VALUES (
-            #{creatorId}, #{modifierId}, #{turnId}, #{responseToolCallId}, #{executionOrder},
-            #{toolKey}, #{status}, #{resultContent}, CAST(#{resultContentParts} AS JSONB), #{rawResult},
-            #{errorMessage}, #{startTime}, #{endTime}
-        )
-        RETURNING "id", "creator_id", "creation_time", "modifier_id", "modification_time", "turn_id",
-                  "response_tool_call_id", "execution_order", "tool_key", "status", "result_content",
-                  "result_content_parts", "raw_result", "error_message", "start_time", "end_time"
-    </select>
+        ) VALUES
+        <foreach collection="items" item="item" separator=",">
+            (
+                #{item.creatorId}, #{item.modifierId}, #{item.turnId}, #{item.responseToolCallId},
+                #{item.executionOrder}, #{item.toolKey}, #{item.status}, #{item.resultContent},
+                CAST(#{item.resultContentParts} AS JSONB), #{item.rawResult}, #{item.errorMessage},
+                #{item.startTime}, #{item.endTime}
+            )
+        </foreach>
+    </insert>
 </mapper>

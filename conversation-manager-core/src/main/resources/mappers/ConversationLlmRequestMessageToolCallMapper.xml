@@ -15,26 +15,28 @@
         <result column="arguments" property="arguments"/>
     </resultMap>
 
-    <select id="insertRequestMessageToolCall" resultMap="RequestMessageToolCallResultMap" affectData="true">
+    <insert id="insertRequestMessageToolCalls">
         INSERT INTO "conversation_llm_request_message_tool_call" (
             "creator_id", "modifier_id", "request_message_id", "call_order", "tool_call_id",
             "type", "function_name", "arguments"
-        ) VALUES (
-            #{creatorId}, #{modifierId}, #{requestMessageId}, #{callOrder}, #{toolCallId},
-            #{type}, #{functionName}, #{arguments}
-        )
-        RETURNING "id", "creator_id", "creation_time", "modifier_id", "modification_time",
-                  "request_message_id", "call_order", "tool_call_id", "type", "function_name", "arguments"
-    </select>
+        ) VALUES
+        <foreach collection="items" item="item" separator=",">
+            (
+                #{item.creatorId}, #{item.modifierId}, #{item.requestMessageId}, #{item.callOrder},
+                #{item.toolCallId}, #{item.type}, #{item.functionName}, #{item.arguments}
+            )
+        </foreach>
+    </insert>
 
     <select id="listRequestMessageToolCallsForRound" resultMap="RequestMessageToolCallResultMap">
         SELECT tc."id", tc."creator_id", tc."creation_time", tc."modifier_id", tc."modification_time",
                tc."request_message_id", tc."call_order", tc."tool_call_id", tc."type",
                tc."function_name", tc."arguments"
-        FROM "conversation_llm_request_message_tool_call" tc
-        JOIN "conversation_llm_request_message" message ON message."id" = tc."request_message_id"
-        JOIN "conversation_llm_call" call ON call."id" = message."llm_call_id"
-        JOIN "conversation_turn" turn ON turn."id" = call."turn_id"
+        FROM "conversation_turn" turn
+        INNER JOIN "conversation_llm_call" call ON call."turn_id" = turn."id"
+        INNER JOIN "conversation_llm_request_message" message ON message."llm_call_id" = call."id"
+        INNER JOIN "conversation_llm_request_message_tool_call" tc
+            ON tc."request_message_id" = message."id"
         WHERE turn."round_id" = #{roundId}
         ORDER BY turn."turn_number", message."message_order", tc."call_order"
     </select>

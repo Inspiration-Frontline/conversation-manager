@@ -1,6 +1,7 @@
 package ifl.agentbreaker.conversationmanager;
 
 import org.apache.dubbo.config.spring.context.annotation.EnableDubbo;
+import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.transaction.annotation.EnableTransactionManagement;
 
@@ -14,6 +15,6 @@ public class ConversationManagerMain
     public static void main(String[] args)
     {
         TimeZone.setDefault(TimeZone.getTimeZone("UTC"));
-        org.springframework.boot.SpringApplication.run(ConversationManagerMain.class, args);
+        SpringApplication.run(ConversationManagerMain.class, args);
     }
 }

@@ -9,8 +9,8 @@ import java.util.List;
 @Mapper
 public interface ConversationLlmRequestMessageToolCallMapper
 {
-    ConversationLlmRequestMessageToolCall insertRequestMessageToolCall(
-        ConversationLlmRequestMessageToolCall toolCall);
+    int insertRequestMessageToolCalls(
+        @Param("items") List<ConversationLlmRequestMessageToolCall> toolCalls);
 
     List<ConversationLlmRequestMessageToolCall> listRequestMessageToolCallsForRound(
         @Param("roundId") long roundId);

@@ -9,7 +9,8 @@ import java.util.List;
 @Mapper
 public interface ConversationLlmRequestMessageMapper
 {
-    ConversationLlmRequestMessage insertRequestMessage(ConversationLlmRequestMessage message);
+    List<ConversationLlmRequestMessage> insertRequestMessages(
+        @Param("items") List<ConversationLlmRequestMessage> messages);
 
     List<ConversationLlmRequestMessage> listRequestMessages(@Param("llmCallId") long llmCallId);
 

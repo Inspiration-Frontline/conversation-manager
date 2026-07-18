@@ -38,13 +38,16 @@ import ifl.agentbreaker.conversationmanager.rpc.LlmResponse;
 import ifl.agentbreaker.conversationmanager.rpc.SaveConversationRoundRequest;
 import ifl.agentbreaker.conversationmanager.rpc.TokenUsage;
 import ifl.agentbreaker.conversationmanager.rpc.ToolCall;
+import ifl.agentbreaker.conversationmanager.rpc.ToolCallExecution;
+import ifl.agentbreaker.conversationmanager.rpc.ToolDefinition;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionTemplate;
 import stark.dataworks.boot.web.ServiceResponse;
 
-import java.util.Date;
 import java.util.ArrayList;
+import java.util.Date;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -244,34 +247,7 @@ public class ConversationRoundService
         if (savedRound == null)
             throw new IllegalStateException("Round insert returned no row.");
 
-        for (var sourceTurn : request.getTurnsList())
-        {
-            ConversationTurn conversationTurn = conversationTurnMapper.insertTurn(
-                toTurn(sourceTurn, savedRound.getId(), request.getUserId()));
-            if (conversationTurn == null)
-                throw new IllegalStateException("Turn insert returned no row.");
-
-            ConversationLlmCall conversationLlmCall = conversationLlmCallMapper.insertLlmCall(
-                toLlmCall(sourceTurn.getLlmCall(), conversationTurn.getId(), request.getUserId()));
-            if (conversationLlmCall == null)
-                throw new IllegalStateException("LLM call insert returned no row.");
-
-            persistToolDefinitions(sourceTurn.getLlmCall().getRequest(), conversationLlmCall.getId(),
-                request.getUserId());
-            int messageOrder = 0;
-            for (LlmConversationMessage llmConversationMessage :
-                sourceTurn.getLlmCall().getRequest().getMessagesList())
-            {
-                ConversationLlmRequestMessage savedMessage = conversationLlmRequestMessageMapper.insertRequestMessage(
-                    toRequestMessage(llmConversationMessage, conversationLlmCall.getId(), messageOrder++,
-                        request.getUserId()));
-                if (savedMessage == null)
-                    throw new IllegalStateException("LLM request message insert returned no row.");
-                persistRequestMessageToolCalls(llmConversationMessage, savedMessage.getId(), request.getUserId());
-            }
-            persistResponseToolCallsAndExecutions(sourceTurn, conversationTurn.getId(), conversationLlmCall.getId(),
-                request.getUserId());
-        }
+        persistTurnsAndChildren(request, savedRound.getId());
 
         // TODO: Replace repeated cross-Round FULL_SNAPSHOT rows with context_id plus the current
         // Round delta when the deferred Context checkpoint/compaction model is designed.
@@ -281,6 +257,51 @@ public class ConversationRoundService
             throw new IllegalStateException("Failed to advance conversation round high-water mark.");
 
         return request;
+    }
+
+    /**
+     * Persists every Turn-owned table with one batch statement per table.
+     *
+     * <p>PostgreSQL does not contractually preserve input order for RETURNING rows. Associations
+     * are therefore rebuilt from persisted business keys instead of list positions.</p>
+     */
+    private void persistTurnsAndChildren(SaveConversationRoundRequest request, long roundId)
+    {
+        if (request.getTurnsList().isEmpty())
+            return;
+
+        List<ConversationTurn> turns = new ArrayList<>();
+        for (ifl.agentbreaker.conversationmanager.rpc.ConversationTurn sourceTurn : request.getTurnsList())
+            turns.add(toTurn(sourceTurn, roundId, request.getUserId()));
+        List<ConversationTurn> savedTurns = conversationTurnMapper.insertTurns(turns);
+        requireReturnedRows("Turn", turns.size(), savedTurns);
+
+        List<ConversationLlmCall> llmCalls = new ArrayList<>();
+        for (ConversationTurn savedTurn : savedTurns)
+        {
+            int sourceIndex = Math.toIntExact(savedTurn.getTurnNumber() - 1);
+            llmCalls.add(toLlmCall(
+                request.getTurns(sourceIndex).getLlmCall(), savedTurn.getId(), request.getUserId()));
+        }
+        List<ConversationLlmCall> savedLlmCalls = conversationLlmCallMapper.insertLlmCalls(llmCalls);
+        requireReturnedRows("LLM call", llmCalls.size(), savedLlmCalls);
+
+        Map<Long, ConversationLlmCall> llmCallsByTurnId = savedLlmCalls.stream().collect(
+            Collectors.toMap(ConversationLlmCall::getTurnId, llmCall -> llmCall));
+        List<TurnPersistenceContext> contexts = new ArrayList<>();
+        for (ConversationTurn savedTurn : savedTurns)
+        {
+            ConversationLlmCall savedLlmCall = llmCallsByTurnId.get(savedTurn.getId());
+            if (savedLlmCall == null)
+                throw new IllegalStateException("LLM call batch did not return a row for every Turn.");
+            int sourceIndex = Math.toIntExact(savedTurn.getTurnNumber() - 1);
+            contexts.add(new TurnPersistenceContext(
+                request.getTurns(sourceIndex), savedTurn, savedLlmCall));
+        }
+
+        persistToolDefinitions(contexts, request.getUserId());
+        persistRequestMessagesAndToolCalls(contexts, request.getUserId());
+        persistResponseToolCallsAndExecutions(contexts, request.getUserId());
     }
 
     private ConversationRound toRound(
@@ -402,90 +423,141 @@ public class ConversationRoundService
         return conversationLlmRequestMessage;
     }
 
-    private void persistToolDefinitions(LlmRequest request, long llmCallId, long userId)
+    private void persistToolDefinitions(List<TurnPersistenceContext> contexts, long userId)
     {
-        int toolOrder = 0;
-        for (ifl.agentbreaker.conversationmanager.rpc.ToolDefinition source : request.getToolsList())
+        List<ConversationLlmToolDefinition> definitions = new ArrayList<>();
+        for (TurnPersistenceContext context : contexts)
         {
-            ConversationLlmToolDefinition definition = new ConversationLlmToolDefinition();
-            applyAudit(definition, userId);
-            definition.setLlmCallId(llmCallId);
-            definition.setToolOrder(toolOrder++);
-            definition.setToolKey(source.getToolKey());
-            definition.setToolName(source.getToolName());
-            definition.setSourceType(switch (source.getSourceType())
+            int toolOrder = 0;
+            for (ToolDefinition source : context.sourceTurn().getLlmCall().getRequest().getToolsList())
             {
-                case TOOL_SOURCE_TYPE_INTERNAL -> ToolSourceType.INTERNAL;
-                case TOOL_SOURCE_TYPE_BUSINESS -> ToolSourceType.BUSINESS;
-                case TOOL_SOURCE_TYPE_MCP -> ToolSourceType.MCP;
-                default -> throw new IllegalArgumentException("Unsupported Tool source type.");
-            });
-            definition.setDescription(source.getDescription());
-            definition.setParametersJson(source.getParametersJson());
-            definition.setStrict(source.getStrict());
-            definition.setDefinitionHash(source.getDefinitionHash());
-            if (conversationLlmToolDefinitionMapper.insertToolDefinition(definition) == null)
-                throw new IllegalStateException("Tool definition insert returned no row.");
+                ConversationLlmToolDefinition definition = new ConversationLlmToolDefinition();
+                applyAudit(definition, userId);
+                definition.setLlmCallId(context.llmCall().getId());
+                definition.setToolOrder(toolOrder++);
+                definition.setToolKey(source.getToolKey());
+                definition.setToolName(source.getToolName());
+                definition.setSourceType(switch (source.getSourceType())
+                {
+                    case TOOL_SOURCE_TYPE_INTERNAL -> ToolSourceType.INTERNAL;
+                    case TOOL_SOURCE_TYPE_BUSINESS -> ToolSourceType.BUSINESS;
+                    case TOOL_SOURCE_TYPE_MCP -> ToolSourceType.MCP;
+                    default -> throw new IllegalArgumentException("Unsupported Tool source type.");
+                });
+                definition.setDescription(source.getDescription());
+                definition.setParametersJson(source.getParametersJson());
+                definition.setStrict(source.getStrict());
+                definition.setDefinitionHash(source.getDefinitionHash());
+                definitions.add(definition);
+            }
         }
+        if (!definitions.isEmpty())
+            requireAffectedRows("Tool definition", definitions.size(),
+                conversationLlmToolDefinitionMapper.insertToolDefinitions(definitions));
     }
 
-    private void persistRequestMessageToolCalls(LlmConversationMessage message, long requestMessageId, long userId)
+    private void persistRequestMessagesAndToolCalls(List<TurnPersistenceContext> contexts, long userId)
     {
-        int callOrder = 0;
-        for (ToolCall source : message.getToolCallsList())
+        List<ConversationLlmRequestMessage> messages = new ArrayList<>();
+        Map<RequestMessageKey, LlmConversationMessage> sourceMessagesByKey = new HashMap<>();
+        for (TurnPersistenceContext context : contexts)
         {
-            ConversationLlmRequestMessageToolCall toolCall = new ConversationLlmRequestMessageToolCall();
-            applyAudit(toolCall, userId);
-            toolCall.setRequestMessageId(requestMessageId);
-            toolCall.setCallOrder(callOrder++);
-            toolCall.setToolCallId(source.getId());
-            toolCall.setType(source.getType());
-            toolCall.setFunctionName(source.getFunction().getName());
-            toolCall.setArguments(source.getFunction().getArguments());
-            if (conversationLlmRequestMessageToolCallMapper.insertRequestMessageToolCall(toolCall) == null)
-                throw new IllegalStateException("Request message Tool call insert returned no row.");
+            int messageOrder = 0;
+            for (LlmConversationMessage sourceMessage :
+                context.sourceTurn().getLlmCall().getRequest().getMessagesList())
+            {
+                messages.add(toRequestMessage(
+                    sourceMessage, context.llmCall().getId(), messageOrder, userId));
+                sourceMessagesByKey.put(
+                    new RequestMessageKey(context.llmCall().getId(), messageOrder), sourceMessage);
+                messageOrder++;
+            }
         }
+
+        List<ConversationLlmRequestMessage> savedMessages =
+            conversationLlmRequestMessageMapper.insertRequestMessages(messages);
+        requireReturnedRows("LLM request message", messages.size(), savedMessages);
+
+        List<ConversationLlmRequestMessageToolCall> requestToolCalls = new ArrayList<>();
+        for (ConversationLlmRequestMessage savedMessage : savedMessages)
+        {
+            RequestMessageKey key = new RequestMessageKey(
+                savedMessage.getLlmCallId(), savedMessage.getMessageOrder());
+            LlmConversationMessage sourceMessage = sourceMessagesByKey.get(key);
+            if (sourceMessage == null)
+                throw new IllegalStateException("Request message batch returned an unknown logical row.");
+            int callOrder = 0;
+            for (ToolCall sourceToolCall : sourceMessage.getToolCallsList())
+            {
+                ConversationLlmRequestMessageToolCall toolCall =
+                    new ConversationLlmRequestMessageToolCall();
+                applyAudit(toolCall, userId);
+                toolCall.setRequestMessageId(savedMessage.getId());
+                toolCall.setCallOrder(callOrder++);
+                toolCall.setToolCallId(sourceToolCall.getId());
+                toolCall.setType(sourceToolCall.getType());
+                toolCall.setFunctionName(sourceToolCall.getFunction().getName());
+                toolCall.setArguments(sourceToolCall.getFunction().getArguments());
+                requestToolCalls.add(toolCall);
+            }
+        }
+        if (!requestToolCalls.isEmpty())
+            requireAffectedRows("Request message Tool call", requestToolCalls.size(),
+                conversationLlmRequestMessageToolCallMapper.insertRequestMessageToolCalls(requestToolCalls));
     }
 
     private void persistResponseToolCallsAndExecutions(
-        ifl.agentbreaker.conversationmanager.rpc.ConversationTurn sourceTurn,
-        long turnId,
-        long llmCallId,
-        long userId)
+        List<TurnPersistenceContext> contexts, long userId)
     {
-        Map<String, ifl.agentbreaker.conversationmanager.rpc.ToolCallExecution> executionsByCallId =
-            sourceTurn.getToolCallExecutionsList().stream().collect(Collectors.toMap(
-                ifl.agentbreaker.conversationmanager.rpc.ToolCallExecution::getToolCallId,
-                execution -> execution));
-        int callOrder = 0;
-        for (ToolCall source :
-            sourceTurn.getLlmCall().getResponse().getMessage().getToolCallsList())
+        List<ConversationLlmResponseToolCall> responseToolCalls = new ArrayList<>();
+        Map<ResponseToolCallKey, ToolCallExecution> sourceExecutionsByKey = new HashMap<>();
+        for (TurnPersistenceContext context : contexts)
         {
-            ConversationLlmResponseToolCall responseToolCall = new ConversationLlmResponseToolCall();
-            applyAudit(responseToolCall, userId);
-            responseToolCall.setTurnId(turnId);
-            responseToolCall.setLlmCallId(llmCallId);
-            responseToolCall.setCallOrder(callOrder);
-            responseToolCall.setToolCallId(source.getId());
-            responseToolCall.setType(source.getType());
-            responseToolCall.setFunctionName(source.getFunction().getName());
-            responseToolCall.setArguments(source.getFunction().getArguments());
-            ConversationLlmResponseToolCall savedToolCall =
-                conversationLlmResponseToolCallMapper.insertResponseToolCall(responseToolCall);
-            if (savedToolCall == null)
-                throw new IllegalStateException("Response Tool call insert returned no row.");
+            for (ToolCallExecution execution : context.sourceTurn().getToolCallExecutionsList())
+                sourceExecutionsByKey.put(
+                    new ResponseToolCallKey(context.llmCall().getId(), execution.getToolCallId()), execution);
 
-            ifl.agentbreaker.conversationmanager.rpc.ToolCallExecution sourceExecution =
-                executionsByCallId.get(source.getId());
-            ConversationToolCallExecution execution = toToolCallExecution(
-                sourceExecution, turnId, savedToolCall.getId(), callOrder++, userId);
-            if (conversationToolCallExecutionMapper.insertToolCallExecution(execution) == null)
-                throw new IllegalStateException("Tool execution insert returned no row.");
+            int callOrder = 0;
+            for (ToolCall sourceToolCall :
+                context.sourceTurn().getLlmCall().getResponse().getMessage().getToolCallsList())
+            {
+                ConversationLlmResponseToolCall responseToolCall = new ConversationLlmResponseToolCall();
+                applyAudit(responseToolCall, userId);
+                responseToolCall.setTurnId(context.turn().getId());
+                responseToolCall.setLlmCallId(context.llmCall().getId());
+                responseToolCall.setCallOrder(callOrder++);
+                responseToolCall.setToolCallId(sourceToolCall.getId());
+                responseToolCall.setType(sourceToolCall.getType());
+                responseToolCall.setFunctionName(sourceToolCall.getFunction().getName());
+                responseToolCall.setArguments(sourceToolCall.getFunction().getArguments());
+                responseToolCalls.add(responseToolCall);
+            }
         }
+
+        if (responseToolCalls.isEmpty())
+            return;
+        List<ConversationLlmResponseToolCall> savedToolCalls =
+            conversationLlmResponseToolCallMapper.insertResponseToolCalls(responseToolCalls);
+        requireReturnedRows("Response Tool call", responseToolCalls.size(), savedToolCalls);
+
+        List<ConversationToolCallExecution> executions = new ArrayList<>();
+        for (ConversationLlmResponseToolCall savedToolCall : savedToolCalls)
+        {
+            ResponseToolCallKey key = new ResponseToolCallKey(
+                savedToolCall.getLlmCallId(), savedToolCall.getToolCallId());
+            ToolCallExecution sourceExecution = sourceExecutionsByKey.get(key);
+            if (sourceExecution == null)
+                throw new IllegalStateException("Response Tool call batch returned an unknown logical row.");
+            executions.add(toToolCallExecution(
+                sourceExecution, savedToolCall.getTurnId(), savedToolCall.getId(),
+                savedToolCall.getCallOrder(), userId));
+        }
+        requireAffectedRows("Tool execution", executions.size(),
+            conversationToolCallExecutionMapper.insertToolCallExecutions(executions));
     }
 
     private ConversationToolCallExecution toToolCallExecution(
-        ifl.agentbreaker.conversationmanager.rpc.ToolCallExecution source,
+        ToolCallExecution source,
         long turnId,
         long responseToolCallId,
         int executionOrder,
@@ -521,5 +593,32 @@ public class ConversationRoundService
     private RoundPersistenceException error(ConversationErrorCode conversationErrorCode, String message)
     {
         return new RoundPersistenceException(conversationErrorCode.getNumber(), message);
+    }
+
+    private void requireReturnedRows(String label, int expected, List<?> rows)
+    {
+        if (rows == null || rows.size() != expected)
+            throw new IllegalStateException(label + " batch returned an unexpected row count.");
+    }
+
+    private void requireAffectedRows(String label, int expected, int affectedRows)
+    {
+        if (affectedRows != expected)
+            throw new IllegalStateException(label + " batch inserted an unexpected row count.");
+    }
+
+    private record TurnPersistenceContext(
+        ifl.agentbreaker.conversationmanager.rpc.ConversationTurn sourceTurn,
+        ConversationTurn turn,
+        ConversationLlmCall llmCall)
+    {
+    }
+
+    private record RequestMessageKey(long llmCallId, int messageOrder)
+    {
+    }
+
+    private record ResponseToolCallKey(long llmCallId, String toolCallId)
+    {
     }
 }

@@ -18,16 +18,17 @@
         <result column="definition_hash" property="definitionHash"/>
     </resultMap>
 
-    <select id="insertToolDefinition" resultMap="ToolDefinitionResultMap" affectData="true">
+    <insert id="insertToolDefinitions">
         INSERT INTO "conversation_llm_tool_definition" (
             "creator_id", "modifier_id", "llm_call_id", "tool_order", "tool_key", "tool_name",
             "source_type", "description", "parameters_json", "strict", "definition_hash"
-        ) VALUES (
-            #{creatorId}, #{modifierId}, #{llmCallId}, #{toolOrder}, #{toolKey}, #{toolName},
-            #{sourceType}, #{description}, #{parametersJson}, #{strict}, #{definitionHash}
-        )
-        RETURNING "id", "creator_id", "creation_time", "modifier_id", "modification_time", "llm_call_id",
-                  "tool_order", "tool_key", "tool_name", "source_type", "description", "parameters_json",
-                  "strict", "definition_hash"
-    </select>
+        ) VALUES
+        <foreach collection="items" item="item" separator=",">
+            (
+                #{item.creatorId}, #{item.modifierId}, #{item.llmCallId}, #{item.toolOrder},
+                #{item.toolKey}, #{item.toolName}, #{item.sourceType}, #{item.description},
+                #{item.parametersJson}, #{item.strict}, #{item.definitionHash}
+            )
+        </foreach>
+    </insert>
 </mapper>

@@ -15,14 +15,17 @@
         <result column="tool_call_id" property="toolCallId"/>
     </resultMap>
 
-    <select id="insertRequestMessage" resultMap="RequestMessageResultMap" affectData="true">
+    <select id="insertRequestMessages" resultMap="RequestMessageResultMap" affectData="true">
         INSERT INTO "conversation_llm_request_message" (
             "creator_id", "modifier_id", "llm_call_id", "message_order", "role", "content",
             "content_parts", "tool_call_id"
-        ) VALUES (
-            #{creatorId}, #{modifierId}, #{llmCallId}, #{messageOrder}, #{role}, #{content},
-            CAST(#{contentParts} AS JSONB), #{toolCallId}
-        )
+        ) VALUES
+        <foreach collection="items" item="item" separator=",">
+            (
+                #{item.creatorId}, #{item.modifierId}, #{item.llmCallId}, #{item.messageOrder},
+                #{item.role}, #{item.content}, CAST(#{item.contentParts} AS JSONB), #{item.toolCallId}
+            )
+        </foreach>
         RETURNING "id", "creator_id", "creation_time", "modifier_id", "modification_time", "llm_call_id",
                   "message_order", "role", "content", "content_parts", "tool_call_id"
     </select>
@@ -39,9 +42,9 @@
         SELECT message."id", message."creator_id", message."creation_time", message."modifier_id",
                message."modification_time", message."llm_call_id", message."message_order", message."role",
                message."content", message."content_parts", message."tool_call_id"
-        FROM "conversation_llm_request_message" message
-        JOIN "conversation_llm_call" call ON call."id" = message."llm_call_id"
-        JOIN "conversation_turn" turn ON turn."id" = call."turn_id"
+        FROM "conversation_turn" turn
+        INNER JOIN "conversation_llm_call" call ON call."turn_id" = turn."id"
+        INNER JOIN "conversation_llm_request_message" message ON message."llm_call_id" = call."id"
         WHERE turn."round_id" = #{roundId}
         ORDER BY turn."turn_number", message."message_order"
     </select>

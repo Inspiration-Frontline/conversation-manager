@@ -1,5 +1,6 @@
 package ifl.agentbreaker.conversationmanager.domain.dtos.responses;
 
+import ifl.agentbreaker.conversationmanager.api.dto.responses.ConversationAbstract;
 import lombok.Data;
 
 import java.util.List;
@@ -30,5 +31,5 @@ public class ConversationGroupInfo
     /**
      * Conversations in the conversation group.
      */
-    private List<ifl.agentbreaker.conversationmanager.api.dto.responses.ConversationAbstract> conversations;
+    private List<ConversationAbstract> conversations;
 }

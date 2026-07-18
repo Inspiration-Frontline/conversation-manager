@@ -16,14 +16,18 @@
         <result column="arguments" property="arguments"/>
     </resultMap>
 
-    <select id="insertResponseToolCall" resultMap="ResponseToolCallResultMap" affectData="true">
+    <select id="insertResponseToolCalls" resultMap="ResponseToolCallResultMap" affectData="true">
         INSERT INTO "conversation_llm_response_tool_call" (
             "creator_id", "modifier_id", "turn_id", "llm_call_id", "call_order", "tool_call_id",
             "type", "function_name", "arguments"
-        ) VALUES (
-            #{creatorId}, #{modifierId}, #{turnId}, #{llmCallId}, #{callOrder}, #{toolCallId},
-            #{type}, #{functionName}, #{arguments}
-        )
+        ) VALUES
+        <foreach collection="items" item="item" separator=",">
+            (
+                #{item.creatorId}, #{item.modifierId}, #{item.turnId}, #{item.llmCallId},
+                #{item.callOrder}, #{item.toolCallId}, #{item.type}, #{item.functionName},
+                #{item.arguments}
+            )
+        </foreach>
         RETURNING "id", "creator_id", "creation_time", "modifier_id", "modification_time", "turn_id",
                   "llm_call_id", "call_order", "tool_call_id", "type", "function_name", "arguments"
     </select>
