@@ -132,6 +132,18 @@
           AND "deleted" = FALSE
     </update>
 
+    <update id="deleteConversations">
+        UPDATE "conversation"
+        SET "deleted" = TRUE,
+            "modifier_id" = #{userId}
+        WHERE "creator_id" = #{userId}
+          AND "deleted" = FALSE
+          AND "conversation_id" IN
+        <foreach item="conversationId" collection="conversationIds" open="(" separator="," close=")">
+            #{conversationId}
+        </foreach>
+    </update>
+
     <update id="deleteConversationsByGroupId">
         UPDATE "conversation"
         SET "deleted" = TRUE,

@@ -68,10 +68,11 @@ public class ConversationController
         return conversationService.updateTitle(request);
     }
 
+    /** Deletes one or more owned conversations and releases their file references in batch. */
     @DeleteMapping
     public ServiceResponse<Boolean> deleteConversation(@Valid @RequestBody DeleteConversationRequest request)
     {
-        return conversationService.deleteConversation(request.getConversationId());
+        return conversationService.deleteConversations(request.getConversationIds());
     }
 
     @DeleteMapping("/messages")

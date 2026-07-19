@@ -97,6 +97,9 @@ public class ConversationFileParser
             else
                 extractedText = extractText(fileResource, bytes, metadata);
 
+            // This is deliberately bounded context for chat-time analysis. Large documents are not
+            // losslessly searchable yet; retain representative excerpts until Knowledge Manager
+            // adds chunk storage, retrieval, and provenance-aware citations.
             TruncatedText truncatedText = retainTextWithinLimit(extractedText);
             metadata.setOriginalCharacterCount(extractedText.length());
             metadata.setRetainedCharacterCount(truncatedText.text().length());

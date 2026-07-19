@@ -51,4 +51,13 @@
         WHERE "creator_id" = #{userId}
           AND "conversation_id" = #{conversationId}
     </delete>
+
+    <delete id="deleteConversationGroupRelationsByConversationIds">
+        DELETE FROM "conversation_group_relation"
+        WHERE "creator_id" = #{userId}
+          AND "conversation_id" IN
+        <foreach item="conversationId" collection="conversationIds" open="(" separator="," close=")">
+            #{conversationId}
+        </foreach>
+    </delete>
 </mapper>

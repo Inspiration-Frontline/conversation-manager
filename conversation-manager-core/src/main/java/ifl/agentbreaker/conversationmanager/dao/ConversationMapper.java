@@ -31,6 +31,8 @@ public interface ConversationMapper
 
     int deleteConversation(@Param("conversationId") String conversationId, @Param("userId") long userId);
 
+    int deleteConversations(@Param("conversationIds") Collection<String> conversationIds, @Param("userId") long userId);
+
     int deleteConversationsByGroupId(@Param("groupId") String groupId, @Param("userId") long userId);
 
     List<String> listConversationIdsByGroupId(@Param("groupId") String groupId, @Param("userId") long userId);

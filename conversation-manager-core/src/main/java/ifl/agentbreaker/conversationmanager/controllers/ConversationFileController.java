@@ -42,7 +42,7 @@ public class ConversationFileController
      * It does not upload or parse the file in the HTTP request thread.</p>
      */
     @PostMapping("/confirm")
-    public ServiceResponse<FileResourceInfo> confirmFileUpload(
+    public ServiceResponse<java.util.List<FileResourceInfo>> confirmFileUpload(
         @Valid @RequestBody ConfirmFileUploadRequest request)
     {
         return conversationFileService.confirmFileUpload(request);
@@ -60,12 +60,13 @@ public class ConversationFileController
      * task or retry another user's resource.
      */
     @PostMapping("/retry")
-    public ServiceResponse<FileResourceInfo> retryFileProcessing(
+    public ServiceResponse<java.util.List<FileResourceInfo>> retryFileProcessing(
         @Valid @RequestBody RetryFileProcessingRequest request)
     {
         return conversationFileService.retryFileProcessing(request);
     }
 
+    /** Marks one or more owned file resources for logical deletion and asynchronous OSS cleanup. */
     @DeleteMapping
     public ServiceResponse<Boolean> deleteFileResource(@Valid @RequestBody DeleteFileResourceRequest request)
     {

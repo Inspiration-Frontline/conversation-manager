@@ -270,13 +270,34 @@ public class ConversationService implements IConversationRpcService
     public ServiceResponse<Boolean> deleteConversation(String conversationId)
     {
         long userId = UserContextService.getCurrentUserId();
+        if (!deleteSingleConversation(conversationId, userId))
+            return ServiceResponse.buildErrorResponse(ERROR_CONVERSATION_NOT_FOUND, "Conversation does not exist.");
+        return ServiceResponse.buildSuccessResponse(true);
+    }
 
+    private boolean deleteSingleConversation(String conversationId, long userId)
+    {
         int updated = conversationMapper.deleteConversation(conversationId, userId);
         if (updated <= 0)
-            return ServiceResponse.buildErrorResponse(ERROR_CONVERSATION_NOT_FOUND, "Conversation does not exist.");
-
+            return false;
         conversationGroupRelationMapper.deleteConversationGroupRelationsByConversationId(conversationId, userId);
         conversationFileService.releaseConversationReferences(conversationId, userId);
+        return true;
+    }
+
+    /** Deletes an owned conversation batch while preserving the existing per-conversation cleanup contract. */
+    @Transactional(rollbackFor = Exception.class)
+    public ServiceResponse<Boolean> deleteConversations(List<String> conversationIds)
+    {
+        if (conversationIds == null || conversationIds.isEmpty())
+            return ServiceResponse.buildErrorResponse(ERROR_CONVERSATION_NOT_FOUND, "At least one conversation is required.");
+        long userId = UserContextService.getCurrentUserId();
+        List<String> uniqueIds = BusinessIdManager.normalizeIds(conversationIds);
+        if (uniqueIds.isEmpty() || !conversationMapper.allOwnedConversationsExist(userId, uniqueIds))
+            return ServiceResponse.buildErrorResponse(ERROR_CONVERSATION_NOT_FOUND, "Conversation does not exist.");
+        conversationMapper.deleteConversations(uniqueIds, userId);
+        conversationGroupRelationMapper.deleteConversationGroupRelationsByConversationIds(uniqueIds, userId);
+        conversationFileService.releaseConversationReferences(uniqueIds, userId);
         return ServiceResponse.buildSuccessResponse(true);
     }
 

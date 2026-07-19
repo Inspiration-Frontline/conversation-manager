@@ -15,6 +15,7 @@ import ifl.agentbreaker.conversationmanager.domain.constants.ConversationFileKin
 import ifl.agentbreaker.conversationmanager.domain.constants.ConversationFileStatus;
 import ifl.agentbreaker.conversationmanager.domain.constants.FileCleanupReason;
 import ifl.agentbreaker.conversationmanager.domain.dtos.requests.ConfirmFileUploadRequest;
+import ifl.agentbreaker.conversationmanager.domain.dtos.requests.ConfirmFileUploadItem;
 import ifl.agentbreaker.conversationmanager.domain.dtos.requests.CreateFileUploadSessionRequest;
 import ifl.agentbreaker.conversationmanager.domain.dtos.requests.DeleteFileResourceRequest;
 import ifl.agentbreaker.conversationmanager.domain.dtos.requests.RetryFileProcessingRequest;
@@ -131,13 +132,23 @@ public class ConversationFileService
         return ServiceResponse.buildSuccessResponse(session);
     }
 
-    public ServiceResponse<FileResourceInfo> confirmFileUpload(ConfirmFileUploadRequest request)
+    /** Confirm every direct-to-OSS upload in one request; each item carries its own checksum. */
+    @Transactional(rollbackFor = Exception.class)
+    public ServiceResponse<List<FileResourceInfo>> confirmFileUpload(ConfirmFileUploadRequest request)
     {
         long userId = UserContextService.getCurrentUserId();
+        List<FileResourceInfo> results = new ArrayList<>();
+        for (ConfirmFileUploadItem item : request.getFiles())
+            results.add(confirmSingleUpload(item, userId));
+        return ServiceResponse.buildSuccessResponse(results);
+    }
+
+    private FileResourceInfo confirmSingleUpload(ConfirmFileUploadItem request, long userId)
+    {
         String fileId = request.getFileId();
         FileResource existing = requireOwnedFile(fileId, userId);
         if (existing.getStatus() != ConversationFileStatus.PENDING_UPLOAD)
-            return ServiceResponse.buildSuccessResponse(toFileResourceInfo(existing));
+            return toFileResourceInfo(existing);
         if (existing.getUploadExpiresAt().before(new Date()))
             throw new ServiceResponseException(ERROR_INVALID_FILE, "The upload session has expired.");
 
@@ -170,7 +181,7 @@ public class ConversationFileService
                 updated.getId(), userId, FileCleanupReason.ORPHANED, fileProperties.getOrphanTtlSeconds());
             return updated;
         });
-        return ServiceResponse.buildSuccessResponse(toFileResourceInfo(confirmed));
+        return toFileResourceInfo(confirmed);
     }
 
     public ServiceResponse<FileResourceInfo> getFileResource(String fileId)
@@ -179,31 +190,37 @@ public class ConversationFileService
         return ServiceResponse.buildSuccessResponse(toFileResourceInfo(requireOwnedFile(fileId, userId)));
     }
 
+    /** Retry failed parser tasks as a batch so future bulk retry UI needs no endpoint change. */
     @Transactional(rollbackFor = Exception.class)
-    public ServiceResponse<FileResourceInfo> retryFileProcessing(RetryFileProcessingRequest request)
+    public ServiceResponse<List<FileResourceInfo>> retryFileProcessing(RetryFileProcessingRequest request)
     {
         long userId = UserContextService.getCurrentUserId();
-        String fileId = request.getFileId();
-        FileResource fileResource = requireOwnedFile(fileId, userId);
-        if (fileResource.getStatus() != ConversationFileStatus.FAILED)
-            throw new ServiceResponseException(ERROR_INVALID_FILE, "Only a failed file can be retried.");
-        if (fileResourceMapper.resetFailedForRetry(fileResource.getId(), userId) != 1)
-            throw new ServiceResponseException(ERROR_INVALID_FILE, "The file state changed before retry.");
-        fileProcessingTaskMapper.upsertPendingTask(fileResource.getId(), userId);
-        return ServiceResponse.buildSuccessResponse(toFileResourceInfo(requireOwnedFile(fileId, userId)));
+        List<FileResourceInfo> results = new ArrayList<>();
+        for (String fileId : request.getFileIds())
+        {
+            FileResource fileResource = requireOwnedFile(fileId, userId);
+            if (fileResource.getStatus() != ConversationFileStatus.FAILED)
+                throw new ServiceResponseException(ERROR_INVALID_FILE, "Only a failed file can be retried.");
+            if (fileResourceMapper.resetFailedForRetry(fileResource.getId(), userId) != 1)
+                throw new ServiceResponseException(ERROR_INVALID_FILE, "The file state changed before retry.");
+            fileProcessingTaskMapper.upsertPendingTask(fileResource.getId(), userId);
+            results.add(toFileResourceInfo(requireOwnedFile(fileId, userId)));
+        }
+        return ServiceResponse.buildSuccessResponse(results);
     }
 
     @Transactional(rollbackFor = Exception.class)
     public ServiceResponse<Boolean> deleteFileResource(DeleteFileResourceRequest request)
     {
         long userId = UserContextService.getCurrentUserId();
-        String fileId = request.getFileId();
-        FileResource fileResource = requireOwnedFile(fileId, userId);
-        if (fileResourceMapper.requestDelete(fileId, userId) != 1)
-            throw new ServiceResponseException(ERROR_FILE_BUSY, "The file is referenced by an active request or conversation.");
-
-        fileProcessingTaskMapper.cancelByFileResourceId(fileResource.getId());
-        fileCleanupTaskMapper.addTask(fileResource.getId(), userId, FileCleanupReason.USER_REMOVED, 0);
+        for (String fileId : request.getFileIds())
+        {
+            FileResource fileResource = requireOwnedFile(fileId, userId);
+            if (fileResourceMapper.requestDelete(fileId, userId) != 1)
+                throw new ServiceResponseException(ERROR_FILE_BUSY, "The file is referenced by an active request or conversation.");
+            fileProcessingTaskMapper.cancelByFileResourceId(fileResource.getId());
+            fileCleanupTaskMapper.addTask(fileResource.getId(), userId, FileCleanupReason.USER_REMOVED, 0);
+        }
         return ServiceResponse.buildSuccessResponse(true);
     }
 
