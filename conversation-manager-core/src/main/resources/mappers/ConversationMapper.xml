@@ -170,6 +170,15 @@
           AND relation."creator_id" = #{userId}
     </select>
 
+    <update id="updateLatestRoundNumber">
+        UPDATE "conversation"
+        SET "latest_round_number" = #{roundNumber}, "modifier_id" = #{userId}
+        WHERE "conversation_id" = #{conversationId}
+          AND "creator_id" = #{userId}
+          AND "deleted" = FALSE
+          AND "latest_round_number" &lt; #{roundNumber}
+    </update>
+
     <select id="allOwnedConversationsExist" resultType="boolean">
         SELECT NOT EXISTS (
             SELECT 1

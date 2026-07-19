@@ -47,6 +47,10 @@ public interface ConversationMapper
 
     int clearConversationPinned(@Param("userId") long userId);
 
+    int updateLatestRoundNumber(@Param("conversationId") String conversationId,
+                                @Param("userId") long userId,
+                                @Param("roundNumber") long roundNumber);
+
     int advanceLatestRoundNumber(@Param("conversationId") String conversationId,
                                  @Param("userId") long userId,
                                  @Param("roundNumber") long roundNumber,

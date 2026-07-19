@@ -11,6 +11,7 @@ import ifl.agentbreaker.conversationmanager.dao.FileCleanupTaskMapper;
 import ifl.agentbreaker.conversationmanager.dao.FileProcessingTaskMapper;
 import ifl.agentbreaker.conversationmanager.dao.FileResourceMapper;
 import ifl.agentbreaker.conversationmanager.dao.ConversationRoundFileMapper;
+import ifl.agentbreaker.conversationmanager.dao.ConversationSharingMapper;
 import ifl.agentbreaker.conversationmanager.domain.constants.ConversationFileKind;
 import ifl.agentbreaker.conversationmanager.domain.constants.ConversationFileStatus;
 import ifl.agentbreaker.conversationmanager.domain.constants.FileCleanupReason;
@@ -23,6 +24,7 @@ import ifl.agentbreaker.conversationmanager.domain.dtos.responses.FileDownloadUr
 import ifl.agentbreaker.conversationmanager.domain.dtos.responses.FileResourceInfo;
 import ifl.agentbreaker.conversationmanager.domain.dtos.responses.FileUploadSession;
 import ifl.agentbreaker.conversationmanager.domain.entities.pg.FileResource;
+import ifl.agentbreaker.conversationmanager.domain.entities.pg.ConversationSharing;
 import ifl.agentbreaker.conversationmanager.exceptions.ServiceResponseException;
 import ifl.agentbreaker.conversationmanager.support.BusinessIdManager;
 import org.springframework.beans.BeanUtils;
@@ -77,6 +79,9 @@ public class ConversationFileService
 
     @Autowired
     private ConversationRoundFileMapper conversationRoundFileMapper;
+
+    @Autowired
+    private ConversationSharingMapper conversationSharingMapper;
 
     @Autowired
     private ConversationFileProperties fileProperties;
@@ -294,6 +299,42 @@ public class ConversationFileService
         result.setUrl(createSignedGetUrl(fileResource, expiresAt));
         result.setExpiresAt(expiresAt);
         return ServiceResponse.buildSuccessResponse(result);
+    }
+
+    /**
+     * Mints a signed URL only when the file is linked from a completed Round inside a valid share
+     * boundary. The caller is authenticated by the HTTP filter; no owner identity is inferred from
+     * the file request itself.
+     */
+    public ServiceResponse<FileDownloadUrl> getSharedFileDownloadUrl(
+        String conversationId, long endRoundNumber, String fileId)
+    {
+        boolean visible = conversationRoundFileMapper.listRoundFiles(conversationId).stream()
+            .anyMatch(file -> file.fileId().equals(fileId) && file.roundNumber() <= endRoundNumber);
+        if (!visible)
+            throw new ServiceResponseException(ERROR_FILE_NOT_FOUND, "File does not exist in the shared snapshot.");
+        FileResource fileResource = conversationRoundFileMapper.listRoundFiles(conversationId).stream()
+            .filter(file -> file.fileId().equals(fileId))
+            .findFirst()
+            .map(file -> fileResourceMapper.getFileResourceById(file.fileResourceId()))
+            .orElse(null);
+        if (fileResource == null || fileResource.getStatus() != ConversationFileStatus.READY || fileResource.isDeleted())
+            throw new ServiceResponseException(ERROR_INVALID_FILE, "The file is not ready for download.");
+        Date expiresAt = Date.from(Instant.now().plusSeconds(ossProperties.getPresignedUrlTtlSeconds()));
+        FileDownloadUrl result = new FileDownloadUrl();
+        result.setFileId(fileId);
+        result.setUrl(createSignedGetUrl(fileResource, expiresAt));
+        result.setExpiresAt(expiresAt);
+        return ServiceResponse.buildSuccessResponse(result);
+    }
+
+    /** Resolves and authorizes a share before delegating to the boundary-checked file method. */
+    public ServiceResponse<FileDownloadUrl> getSharedFileDownloadUrl(String sharedConversationId, String fileId)
+    {
+        ConversationSharing sharing = conversationSharingMapper.getActiveConversationSharingBySharedId(sharedConversationId);
+        if (sharing == null)
+            throw new ServiceResponseException(ERROR_FILE_NOT_FOUND, "Shared conversation does not exist or has expired.");
+        return getSharedFileDownloadUrl(sharing.getParentConversationId(), sharing.getEndRoundNumber(), fileId);
     }
 
     /**

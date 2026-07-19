@@ -3,6 +3,8 @@ package ifl.agentbreaker.conversationmanager.domain.entities.pg;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
 
+import java.time.Instant;
+
 @Data
 @EqualsAndHashCode(callSuper = true)
 public class ConversationSharing extends EntityBase
@@ -25,8 +27,17 @@ public class ConversationSharing extends EntityBase
      */
     private long endMessageId;
 
+    /** Inclusive upper boundary of the completed Round snapshot. */
+    private long endRoundNumber;
+
     /**
      * Whether the shared conversation remains accessible after the original conversation is deleted.
      */
     private boolean accessibleAfterDeleted;
+
+    private Instant expiresAt;
+
+    private boolean revoked;
+
+    private Instant revokedAt;
 }

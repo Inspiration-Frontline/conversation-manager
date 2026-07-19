@@ -14,21 +14,26 @@ import ifl.agentbreaker.conversationmanager.api.dto.responses.ConversationMessag
 import ifl.agentbreaker.conversationmanager.dao.ConversationGroupRelationMapper;
 import ifl.agentbreaker.conversationmanager.dao.ConversationMapper;
 import ifl.agentbreaker.conversationmanager.dao.ConversationMessageMapper;
+import ifl.agentbreaker.conversationmanager.dao.ConversationRoundMapper;
 import ifl.agentbreaker.conversationmanager.dao.ConversationSharingMapper;
 import ifl.agentbreaker.conversationmanager.services.files.ConversationFileService;
 import ifl.agentbreaker.conversationmanager.domain.constants.ExportFormat;
+import ifl.agentbreaker.conversationmanager.domain.constants.ShareExpiry;
 import ifl.agentbreaker.conversationmanager.domain.dtos.requests.ExportConversationRequest;
 import ifl.agentbreaker.conversationmanager.domain.dtos.requests.ForkConversationRequest;
 import ifl.agentbreaker.conversationmanager.domain.dtos.requests.GetConversationsRequest;
 import ifl.agentbreaker.conversationmanager.domain.dtos.requests.PinConversationRequest;
 import ifl.agentbreaker.conversationmanager.domain.dtos.requests.ShareConversationRequest;
 import ifl.agentbreaker.conversationmanager.domain.dtos.responses.ConversationSharingResult;
+import ifl.agentbreaker.conversationmanager.domain.dtos.responses.ConversationShareSummary;
+import ifl.agentbreaker.conversationmanager.domain.dtos.responses.SharedConversationView;
 import ifl.agentbreaker.conversationmanager.domain.entities.pg.Conversation;
 import ifl.agentbreaker.conversationmanager.domain.entities.pg.ConversationMessage;
 import ifl.agentbreaker.conversationmanager.domain.entities.pg.ConversationSharing;
 import ifl.agentbreaker.conversationmanager.support.BusinessIdManager;
 import ifl.agentbreaker.conversationmanager.support.ConversationTitleManager;
 import ifl.agentbreaker.conversationmanager.support.TextNormalizer;
+import ifl.agentbreaker.conversationmanager.services.rounds.ConversationRoundService;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
 import lombok.extern.slf4j.Slf4j;
@@ -48,6 +53,7 @@ import stark.dataworks.boot.web.ServiceResponse;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -95,6 +101,9 @@ public class ConversationService implements IConversationRpcService
     private ConversationMessageMapper conversationMessageMapper;
 
     @Autowired
+    private ConversationRoundMapper conversationRoundMapper;
+
+    @Autowired
     private ConversationGroupRelationMapper conversationGroupRelationMapper;
 
     @Autowired
@@ -102,6 +111,9 @@ public class ConversationService implements IConversationRpcService
 
     @Autowired
     private ConversationFileService conversationFileService;
+
+    @Autowired
+    private ConversationRoundService conversationRoundService;
 
     /**
      * Creates the durable Conversation shell used before the first message is sent.
@@ -145,12 +157,7 @@ public class ConversationService implements IConversationRpcService
         return ServiceResponse.buildSuccessResponse(toConversationAbstract(conversation));
     }
 
-    /**
-     * Creates a share snapshot after verifying ownership and freezing its message boundary.
-     *
-     * @param request owned Conversation ID and post-deletion accessibility policy
-     * @return generated public share ID and its parent Conversation ID
-     */
+    /** Creates one independent authenticated share snapshot for an owned Conversation. */
     @Transactional(rollbackFor = Exception.class)
     public ServiceResponse<ConversationSharingResult> shareConversation(ShareConversationRequest request)
     {
@@ -159,19 +166,72 @@ public class ConversationService implements IConversationRpcService
         if (!conversationMapper.existsByIdAndUser(request.getConversationId(), userId))
             return ServiceResponse.buildErrorResponse(ERROR_CONVERSATION_NOT_FOUND, "Conversation does not exist.");
 
+        ShareExpiry expiry;
+        try
+        {
+            expiry = ShareExpiry.parse(request.getExpiry());
+        }
+        catch (IllegalArgumentException e)
+        {
+            return ServiceResponse.buildErrorResponse(ERROR_INVALID_CONVERSATION,
+                "Expiry must be ONE_DAY, SEVEN_DAYS, THIRTY_DAYS, or NEVER.");
+        }
+
         ConversationSharing sharing = new ConversationSharing();
         sharing.setCreatorId(userId);
         sharing.setModifierId(userId);
         sharing.setParentConversationId(request.getConversationId());
         sharing.setSharedConversationId(BusinessIdManager.newConversationSharingId());
         sharing.setEndMessageId(conversationMessageMapper.getMaxMessageId(request.getConversationId()));
-        sharing.setAccessibleAfterDeleted(request.isAccessibleAfterDeleted());
+        sharing.setEndRoundNumber(conversationRoundService.getLatestCompletedRoundNumber(request.getConversationId()));
+        sharing.setExpiresAt(expiry.getDuration() == null ? null : Instant.now().plus(expiry.getDuration()));
         conversationSharingMapper.insertConversationSharing(sharing);
 
         ConversationSharingResult result = new ConversationSharingResult();
         result.setParentConversationId(sharing.getParentConversationId());
         result.setSharedConversationId(sharing.getSharedConversationId());
+        result.setEndRoundNumber(sharing.getEndRoundNumber());
+        result.setExpiresAt(sharing.getExpiresAt());
         return ServiceResponse.buildSuccessResponse(result);
+    }
+
+    /** Returns one authenticated read-only snapshot through a valid share link. */
+    public ServiceResponse<SharedConversationView> getSharedConversation(String sharedConversationId)
+    {
+        ConversationSharing sharing = conversationSharingMapper.getActiveConversationSharingBySharedId(sharedConversationId);
+        if (sharing == null)
+            return ServiceResponse.buildErrorResponse(ERROR_SHARE_NOT_FOUND, "Shared conversation does not exist or has expired.");
+        Conversation source = conversationMapper.getConversationById(sharing.getParentConversationId());
+        if (source == null || source.isDeleted())
+            return ServiceResponse.buildErrorResponse(ERROR_CONVERSATION_NOT_FOUND, "Conversation does not exist.");
+        return ServiceResponse.buildSuccessResponse(new SharedConversationView(
+            source.getConversationId(), sharing.getSharedConversationId(), source.getTitle(), sharing.getExpiresAt(),
+            conversationRoundService.getSharedHttpHistory(source.getConversationId(), sharing.getEndRoundNumber())));
+    }
+
+    /** Lists all share records belonging to the authenticated owner. */
+    public ServiceResponse<List<ConversationShareSummary>> listConversationShares(String conversationId)
+    {
+        long userId = UserContextService.getCurrentUserId();
+        if (!conversationMapper.existsByIdAndUser(conversationId, userId))
+            return ServiceResponse.buildErrorResponse(ERROR_CONVERSATION_NOT_FOUND, "Conversation does not exist.");
+        List<ConversationShareSummary> result = conversationSharingMapper
+            .listConversationSharingsByParentId(conversationId, userId).stream()
+            .map(sharing -> new ConversationShareSummary(
+                sharing.getParentConversationId(), sharing.getSharedConversationId(), sharing.getEndRoundNumber(),
+                sharing.getExpiresAt(), sharing.isRevoked(), sharing.getRevokedAt()))
+            .toList();
+        return ServiceResponse.buildSuccessResponse(result);
+    }
+
+    /** Revokes one owner-created share without affecting other links for the Conversation. */
+    @Transactional(rollbackFor = Exception.class)
+    public ServiceResponse<Boolean> revokeConversationShare(String sharedConversationId)
+    {
+        long userId = UserContextService.getCurrentUserId();
+        if (conversationSharingMapper.revokeConversationSharing(sharedConversationId, userId) <= 0)
+            return ServiceResponse.buildErrorResponse(ERROR_SHARE_NOT_FOUND, "Shared conversation does not exist.");
+        return ServiceResponse.buildSuccessResponse(true);
     }
 
     /**
@@ -188,12 +248,12 @@ public class ConversationService implements IConversationRpcService
     {
         long userId = UserContextService.getCurrentUserId();
 
-        ConversationSharing sharing = conversationSharingMapper.getConversationSharingBySharedId(request.getSharedConversationId());
+        ConversationSharing sharing = conversationSharingMapper.getActiveConversationSharingBySharedId(request.getSharedConversationId());
         if (sharing == null)
             return ServiceResponse.buildErrorResponse(ERROR_SHARE_NOT_FOUND, "Shared conversation does not exist.");
 
         Conversation source = conversationMapper.getConversationById(sharing.getParentConversationId());
-        if (source == null || (source.isDeleted() && !sharing.isAccessibleAfterDeleted()))
+        if (source == null || source.isDeleted())
             return ServiceResponse.buildErrorResponse(ERROR_CONVERSATION_NOT_FOUND, "Conversation does not exist.");
 
         Conversation forked = new Conversation();
@@ -205,6 +265,10 @@ public class ConversationService implements IConversationRpcService
         forked.setDeleted(false);
         Conversation createdConversation = conversationMapper.insertConversation(forked);
         conversationMessageMapper.forkConversationMessages(source.getConversationId(), forked.getConversationId(), userId, sharing.getEndMessageId());
+        conversationRoundMapper.forkConversationHistory(
+            source.getConversationId(), forked.getConversationId(), userId, sharing.getEndRoundNumber());
+        conversationMapper.updateLatestRoundNumber(
+            forked.getConversationId(), userId, sharing.getEndRoundNumber());
         return ServiceResponse.buildSuccessResponse(toConversationAbstract(createdConversation == null ? forked : createdConversation));
     }
 
@@ -354,6 +418,7 @@ public class ConversationService implements IConversationRpcService
         int updated = conversationMapper.deleteConversation(conversationId, userId);
         if (updated <= 0)
             return false;
+        conversationSharingMapper.revokeByParentConversationIds(List.of(conversationId), userId);
         conversationGroupRelationMapper.deleteConversationGroupRelationsByConversationId(conversationId, userId);
         conversationFileService.releaseConversationReferences(conversationId, userId);
         return true;
@@ -378,6 +443,7 @@ public class ConversationService implements IConversationRpcService
         if (uniqueIds.isEmpty() || !conversationMapper.allOwnedConversationsExist(userId, uniqueIds))
             return ServiceResponse.buildErrorResponse(ERROR_CONVERSATION_NOT_FOUND, "Conversation does not exist.");
         conversationMapper.deleteConversations(uniqueIds, userId);
+        conversationSharingMapper.revokeByParentConversationIds(uniqueIds, userId);
         conversationGroupRelationMapper.deleteConversationGroupRelationsByConversationIds(uniqueIds, userId);
         conversationFileService.releaseConversationReferences(uniqueIds, userId);
         return ServiceResponse.buildSuccessResponse(true);

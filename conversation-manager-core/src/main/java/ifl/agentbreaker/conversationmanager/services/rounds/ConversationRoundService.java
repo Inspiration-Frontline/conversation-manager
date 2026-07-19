@@ -188,6 +188,52 @@ public class ConversationRoundService
     }
 
     /**
+     * Builds the read-only snapshot projection for a valid share. Ownership is intentionally not
+     * checked here; the caller must have already validated the share record and its lifecycle.
+     * Only active completed Rounds at or below the frozen boundary are exposed.
+     *
+     * @param conversationId source Conversation identifier
+     * @param endRoundNumber inclusive snapshot boundary
+     * @return completed Round history visible through the share
+     */
+    public RoundHistoryView getSharedHttpHistory(String conversationId, long endRoundNumber)
+    {
+        Map<Long, List<RoundFileHistory>> filesByRound = conversationRoundFileMapper
+            .listRoundFiles(conversationId)
+            .stream()
+            .collect(Collectors.groupingBy(RoundFileHistory::roundNumber));
+        List<ConversationRound> visibleRounds = conversationRoundMapper.listActiveRounds(conversationId).stream()
+            .filter(round -> round.getRoundNumber() <= endRoundNumber)
+            .filter(round -> round.getStatus() == ConversationRoundStatus.COMPLETED)
+            .toList();
+        long latestRoundNumber = visibleRounds.isEmpty()
+            ? 0
+            : visibleRounds.get(visibleRounds.size() - 1).getRoundNumber();
+        return new RoundHistoryView(
+            conversationId,
+            latestRoundNumber,
+            visibleRounds.stream().map(round -> new RoundHistoryView.RoundView(
+                round.getRoundNumber(), extractTextContent(round), round.getFinalAnswerContent(),
+                round.getStatus().name(), round.getErrorMessage(), round.getTurnCount(),
+                round.getStartTime().getTime(), round.getEndTime().getTime(),
+                filesByRound.getOrDefault(round.getRoundNumber(), List.of()).stream()
+                    .map(file -> new RoundHistoryView.FileView(
+                        file.fileId(), file.originalFilename(), file.mimeType(), file.fileSize(),
+                        file.kind(), file.status()))
+                .toList())).toList());
+    }
+
+    /** Returns the latest active completed Round number used to freeze a share boundary. */
+    public long getLatestCompletedRoundNumber(String conversationId)
+    {
+        return conversationRoundMapper.listActiveRounds(conversationId).stream()
+            .filter(round -> round.getStatus() == ConversationRoundStatus.COMPLETED)
+            .mapToLong(ConversationRound::getRoundNumber)
+            .max()
+            .orElse(0L);
+    }
+
+    /**
      * Reconstructs the normalized model context required to replay a completed Round. Replay is
      * deliberately assembled from durable LLM rows rather than cached SDK objects, so a new Runner
      * process can continue a Conversation after restart.

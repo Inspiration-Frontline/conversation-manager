@@ -9,5 +9,6 @@ public class ShareConversationRequest
     @NotBlank(message = "Conversation ID is required.")
     private String conversationId;
 
-    private boolean accessibleAfterDeleted;
+    /** ONE_DAY, SEVEN_DAYS (default), THIRTY_DAYS, or NEVER. */
+    private String expiry = "SEVEN_DAYS";
 }

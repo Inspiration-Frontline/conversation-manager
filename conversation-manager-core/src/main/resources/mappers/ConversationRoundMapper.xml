@@ -80,4 +80,28 @@
         LIMIT 1
     </select>
 
+    <insert id="forkCompletedRounds">
+        INSERT INTO "conversation_round" (
+            "creator_id", "modifier_id", "conversation_id", "round_number", "user_request_content",
+            "user_request_content_parts", "final_answer_content", "final_answer_content_parts",
+            "final_source_turn_number", "status", "error_message", "start_time", "end_time",
+            "payload_hash_version", "payload_hash", "deleted"
+        )
+        SELECT #{userId}, #{userId}, #{targetConversationId}, "round_number", "user_request_content",
+               "user_request_content_parts", "final_answer_content", "final_answer_content_parts",
+               "final_source_turn_number", 'COMPLETED', '', "start_time", "end_time",
+               "payload_hash_version", "payload_hash", FALSE
+        FROM "conversation_round"
+        WHERE "conversation_id" = #{sourceConversationId}
+          AND "round_number" &lt;= #{endRoundNumber}
+          AND "status" = 'COMPLETED'
+          AND "deleted" = FALSE
+        ORDER BY "round_number"
+    </insert>
+
+    <select id="forkConversationHistory" resultType="int">
+        SELECT fork_conversation_history(
+            #{sourceConversationId}, #{targetConversationId}, #{userId}, #{endRoundNumber})
+    </select>
+
 </mapper>

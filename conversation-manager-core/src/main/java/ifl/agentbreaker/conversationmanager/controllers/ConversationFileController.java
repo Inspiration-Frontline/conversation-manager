@@ -107,4 +107,12 @@ public class ConversationFileController
     {
         return conversationFileService.getFileDownloadUrl(fileId);
     }
+
+    /** Creates a short-lived signed URL for an attachment visible in a shared snapshot. */
+    @GetMapping("/shared/{sharedConversationId}/{fileId}/download-url")
+    public ServiceResponse<FileDownloadUrl> getSharedFileDownloadUrl(
+        @PathVariable String sharedConversationId, @PathVariable String fileId)
+    {
+        return conversationFileService.getSharedFileDownloadUrl(sharedConversationId, fileId);
+    }
 }

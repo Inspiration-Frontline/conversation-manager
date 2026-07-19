@@ -19,4 +19,14 @@ public interface ConversationRoundMapper
     ConversationRound getLatestCompletedRoundAtOrBefore(@Param("conversationId") String conversationId,
                                                          @Param("endRoundNumber") long endRoundNumber);
 
+    int forkCompletedRounds(@Param("sourceConversationId") String sourceConversationId,
+                            @Param("targetConversationId") String targetConversationId,
+                            @Param("userId") long userId,
+                            @Param("endRoundNumber") long endRoundNumber);
+
+    int forkConversationHistory(@Param("sourceConversationId") String sourceConversationId,
+                                @Param("targetConversationId") String targetConversationId,
+                                @Param("userId") long userId,
+                                @Param("endRoundNumber") long endRoundNumber);
+
 }

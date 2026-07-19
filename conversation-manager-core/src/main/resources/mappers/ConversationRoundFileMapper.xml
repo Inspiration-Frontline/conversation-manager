@@ -13,6 +13,7 @@
 
     <select id="listRoundFiles" resultType="ifl.agentbreaker.conversationmanager.domain.dtos.responses.RoundFileHistory">
         SELECT round."round_number" AS "roundNumber",
+               file."id" AS "fileResourceId",
                file."file_id" AS "fileId",
                file."original_filename" AS "originalFilename",
                COALESCE(file."detected_mime_type", file."declared_mime_type") AS "mimeType",

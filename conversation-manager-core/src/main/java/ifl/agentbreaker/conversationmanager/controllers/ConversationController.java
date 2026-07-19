@@ -8,6 +8,8 @@ import ifl.agentbreaker.conversationmanager.api.dto.requests.DeleteMessagesReque
 import ifl.agentbreaker.conversationmanager.api.dto.requests.UpdateTitleRequest;
 import ifl.agentbreaker.conversationmanager.domain.dtos.requests.*;
 import ifl.agentbreaker.conversationmanager.domain.dtos.responses.ConversationSharingResult;
+import ifl.agentbreaker.conversationmanager.domain.dtos.responses.ConversationShareSummary;
+import ifl.agentbreaker.conversationmanager.domain.dtos.responses.SharedConversationView;
 import ifl.agentbreaker.conversationmanager.domain.dtos.responses.RoundHistoryView;
 import ifl.agentbreaker.conversationmanager.services.ConversationService;
 import ifl.agentbreaker.conversationmanager.services.rounds.ConversationRoundService;
@@ -140,6 +142,27 @@ public class ConversationController
     public ServiceResponse<ConversationSharingResult> shareConversation(@Valid @RequestBody ShareConversationRequest request)
     {
         return conversationService.shareConversation(request);
+    }
+
+    /** Returns owner-scoped share records for one Conversation. */
+    @GetMapping("/shares")
+    public ServiceResponse<List<ConversationShareSummary>> listConversationShares(@RequestParam String conversationId)
+    {
+        return conversationService.listConversationShares(conversationId);
+    }
+
+    /** Revokes one owner-created share link. */
+    @PostMapping("/share/revoke")
+    public ServiceResponse<Boolean> revokeConversationShare(@RequestParam String sharedConversationId)
+    {
+        return conversationService.revokeConversationShare(sharedConversationId);
+    }
+
+    /** Reads an authenticated immutable Conversation snapshot. */
+    @GetMapping("/shared/{sharedConversationId}")
+    public ServiceResponse<SharedConversationView> getSharedConversation(@PathVariable String sharedConversationId)
+    {
+        return conversationService.getSharedConversation(sharedConversationId);
     }
 
     /**

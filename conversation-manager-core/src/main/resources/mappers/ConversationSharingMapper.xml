@@ -10,23 +10,27 @@
         <result column="parent_conversation_id" property="parentConversationId"/>
         <result column="shared_conversation_id" property="sharedConversationId"/>
         <result column="end_message_id" property="endMessageId"/>
+        <result column="end_round_number" property="endRoundNumber"/>
         <result column="accessible_after_deleted" property="accessibleAfterDeleted"/>
+        <result column="expires_at" property="expiresAt"/>
+        <result column="revoked" property="revoked"/>
+        <result column="revoked_at" property="revokedAt"/>
     </resultMap>
 
     <sql id="ConversationSharingColumns">
         "id", "creator_id", "creation_time", "modifier_id", "modification_time",
-        "parent_conversation_id", "shared_conversation_id", "end_message_id",
-        "accessible_after_deleted"
+        "parent_conversation_id", "shared_conversation_id", "end_message_id", "end_round_number",
+        "accessible_after_deleted", "expires_at", "revoked", "revoked_at"
     </sql>
 
     <insert id="insertConversationSharing" useGeneratedKeys="true" keyProperty="id" keyColumn="id">
         INSERT INTO "conversation_sharing" (
             "creator_id", "modifier_id", "parent_conversation_id", "shared_conversation_id",
-            "end_message_id", "accessible_after_deleted"
+            "end_message_id", "end_round_number", "accessible_after_deleted", "expires_at", "revoked", "revoked_at"
         )
         VALUES (
             #{creatorId}, #{modifierId}, #{parentConversationId}, #{sharedConversationId},
-            #{endMessageId}, #{accessibleAfterDeleted}
+            #{endMessageId}, #{endRoundNumber}, FALSE, #{expiresAt}, FALSE, NULL
         )
     </insert>
 
@@ -35,4 +39,39 @@
         FROM "conversation_sharing"
         WHERE "shared_conversation_id" = #{sharedConversationId}
     </select>
+
+    <select id="getActiveConversationSharingBySharedId" resultMap="ConversationSharingResultMap">
+        SELECT <include refid="ConversationSharingColumns"/>
+        FROM "conversation_sharing"
+        WHERE "shared_conversation_id" = #{sharedConversationId}
+          AND "revoked" = FALSE
+          AND ("expires_at" IS NULL OR "expires_at" &gt; NOW())
+    </select>
+
+    <select id="listConversationSharingsByParentId" resultMap="ConversationSharingResultMap">
+        SELECT <include refid="ConversationSharingColumns"/>
+        FROM "conversation_sharing"
+        WHERE "parent_conversation_id" = #{parentConversationId}
+          AND "creator_id" = #{userId}
+        ORDER BY "creation_time" DESC
+    </select>
+
+    <update id="revokeConversationSharing">
+        UPDATE "conversation_sharing"
+        SET "revoked" = TRUE, "revoked_at" = NOW(), "modifier_id" = #{userId}
+        WHERE "shared_conversation_id" = #{sharedConversationId}
+          AND "creator_id" = #{userId}
+          AND "revoked" = FALSE
+    </update>
+
+    <update id="revokeByParentConversationIds">
+        UPDATE "conversation_sharing"
+        SET "revoked" = TRUE, "revoked_at" = NOW(), "modifier_id" = #{userId}
+        WHERE "parent_conversation_id" IN
+        <foreach collection="conversationIds" item="conversationId" open="(" separator="," close=")">
+            #{conversationId}
+        </foreach>
+          AND "creator_id" = #{userId}
+          AND "revoked" = FALSE
+    </update>
 </mapper>
