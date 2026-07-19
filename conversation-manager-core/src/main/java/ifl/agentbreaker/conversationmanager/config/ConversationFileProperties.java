@@ -26,6 +26,7 @@ public class ConversationFileProperties
     private Set<String> allowedMimeTypes = new LinkedHashSet<>();
 
     @PostConstruct
+    /** Normalizes configured extension and MIME collections once during bean initialization. */
     public void normalizeConfiguredTypes()
     {
         Set<String> normalizedExtensions = new LinkedHashSet<>();

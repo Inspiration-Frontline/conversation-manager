@@ -115,6 +115,7 @@ public class ConversationService implements IConversationRpcService
         return ServiceResponse.buildSuccessResponse(toConversationAbstract(createdConversation == null ? conversation : createdConversation));
     }
 
+    /** Returns one owned Conversation summary for direct navigation and refresh. */
     public ServiceResponse<ConversationAbstract> getConversationInfo(String conversationId)
     {
         long userId = UserContextService.getCurrentUserId();
@@ -126,6 +127,7 @@ public class ConversationService implements IConversationRpcService
         return ServiceResponse.buildSuccessResponse(toConversationAbstract(conversation));
     }
 
+    /** Creates or refreshes a share record after verifying the owner and requested message boundary. */
     @Transactional(rollbackFor = Exception.class)
     public ServiceResponse<ConversationSharingResult> shareConversation(ShareConversationRequest request)
     {
@@ -153,6 +155,7 @@ public class ConversationService implements IConversationRpcService
      * Forks a conversation from a shared conversation.
      * @return The forked conversation.
      */
+    /** Creates an owned fork containing the selected shared Conversation messages. */
     @Transactional(rollbackFor = Exception.class)
     public ServiceResponse<ConversationAbstract> forkConversation(@Valid ForkConversationRequest request)
     {
@@ -178,6 +181,7 @@ public class ConversationService implements IConversationRpcService
         return ServiceResponse.buildSuccessResponse(toConversationAbstract(createdConversation == null ? forked : createdConversation));
     }
 
+    /** Lists root-level owned Conversations with stable pagination and modification ordering. */
     public ServiceResponse<PaginatedData<ConversationAbstract>> getConversations(@Valid GetConversationsRequest request)
     {
         long userId = UserContextService.getCurrentUserId();
@@ -202,6 +206,7 @@ public class ConversationService implements IConversationRpcService
         return ServiceResponse.buildSuccessResponse(page);
     }
 
+    /** Returns the legacy message-history projection for one owned Conversation. */
     public ServiceResponse<ConversationMessageHistory> getConversationMessageHistory(String conversationId)
     {
         long userId = UserContextService.getCurrentUserId();
@@ -213,6 +218,7 @@ public class ConversationService implements IConversationRpcService
         return ServiceResponse.buildSuccessResponse(buildConversationMessageHistory(conversation, null));
     }
 
+    /** Returns only export formats that have a real implementation in this service. */
     public ServiceResponse<List<String>> getAcceptableExportFormats()
     {
         List<String> exportFormats = new ArrayList<>();
@@ -226,6 +232,7 @@ public class ConversationService implements IConversationRpcService
      * Exports a conversation to a file with the specified format.
      * @param request The export request.
      */
+    /** Streams a requested Conversation export without buffering it in the browser. */
     public void exportConversation(@Valid ExportConversationRequest request, HttpServletResponse response)
     {
         long userId = UserContextService.getCurrentUserId();
@@ -253,6 +260,7 @@ public class ConversationService implements IConversationRpcService
         }
     }
 
+    /** Updates an owned Conversation title and returns the refreshed summary. */
     @Transactional(rollbackFor = Exception.class)
     public ServiceResponse<ConversationAbstract> updateTitle(@Valid UpdateTitleRequest request)
     {
@@ -266,6 +274,7 @@ public class ConversationService implements IConversationRpcService
         return ServiceResponse.buildSuccessResponse(toConversationAbstract(conversation));
     }
 
+    /** Soft-deletes one owned Conversation and releases its file references. */
     @Transactional(rollbackFor = Exception.class)
     public ServiceResponse<Boolean> deleteConversation(String conversationId)
     {
@@ -275,6 +284,7 @@ public class ConversationService implements IConversationRpcService
         return ServiceResponse.buildSuccessResponse(true);
     }
 
+    /** Performs one Conversation soft delete for reuse by the single and batch APIs. */
     private boolean deleteSingleConversation(String conversationId, long userId)
     {
         int updated = conversationMapper.deleteConversation(conversationId, userId);
@@ -286,6 +296,7 @@ public class ConversationService implements IConversationRpcService
     }
 
     /** Deletes an owned conversation batch while preserving the existing per-conversation cleanup contract. */
+    /** Soft-deletes an owned Conversation batch and performs set-based relation cleanup. */
     @Transactional(rollbackFor = Exception.class)
     public ServiceResponse<Boolean> deleteConversations(List<String> conversationIds)
     {
@@ -301,6 +312,7 @@ public class ConversationService implements IConversationRpcService
         return ServiceResponse.buildSuccessResponse(true);
     }
 
+    /** Deletes selected messages after verifying that their parent Conversation is owned. */
     @Transactional(rollbackFor = Exception.class)
     public ServiceResponse<Boolean> deleteMessages(DeleteMessagesRequest request)
     {
@@ -313,6 +325,7 @@ public class ConversationService implements IConversationRpcService
         return ServiceResponse.buildSuccessResponse(true);
     }
 
+    /** Pins or unpins root-level owned Conversations as one set-based operation. */
     @Transactional(rollbackFor = Exception.class)
     public ServiceResponse<Boolean> pinConversation(@Valid PinConversationRequest request)
     {
@@ -339,6 +352,7 @@ public class ConversationService implements IConversationRpcService
         return ServiceResponse.buildSuccessResponse(true);
     }
 
+    /** Normalizes optional pin IDs while preserving the empty-list unpin-all behavior. */
     private List<String> getPinConversationIds(PinConversationRequest request)
     {
         if (request == null)
@@ -347,6 +361,7 @@ public class ConversationService implements IConversationRpcService
         return BusinessIdManager.normalizeIds(request.getConversationIds());
     }
 
+    /** Builds the message-history DTO and applies the optional end-message boundary. */
     private ConversationMessageHistory buildConversationMessageHistory(Conversation conversation, Long endMessageId)
     {
         List<ConversationMessage> messages = conversationMessageMapper.listConversationMessages(conversation.getConversationId(), endMessageId);
@@ -361,6 +376,7 @@ public class ConversationService implements IConversationRpcService
         return history;
     }
 
+    /** Maps a persisted message and its JSON content metadata into the HTTP DTO. */
     private ConversationMessageInfo toConversationMessageInfo(ConversationMessage message)
     {
         ConversationMessageInfo messageInfo = new ConversationMessageInfo();
@@ -370,6 +386,7 @@ public class ConversationService implements IConversationRpcService
         return messageInfo;
     }
 
+    /** Deserializes an optional JSON array and returns an empty list for blank or malformed data. */
     private <T> List<T> readJsonList(String json, TypeReference<List<T>> typeReference)
     {
         if (!StringUtils.hasText(json))
@@ -386,6 +403,7 @@ public class ConversationService implements IConversationRpcService
         }
     }
 
+    /** Maps the persistence entity into the stable sidebar/navigation summary. */
     private ConversationAbstract toConversationAbstract(Conversation conversation)
     {
         ConversationAbstract conversationAbstract = new ConversationAbstract();
@@ -393,6 +411,7 @@ public class ConversationService implements IConversationRpcService
         return conversationAbstract;
     }
 
+    /** Renders one history projection into the selected downloadable export format. */
     private ExportPayload buildExportPayload(ConversationMessageHistory history, ExportFormat exportFormat) throws IOException
     {
         String baseFilename = history.getConversationId() + "." + exportFormat.name().toLowerCase(Locale.ROOT);
@@ -405,6 +424,7 @@ public class ConversationService implements IConversationRpcService
         };
     }
 
+    /** Renders conversation history as plain text for portable export. */
     private String toPlainText(ConversationMessageHistory history)
     {
         StringBuilder builder = new StringBuilder();
@@ -415,6 +435,7 @@ public class ConversationService implements IConversationRpcService
         return builder.toString();
     }
 
+    /** Renders conversation history as Markdown while preserving attachment summaries. */
     private String toMarkdown(ConversationMessageHistory history)
     {
         StringBuilder builder = new StringBuilder();
@@ -425,6 +446,7 @@ public class ConversationService implements IConversationRpcService
         return builder.toString();
     }
 
+    /** Renders conversation history as escaped standalone HTML. */
     private String toHtml(ConversationMessageHistory history)
     {
         StringBuilder builder = new StringBuilder();
@@ -445,6 +467,7 @@ public class ConversationService implements IConversationRpcService
         return builder.toString();
     }
 
+    /** Writes a minimal UTF-8 error response when export rendering fails after headers are available. */
     private void sendError(HttpServletResponse response, int status, String message)
     {
         try
@@ -457,6 +480,7 @@ public class ConversationService implements IConversationRpcService
         }
     }
 
+    /** Escapes untrusted conversation text before embedding it in exported HTML. */
     private static String escapeHtml(String value)
     {
         if (value == null)
@@ -470,11 +494,13 @@ public class ConversationService implements IConversationRpcService
             .replace("'", "&#39;");
     }
 
+    /** Clamps an invalid page index to the first page. */
     private static int normalizePageIndex(int pageIndex)
     {
         return pageIndex <= 0 ? DEFAULT_PAGE_INDEX : pageIndex;
     }
 
+    /** Applies the service page-size default and upper bound. */
     private static int normalizePageSize(int pageSize)
     {
         if (pageSize <= 0)

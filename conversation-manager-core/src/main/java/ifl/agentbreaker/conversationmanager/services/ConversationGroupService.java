@@ -53,9 +53,14 @@ public class ConversationGroupService
     private ConversationGroupRelationMapper conversationGroupRelationMapper;
 
     /**
-     * Create a new conversation group, by default, the sort is (current max sort order + 1).
-     * @param request The group creation request.
-     * @return The created group.
+     * Creates a user-owned Group with the next stable ordering position.
+     *
+     * <p>The position is derived from the current maximum for this owner so concurrent users do
+     * not affect one another's Group ordering.  Name and description normalization is centralized
+     * here before the entity is written, keeping API and persistence values consistent.</p>
+     *
+     * @param request validated Group name and optional description
+     * @return the persisted Group summary including its generated ID and sort order
      */
     @Transactional(rollbackFor = Exception.class)
     public ServiceResponse<ConversationGroupAbstract> createConversationGroup(@Valid CreateConversationGroupRequest request)
@@ -74,6 +79,12 @@ public class ConversationGroupService
         return ServiceResponse.buildSuccessResponse(toConversationGroupAbstract(group));
     }
 
+    /**
+     * Updates one owned Group's display metadata while preserving its relations and ordering.
+     *
+     * @param request owned Group ID and optional replacement fields
+     * @return updated summary, or a not-found error when the caller does not own the Group
+     */
     @Transactional(rollbackFor = Exception.class)
     public ServiceResponse<ConversationGroupAbstract> updateConversationGroupAbstract(@Valid UpdateConversationGroupAbstractRequest request)
     {
@@ -98,6 +109,12 @@ public class ConversationGroupService
         return ServiceResponse.buildSuccessResponse(toConversationGroupAbstract(group));
     }
 
+    /**
+     * Reorders all supplied owned Groups in one transaction and returns the resulting order.
+     *
+     * @param request ordered Group summaries supplied by the drag-and-drop UI
+     * @return the complete owner-scoped Group list after updates
+     */
     @Transactional(rollbackFor = Exception.class)
     public ServiceResponse<List<ConversationGroupAbstract>> reorderConversationGroup(@Valid ReorderConversationGroupRequest request)
     {
@@ -118,6 +135,15 @@ public class ConversationGroupService
         return getConversationGroupsOfUser();
     }
 
+    /**
+     * Deletes a Group, its relation rows, and optionally its Conversations.
+     *
+     * <p>Conversation file references are released after the set-based Conversation delete so the
+     * file service performs one batch operation rather than one database call per Conversation.</p>
+     *
+     * @param request Group ID and the caller's delete-children choice
+     * @return {@code true} when all logical deletes commit
+     */
     @Transactional(rollbackFor = Exception.class)
     public ServiceResponse<Boolean> deleteConversationGroup(@Valid DeleteConversationGroupRequest request)
     {
@@ -138,6 +164,11 @@ public class ConversationGroupService
         return ServiceResponse.buildSuccessResponse(true);
     }
 
+    /**
+     * Lists Groups owned by the current user in persisted sort order.
+     *
+     * @return owner-scoped Group summaries; an owner with no Groups receives an empty list
+     */
     public ServiceResponse<List<ConversationGroupAbstract>> getConversationGroupsOfUser()
     {
         long userId = UserContextService.getCurrentUserId();
@@ -149,6 +180,12 @@ public class ConversationGroupService
         return ServiceResponse.buildSuccessResponse(groups);
     }
 
+    /**
+     * Adds an owned Conversation batch to an owned Group and clears root pin state.
+     *
+     * @param request target Group ID and Conversation IDs selected by the UI
+     * @return {@code true} after relation upserts complete
+     */
     @Transactional(rollbackFor = Exception.class)
     public ServiceResponse<Boolean> addConversationsToGroup(@Valid AddConversationToGroupRequest request)
     {
@@ -177,6 +214,12 @@ public class ConversationGroupService
         return ServiceResponse.buildSuccessResponse(true);
     }
 
+    /**
+     * Removes an owned Conversation batch from an owned Group without deleting the Conversations.
+     *
+     * @param request target Group ID and Conversation IDs to detach
+     * @return {@code true} after relation rows are deleted
+     */
     @Transactional(rollbackFor = Exception.class)
     public ServiceResponse<Boolean> removeConversationsFromGroup(@Valid RemoveConversationFromGroupRequest request)
     {
@@ -193,6 +236,12 @@ public class ConversationGroupService
         return ServiceResponse.buildSuccessResponse(true);
     }
 
+    /**
+     * Maps the persistence entity to the DTO exposed by HTTP and RPC callers.
+     *
+     * @param group persisted Group containing audit and ordering fields
+     * @return public summary with no mutable persistence object leaked to the caller
+     */
     private ConversationGroupAbstract toConversationGroupAbstract(ConversationGroup group)
     {
         ConversationGroupAbstract groupAbstract = new ConversationGroupAbstract();

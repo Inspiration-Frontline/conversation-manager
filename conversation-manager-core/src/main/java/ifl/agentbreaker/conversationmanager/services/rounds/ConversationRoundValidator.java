@@ -33,6 +33,11 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
+/**
+ * Guards the cross-service Round/Turn contract before any SQL mutation. Runner captures data from a
+ * third-party SDK, so Conversation Manager revalidates ordering, terminal states, Tool evidence,
+ * content shape, and timing instead of trusting a well-formed protobuf message.
+ */
 @Component
 public class ConversationRoundValidator
 {
@@ -40,6 +45,13 @@ public class ConversationRoundValidator
     private ObjectMapper objectMapper;
 
     // TODO: Rename to validate() once the remaining Round/Turn phases share this contract.
+    /**
+     * Validates the complete Round persistence contract before any database mutation occurs.
+     * Completed and partial terminal Rounds intentionally have different answer/Turn requirements.
+     *
+     * @param request complete Runner persistence request
+     * @throws RoundPersistenceException when any cross-row invariant is invalid
+     */
     public void validatePhaseFour(SaveConversationRoundRequest request)
     {
         require(request.getUserId() > 0, "user_id must be positive.");
@@ -80,6 +92,12 @@ public class ConversationRoundValidator
             "The final answer must match the last LLM response.");
     }
 
+    /**
+     * Validates Turn ordering, fixed Agent identity, nested timing, and terminal-state continuity.
+     *
+     * @param request parent Round containing ordered Turns
+     * @param completedRound whether every Turn must be successful
+     */
     private void validateTurns(SaveConversationRoundRequest request, boolean completedRound)
     {
         AgentIdentity firstIdentity = null;
@@ -128,6 +146,13 @@ public class ConversationRoundValidator
         }
     }
 
+    /**
+     * Ensures an APPEND_DELTA exactly continues the preceding Tool-calling Turn so replay cannot
+     * lose, duplicate, or rewrite a Tool result between model calls.
+     *
+     * @param previousTurn preceding model response and Tool executions
+     * @param currentRequest next LLM request using APPEND_DELTA storage
+     */
     private void validateContinuationDelta(ConversationTurn previousTurn, LlmRequest currentRequest)
     {
         AssistantMessage previousMessage = previousTurn.getLlmCall().getResponse().getMessage();
@@ -162,6 +187,14 @@ public class ConversationRoundValidator
         }
     }
 
+    /**
+     * Compares Tool calls structurally, parsing JSON arguments rather than treating formatting as a
+     * semantic difference.
+     *
+     * @param first first Tool call
+     * @param second second Tool call
+     * @return true when identity, function, and JSON arguments match
+     */
     private boolean toolCallEquals(ToolCall first, ToolCall second)
     {
         return first.getId().equals(second.getId())
@@ -170,6 +203,14 @@ public class ConversationRoundValidator
             && jsonEquals(first.getFunction().getArguments(), second.getFunction().getArguments());
     }
 
+    /**
+     * Validates one nested LLM call including storage mode, provider metadata, response, and Tool
+     * execution evidence.
+     *
+     * @param call nested model call
+     * @param turn parent Turn defining the time boundary
+     * @param turnIndex zero-based Turn index selecting FULL_SNAPSHOT versus APPEND_DELTA
+     */
     private void validateLlmCall(LlmCall call, ConversationTurn turn, int turnIndex)
     {
         require(call != null && call.hasRequest() && call.hasResponse(), "The turn requires one LLM call.");
@@ -192,6 +233,13 @@ public class ConversationRoundValidator
         validateResponseAndExecutions(call.getResponse(), turn, toolsByName, call.getEndTime());
     }
 
+    /**
+     * Validates the exact frozen Tool schemas offered to the model and indexes them for response
+     * verification.
+     *
+     * @param request model request containing Tool definitions
+     * @return definitions indexed by provider-visible Tool name
+     */
     private Map<String, ToolDefinition> validateToolDefinitions(LlmRequest request)
     {
         Map<String, ToolDefinition> toolsByName = new HashMap<>();
@@ -213,6 +261,11 @@ public class ConversationRoundValidator
         return toolsByName;
     }
 
+    /**
+     * Validates normalized message roles, scalar/parts content, and Tool-call ordering.
+     *
+     * @param messages request messages in model order
+     */
     private void validateRequestMessages(Iterable<LlmConversationMessage> messages)
     {
         Set<String> priorToolCallIds = new HashSet<>();
@@ -255,6 +308,14 @@ public class ConversationRoundValidator
         }
     }
 
+    /**
+     * Validates the model response and enforces one terminal execution record per emitted Tool call.
+     *
+     * @param response normalized model response
+     * @param turn parent Turn containing execution evidence
+     * @param toolsByName frozen definitions indexed by model-visible name
+     * @param callEndTime model-call end used to validate execution timing
+     */
     private void validateResponseAndExecutions(LlmResponse response, ConversationTurn turn,
                                                 Map<String, ToolDefinition> toolsByName, long callEndTime)
     {
@@ -323,6 +384,11 @@ public class ConversationRoundValidator
         }
     }
 
+    /**
+     * Validates Tool call identity, function metadata, and JSON arguments.
+     *
+     * @param toolCall model-emitted or replayed Tool call
+     */
     private void validateToolCall(ToolCall toolCall)
     {
         require(StringUtils.hasText(toolCall.getId()) && StringUtils.hasText(toolCall.getType())
@@ -332,6 +398,15 @@ public class ConversationRoundValidator
             "Tool calls require an ID, type, function name, and JSON arguments.");
     }
 
+    /**
+     * Enforces the mutually exclusive scalar-text or structured-content-parts contract. This is the
+     * invariant that prevents an adapter from persisting two contradictory representations of one
+     * message.
+     *
+     * @param content scalar text representation
+     * @param contentParts structured representation
+     * @param label message label included in validation errors
+     */
     private void validateContentPayload(String content, List<ContentPart> contentParts, String label)
     {
         boolean hasContent = StringUtils.hasText(content);
@@ -361,6 +436,13 @@ public class ConversationRoundValidator
         }
     }
 
+    /**
+     * Compares two JSON values structurally so formatting differences do not matter.
+     *
+     * @param first first JSON string
+     * @param second second JSON string
+     * @return true when both parse and contain the same JSON value
+     */
     private boolean jsonEquals(String first, String second)
     {
         try
@@ -375,6 +457,12 @@ public class ConversationRoundValidator
         }
     }
 
+    /**
+     * Checks whether a string parses as one non-null JSON value.
+     *
+     * @param value candidate JSON
+     * @return true when parsing succeeds
+     */
     private boolean isJson(String value)
     {
         try
@@ -387,11 +475,25 @@ public class ConversationRoundValidator
         }
     }
 
+    /**
+     * Rejects missing or backwards timestamps with a field-specific validation message.
+     *
+     * @param start inclusive start epoch milliseconds
+     * @param end inclusive end epoch milliseconds
+     * @param label timing owner included in the error
+     */
     private void requireTime(long start, long end, String label)
     {
         require(start > 0 && end >= start, label + " timing is invalid.");
     }
 
+    /**
+     * Throws the standard protocol invalid-request exception when a condition is false.
+     *
+     * @param condition invariant result
+     * @param message client-safe validation explanation
+     * @throws RoundPersistenceException when {@code condition} is false
+     */
     private void require(boolean condition, String message)
     {
         if (!condition)

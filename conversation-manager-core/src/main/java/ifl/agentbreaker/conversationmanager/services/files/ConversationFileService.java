@@ -45,6 +45,11 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 
+/**
+ * Coordinates the user-file lifecycle across PostgreSQL and private OSS. The service owns stable
+ * file identity, authorization, reservation, and cleanup scheduling; Runner receives only
+ * extracted evidence or short-lived URLs and never receives storage credentials.
+ */
 @Service
 public class ConversationFileService
 {
@@ -83,6 +88,14 @@ public class ConversationFileService
     @Autowired
     private TransactionTemplate transactionTemplate;
 
+    /**
+     * Creates a user-owned resource before the browser uploads bytes directly to OSS. Persisting
+     * the resource first gives the confirm step a server-owned expected size, MIME type, expiry,
+     * and object key to verify against the untrusted client upload.
+     *
+     * @param request original filename, declared MIME type, and expected byte size
+     * @return upload metadata plus a short-lived signed PUT URL
+     */
     @Transactional(rollbackFor = Exception.class)
     public ServiceResponse<FileUploadSession> createFileUploadSession(CreateFileUploadSessionRequest request)
     {
@@ -132,7 +145,14 @@ public class ConversationFileService
         return ServiceResponse.buildSuccessResponse(session);
     }
 
-    /** Confirm every direct-to-OSS upload in one request; each item carries its own checksum. */
+    /**
+     * Confirms every direct-to-OSS upload in one request, then schedules asynchronous inspection.
+     * Confirmation is separate from session creation because the browser, not this service, sends
+     * the bytes; the server must verify the resulting OSS object before parsing it.
+     *
+     * @param request file IDs and optional client-computed SHA-256 values
+     * @return metadata for every confirmed resource
+     */
     @Transactional(rollbackFor = Exception.class)
     public ServiceResponse<List<FileResourceInfo>> confirmFileUpload(ConfirmFileUploadRequest request)
     {
@@ -143,6 +163,14 @@ public class ConversationFileService
         return ServiceResponse.buildSuccessResponse(results);
     }
 
+    /**
+     * Verifies one uploaded OSS object against the server-owned upload contract and transitions it
+     * into asynchronous processing. Reconfirming an already confirmed resource is idempotent.
+     *
+     * @param request one file ID and checksum
+     * @param userId authenticated owner
+     * @return current public resource metadata
+     */
     private FileResourceInfo confirmSingleUpload(ConfirmFileUploadItem request, long userId)
     {
         String fileId = request.getFileId();
@@ -184,13 +212,26 @@ public class ConversationFileService
         return toFileResourceInfo(confirmed);
     }
 
+    /**
+     * Returns metadata for one owned file; ownership is checked before any status or error detail
+     * is exposed to avoid cross-user file probing.
+     *
+     * @param fileId stable file reference supplied by the browser
+     * @return public metadata for the owned resource
+     */
     public ServiceResponse<FileResourceInfo> getFileResource(String fileId)
     {
         long userId = UserContextService.getCurrentUserId();
         return ServiceResponse.buildSuccessResponse(toFileResourceInfo(requireOwnedFile(fileId, userId)));
     }
 
-    /** Retry failed parser tasks as a batch so future bulk retry UI needs no endpoint change. */
+    /**
+     * Requeues failed parser tasks as a batch. The operation is deliberately request-shaped around
+     * a collection so a future bulk retry UI does not require a new endpoint contract.
+     *
+     * @param request owned file IDs currently in FAILED state
+     * @return refreshed metadata for every requeued resource
+     */
     @Transactional(rollbackFor = Exception.class)
     public ServiceResponse<List<FileResourceInfo>> retryFileProcessing(RetryFileProcessingRequest request)
     {
@@ -209,6 +250,13 @@ public class ConversationFileService
         return ServiceResponse.buildSuccessResponse(results);
     }
 
+    /**
+     * Requests logical deletion and schedules physical OSS cleanup. The resource remains visible to
+     * in-flight references until the cleanup worker can prove that no active Round/request uses it.
+     *
+     * @param request owned file IDs to delete
+     * @return true after all logical transitions and cleanup tasks are recorded
+     */
     @Transactional(rollbackFor = Exception.class)
     public ServiceResponse<Boolean> deleteFileResource(DeleteFileResourceRequest request)
     {
@@ -224,6 +272,13 @@ public class ConversationFileService
         return ServiceResponse.buildSuccessResponse(true);
     }
 
+    /**
+     * Mints a short-lived signed download URL for one READY file without exposing permanent OSS
+     * credentials or allowing callers to download an unprocessed object.
+     *
+     * @param fileId stable file reference
+     * @return signed URL and its expiry
+     */
     public ServiceResponse<FileDownloadUrl> getFileDownloadUrl(String fileId)
     {
         long userId = UserContextService.getCurrentUserId();
@@ -244,6 +299,15 @@ public class ConversationFileService
      * Runner. The preparation RPC uses this to authorize a frozen attachment selection without an
      * N+1 lookup; a missing result means at least one ID was absent, deleted, or owned by another user.
      */
+    /**
+     * Batch-loads owned files for Runner's preparation RPC and restores caller order. A short
+     * result signals that at least one stable ID is missing or unauthorized, allowing the caller to
+     * reject the whole frozen selection instead of partially answering from an incomplete set.
+     *
+     * @param fileIds stable IDs selected for one message
+     * @param userId authenticated owner used by the SQL authorization predicate
+     * @return matching resources in the same order as {@code fileIds}
+     */
     public List<FileResource> listOwnedFiles(Collection<String> fileIds, long userId)
     {
         if (fileIds == null || fileIds.isEmpty())
@@ -263,8 +327,15 @@ public class ConversationFileService
     }
 
     /**
-     * Temporarily reserves the selected resources for one chat request so concurrent sends cannot
-     * attach the same draft files to different conversations before the Round references are saved.
+     * Atomically reserves a frozen file selection for one Runner request. Reservation closes the
+     * race between file readiness polling and Round persistence: two concurrent sends cannot both
+     * claim the same draft resource before the durable Round link exists.
+     *
+     * @param fileIds stable file IDs to reserve
+     * @param userId authenticated owner
+     * @param conversationId destination Conversation
+     * @param requestId Runner correlation ID used for release/expiry
+     * @return true only when every requested ID was reserved
      */
     public boolean reserveFilesForRequest(
         Collection<String> fileIds,
@@ -280,6 +351,13 @@ public class ConversationFileService
             fileProperties.getReservationSeconds()) == fileIds.size();
     }
 
+    /**
+     * Releases one Conversation's file references through the same set-based implementation used
+     * for bulk deletion, keeping the single-item API from reintroducing an N+1 write path.
+     *
+     * @param conversationId Conversation being deleted
+     * @param userId authenticated owner
+     */
     @Transactional(rollbackFor = Exception.class)
     public void releaseConversationReferences(String conversationId, long userId)
     {
@@ -287,9 +365,12 @@ public class ConversationFileService
     }
 
     /**
-     * Releases file reservations and durable Round references for multiple conversations as set
-     * operations. Cleanup tasks are inserted directly from the relation tables in one SQL statement;
+     * Releases file reservations and durable Round references for multiple Conversations as set
+     * operations. Cleanup tasks are inserted directly from relation tables in one SQL statement;
      * no file ID is loaded into Java and no database call occurs inside a loop.
+     *
+     * @param conversationIds Conversations being deleted
+     * @param userId authenticated owner
      */
     @Transactional(rollbackFor = Exception.class)
     public void releaseConversationReferences(Collection<String> conversationIds, long userId)
@@ -309,12 +390,25 @@ public class ConversationFileService
         fileResourceMapper.clearReservationsForConversations(uniqueConversationIds, userId);
     }
 
+    /**
+     * Creates a short-lived signed GET URL for a READY image used in one model request.
+     *
+     * @param fileResource authorized READY resource
+     * @return URL whose expiry is controlled by OSS configuration
+     */
     public String createSignedGetUrl(FileResource fileResource)
     {
         Date expiresAt = Date.from(Instant.now().plusSeconds(ossProperties.getPresignedUrlTtlSeconds()));
         return createSignedGetUrl(fileResource, expiresAt);
     }
 
+    /**
+     * Maps internal file state to the public metadata response while selecting detected MIME over
+     * the user-declared value after content inspection.
+     *
+     * @param fileResource internal resource entity
+     * @return API-safe file metadata
+     */
     public FileResourceInfo toFileResourceInfo(FileResource fileResource)
     {
         FileResourceInfo info = new FileResourceInfo();
@@ -325,6 +419,14 @@ public class ConversationFileService
         return info;
     }
 
+    /**
+     * Loads one file through the ownership-constrained query used by every file operation.
+     *
+     * @param fileId stable file reference
+     * @param userId authenticated owner
+     * @return owned resource
+     * @throws ServiceResponseException when the resource is missing or belongs to another user
+     */
     private FileResource requireOwnedFile(String fileId, long userId)
     {
         FileResource fileResource = fileResourceMapper.getOwnedFileResource(fileId, userId);
@@ -333,6 +435,15 @@ public class ConversationFileService
         return fileResource;
     }
 
+    /**
+     * Validates filename/MIME compatibility, configured size limits, and the private-bucket safety
+     * invariant before any resource or signed URL is created.
+     *
+     * @param filename normalized original filename
+     * @param extension normalized extension
+     * @param mimeType normalized declared MIME type
+     * @param fileSize expected upload size in bytes
+     */
     private void validateUpload(String filename, String extension, String mimeType, long fileSize)
     {
         if (!StringUtils.hasText(filename) || !StringUtils.hasText(extension))
@@ -354,6 +465,15 @@ public class ConversationFileService
             throw new IllegalStateException("Conversation files require a private OSS bucket.");
     }
 
+    /**
+     * Builds the immutable owner/date/file-partitioned OSS key. The layout is
+     * {@code prefix/userId/YYYY/MM/fileId/source}: date buckets bound operational listings, while
+     * the generated file ID prevents collisions and keeps untrusted filenames out of storage paths.
+     *
+     * @param userId resource owner
+     * @param fileId stable generated file ID
+     * @return object key used by both upload and cleanup workers
+     */
     private String buildObjectKey(long userId, String fileId)
     {
         ZonedDateTime now = ZonedDateTime.now(ZoneOffset.UTC);
@@ -367,6 +487,13 @@ public class ConversationFileService
             fileId);
     }
 
+    /**
+     * Creates the actual OSS GET signature using the expiry selected by the public operation.
+     *
+     * @param fileResource authorized resource whose object key is signed
+     * @param expiresAt exact signature expiry
+     * @return signed OSS URL
+     */
     private String createSignedGetUrl(FileResource fileResource, Date expiresAt)
     {
         GeneratePresignedUrlRequest request = new GeneratePresignedUrlRequest(
@@ -375,6 +502,13 @@ public class ConversationFileService
         return ossClient.generatePresignedUrl(request).toString();
     }
 
+    /**
+     * Normalizes configured prefix slashes so the object layout has no accidental empty path
+     * segment at either boundary.
+     *
+     * @param value configured prefix
+     * @return prefix without leading/trailing slashes
+     */
     private static String trimSlashes(String value)
     {
         return value == null ? "" : value.replaceAll("^/+|/+$", "");

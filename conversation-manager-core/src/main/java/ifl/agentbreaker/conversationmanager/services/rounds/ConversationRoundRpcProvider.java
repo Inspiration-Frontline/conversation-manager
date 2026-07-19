@@ -45,6 +45,12 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 
+/**
+ * Dubbo boundary owned by Conversation Manager for Runner's history, replay, persistence, and
+ * attachment-preparation calls. The provider is deliberately thin: authorization and durable
+ * invariants stay in domain services, while this class translates expected business outcomes into
+ * the two-field protobuf response envelope.
+ */
 @DubboService
 public class ConversationRoundRpcProvider implements ConversationRpcService
 {
@@ -60,6 +66,14 @@ public class ConversationRoundRpcProvider implements ConversationRpcService
     @Autowired
     private ConversationMapper conversationMapper;
 
+    /**
+     * Keeps the shared Round RPC surface explicit: Conversation creation belongs to the HTTP
+     * Conversation service, so Runner callers receive a typed contract error instead of creating
+     * an object without the authenticated HTTP lifecycle and title/list metadata.
+     *
+     * @param request ignored creation payload supplied by a generic RPC client
+     * @return a response describing why this provider does not own creation
+     */
     @Override
     public CreateConversationResponse createConversation(CreateConversationRequest request)
     {
@@ -70,12 +84,28 @@ public class ConversationRoundRpcProvider implements ConversationRpcService
             .build();
     }
 
+    /**
+     * Adapts the synchronous unsupported operation to Dubbo's asynchronous method shape.
+     *
+     * @param request creation request forwarded to {@link #createConversation(CreateConversationRequest)}
+     * @return an already completed future containing the typed error response
+     */
     @Override
     public CompletableFuture<CreateConversationResponse> createConversationAsync(CreateConversationRequest request)
     {
         return CompletableFuture.completedFuture(createConversation(request));
     }
 
+    /**
+     * Persists the Runner's complete Round after validation and idempotency checks. The response
+     * envelope is important because business validation failures (for example a stale Round
+     * number or invalid attachment reference) are expected RPC outcomes, not transport failures.
+     *
+     * @param request authenticated user, Conversation, ordered Turns, and terminal Round state
+     * @return success with the persisted Round projection, or a domain error envelope
+     * @throws RuntimeException only for an infrastructure failure that cannot be represented by the
+     *         current business error contract
+     */
     @Override
     public SaveConversationRoundResponse saveConversationRound(SaveConversationRoundRequest request)
     {
@@ -96,6 +126,13 @@ public class ConversationRoundRpcProvider implements ConversationRpcService
         }
     }
 
+    /**
+     * Exposes Round persistence through Dubbo's future-based overload while retaining exactly the
+     * same validation and transaction boundary as the synchronous method.
+     *
+     * @param request complete Round persistence request
+     * @return future completed with the synchronous operation's response
+     */
     @Override
     public CompletableFuture<SaveConversationRoundResponse> saveConversationRoundAsync(
         SaveConversationRoundRequest request)
@@ -103,6 +140,13 @@ public class ConversationRoundRpcProvider implements ConversationRpcService
         return CompletableFuture.completedFuture(saveConversationRound(request));
     }
 
+    /**
+     * Returns the compact history used by Runner to calculate the next Round number without
+     * transferring every LLM/tool child row across the service boundary.
+     *
+     * @param request authenticated user and Conversation identity
+     * @return ordered Round summaries, or an ownership/not-found error envelope
+     */
     @Override
     public GetConversationRoundHistoryResponse getConversationRoundHistory(GetConversationRoundHistoryRequest request)
     {
@@ -126,6 +170,12 @@ public class ConversationRoundRpcProvider implements ConversationRpcService
         }
     }
 
+    /**
+     * Adapts compact history retrieval to the asynchronous Dubbo signature.
+     *
+     * @param request authenticated history query
+     * @return future containing the same response as {@link #getConversationRoundHistory(GetConversationRoundHistoryRequest)}
+     */
     @Override
     public CompletableFuture<GetConversationRoundHistoryResponse> getConversationRoundHistoryAsync(
         GetConversationRoundHistoryRequest request)
@@ -133,6 +183,13 @@ public class ConversationRoundRpcProvider implements ConversationRpcService
         return CompletableFuture.completedFuture(getConversationRoundHistory(request));
     }
 
+    /**
+     * Rejects the high-volume full-turn contract until a dedicated paginated API is available;
+     * silently returning partial data would make replay and audit consumers incorrect.
+     *
+     * @param request requested Conversation and user identity
+     * @return typed unsupported-operation response
+     */
     @Override
     public GetConversationTurnHistoryResponse getConversationTurnHistory(GetConversationTurnHistoryRequest request)
     {
@@ -143,6 +200,12 @@ public class ConversationRoundRpcProvider implements ConversationRpcService
             .build();
     }
 
+    /**
+     * Adapts the explicit full-turn rejection to the asynchronous Dubbo signature.
+     *
+     * @param request full-turn history request
+     * @return future containing the typed rejection response
+     */
     @Override
     public CompletableFuture<GetConversationTurnHistoryResponse> getConversationTurnHistoryAsync(
         GetConversationTurnHistoryRequest request)
@@ -150,6 +213,14 @@ public class ConversationRoundRpcProvider implements ConversationRpcService
         return CompletableFuture.completedFuture(getConversationTurnHistory(request));
     }
 
+    /**
+     * Reconstructs the normalized model context needed by Runner for the next model call. The
+     * service performs ownership and boundary checks here so a caller cannot replay another
+     * user's Conversation by guessing an ID.
+     *
+     * @param request user, Conversation, detail level, and replay boundary
+     * @return normalized context messages or a typed replay error
+     */
     @Override
     public GetConversationReplayResponse getConversationReplay(GetConversationReplayRequest request)
     {
@@ -177,6 +248,12 @@ public class ConversationRoundRpcProvider implements ConversationRpcService
         }
     }
 
+    /**
+     * Adapts model-context replay to the asynchronous Dubbo signature.
+     *
+     * @param request replay query
+     * @return future containing the replay response
+     */
     @Override
     public CompletableFuture<GetConversationReplayResponse> getConversationReplayAsync(
         GetConversationReplayRequest request)
@@ -184,6 +261,13 @@ public class ConversationRoundRpcProvider implements ConversationRpcService
         return CompletableFuture.completedFuture(getConversationReplay(request));
     }
 
+    /**
+     * Keeps Round deletion disabled until the tail-suffix and child-row invariants have a
+     * dedicated implementation; accepting a partial delete would corrupt replay high-water marks.
+     *
+     * @param request deletion scope requested by the caller
+     * @return typed unsupported-operation response
+     */
     @Override
     public DeleteRoundsResponse deleteRounds(DeleteRoundsRequest request)
     {
@@ -194,12 +278,26 @@ public class ConversationRoundRpcProvider implements ConversationRpcService
             .build();
     }
 
+    /**
+     * Adapts the explicit Round deletion rejection to the asynchronous Dubbo signature.
+     *
+     * @param request deletion request
+     * @return future containing the typed rejection response
+     */
     @Override
     public CompletableFuture<DeleteRoundsResponse> deleteRoundsAsync(DeleteRoundsRequest request)
     {
         return CompletableFuture.completedFuture(deleteRounds(request));
     }
 
+    /**
+     * Authorizes stable file IDs, verifies upload/processing state, and reserves the selected
+     * resources for one Runner request. Only metadata, extracted text, or short-lived image URLs
+     * cross this boundary; the file bytes remain owned by Conversation Manager/OSS.
+     *
+     * @param request user, Conversation, request correlation ID, and stable file references
+     * @return per-file state plus all-ready/failed aggregate flags
+     */
     @Override
     public PrepareConversationFilesResponse prepareConversationFiles(PrepareConversationFilesRequest request)
     {
@@ -253,6 +351,12 @@ public class ConversationRoundRpcProvider implements ConversationRpcService
         }
     }
 
+    /**
+     * Adapts file preparation to Dubbo's asynchronous signature without losing its correlation ID.
+     *
+     * @param request file preparation request
+     * @return future containing the preparation response
+     */
     @Override
     public CompletableFuture<PrepareConversationFilesResponse> prepareConversationFilesAsync(
         PrepareConversationFilesRequest request)
@@ -260,6 +364,13 @@ public class ConversationRoundRpcProvider implements ConversationRpcService
         return CompletableFuture.completedFuture(prepareConversationFiles(request));
     }
 
+    /**
+     * Projects the accepted save request into the small response message expected by Runner;
+     * persistence internals and child-row IDs deliberately stay private to Conversation Manager.
+     *
+     * @param request validated request returned by the persistence service
+     * @return response-safe Round projection
+     */
     private ifl.agentbreaker.conversationmanager.rpc.ConversationRound toProtoRound(
         SaveConversationRoundRequest request)
     {
@@ -278,6 +389,14 @@ public class ConversationRoundRpcProvider implements ConversationRpcService
         return conversationRound.build();
     }
 
+    /**
+     * Applies cheap request checks before any file query or reservation. This prevents duplicate
+     * IDs from producing ambiguous reservation ownership and prevents a caller from probing files
+     * through a Conversation it does not own.
+     *
+     * @param request file preparation request to validate
+     * @throws IllegalArgumentException when identity, ownership, count, or ID invariants fail
+     */
     private void validatePrepareConversationFiles(PrepareConversationFilesRequest request)
     {
         if (request.getUserId() <= 0
@@ -293,6 +412,13 @@ public class ConversationRoundRpcProvider implements ConversationRpcService
             throw new IllegalArgumentException("The conversation does not exist.");
     }
 
+    /**
+     * Maps the persisted file state to the Runner contract. A signed URL is generated only for a
+     * READY image because document text is already extracted and signed URLs must not be persisted.
+     *
+     * @param fileResource owned file row selected for this request
+     * @return protocol payload containing stable metadata and usable READY content
+     */
     private PreparedConversationFile toPreparedFile(FileResource fileResource)
     {
         ConversationFileStatus status = ConversationFileStatus.valueOf(
@@ -324,6 +450,13 @@ public class ConversationRoundRpcProvider implements ConversationRpcService
         return preparedFile.build();
     }
 
+    /**
+     * Distinguishes retryable processing states from states that already require user action or a
+     * new resource, allowing Runner to stop polling with an actionable error.
+     *
+     * @param status persisted file status
+     * @return true when the status is terminal for this preparation attempt
+     */
     private boolean isTerminalFileFailure(ConversationFileStatus status)
     {
         return status == ConversationFileStatus.CONVERSATION_FILE_STATUS_FAILED
@@ -333,6 +466,15 @@ public class ConversationRoundRpcProvider implements ConversationRpcService
             || status == ConversationFileStatus.CONVERSATION_FILE_STATUS_EXPIRED;
     }
 
+    /**
+     * Builds a stable error envelope while preserving the request correlation ID used by Runner
+     * logs and reservation cleanup.
+     *
+     * @param data partially built preparation result carrying the request ID
+     * @param code domain error code
+     * @param message client-safe explanation
+     * @return preparation response with no usable file payload
+     */
     private PrepareConversationFilesResponse prepareFilesError(
         PrepareConversationFilesResult.Builder data, ConversationErrorCode code, String message)
     {
@@ -342,6 +484,13 @@ public class ConversationRoundRpcProvider implements ConversationRpcService
             .build();
     }
 
+    /**
+     * Converts a database Round to the compact history shape. The browser and Runner need visible
+     * content and status, but not the internal table IDs or raw LLM payloads.
+     *
+     * @param round persisted Round entity
+     * @return compact history summary
+     */
     private ConversationRoundSummary toSummary(ConversationRound round)
     {
         ConversationRoundSummary.Builder summary = ConversationRoundSummary.newBuilder()
@@ -365,11 +514,25 @@ public class ConversationRoundRpcProvider implements ConversationRpcService
         return summary.build();
     }
 
+    /**
+     * Creates the common success envelope so every RPC consumer can branch on one stable field
+     * before reading its typed data payload.
+     *
+     * @return successful response metadata with no user-facing message
+     */
     private ResponseBase successBase()
     {
         return ResponseBase.newBuilder().setCode(0).setSuccess(true).setMessage("").build();
     }
 
+    /**
+     * Creates the common domain-error envelope. Keeping the code/message in {@code base} avoids
+     * transport-level exceptions for expected validation, ownership, and state conflicts.
+     *
+     * @param code stable domain error code
+     * @param message client-safe diagnostic message
+     * @return failed response metadata
+     */
     private ResponseBase errorBase(int code, String message)
     {
         return ResponseBase.newBuilder().setCode(code).setSuccess(false).setMessage(message).build();

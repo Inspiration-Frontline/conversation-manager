@@ -38,6 +38,11 @@ import java.nio.charset.CodingErrorAction;
 import java.security.MessageDigest;
 import java.util.HexFormat;
 
+/**
+ * Converts immutable, security-scanned file bytes into model evidence. Format-specific readers
+ * remain explicit because chat needs provenance markers and typed counts (pages, sheets, slides),
+ * while generic Tika extraction would flatten those boundaries and make later citations harder.
+ */
 @Component
 public class ConversationFileParser
 {
@@ -52,6 +57,16 @@ public class ConversationFileParser
      * Validates the immutable uploaded bytes and extracts a bounded, provenance-preserving text
      * representation for Agent Runner. This method never executes active Office content or performs
      * OCR. A returned result is safe to persist only after the caller's security scan has passed.
+     */
+    /**
+     * Scans and extracts one immutable file into bounded text plus typed provenance metadata. The
+     * returned text is intentionally a bounded context snapshot; complete lossless retrieval is a
+     * future Knowledge Manager responsibility.
+     *
+     * @param fileResource server-owned metadata describing the expected file kind and extension
+     * @param bytes immutable bytes read from OSS after security scanning
+     * @return extracted evidence, checksum, truncation state, and typed metadata
+     * @throws FileProcessingException when type, checksum, encoding, or format validation fails
      */
     public FileExtractionResult parse(FileResource fileResource, byte[] bytes) throws FileProcessingException
     {
@@ -131,6 +146,16 @@ public class ConversationFileParser
      * PDF page numbers, DOCX headings/lists/tables, XLSX sheet/cell/formula coordinates, and PPTX
      * slides/notes/embedded-image inventory. They also enforce strict UTF-8 for plain-text files.
      */
+    /**
+     * Dispatches format-specific readers while keeping Tika limited to MIME detection. Explicit
+     * readers retain boundaries that {@code Tika.parseToString()} would discard.
+     *
+     * @param fileResource file extension selecting the reader
+     * @param bytes immutable file bytes
+     * @param metadata mutable provenance accumulator
+     * @return normalized extracted text
+     * @throws Exception when the selected parser rejects malformed input
+     */
     private String extractText(
         FileResource fileResource,
         byte[] bytes,
@@ -147,6 +172,15 @@ public class ConversationFileParser
         };
     }
 
+    /**
+     * Extracts PDF text page by page and rejects scanned PDFs without a text layer, because OCR is
+     * not yet part of the supported processing contract.
+     *
+     * @param bytes PDF bytes
+     * @param metadata provenance accumulator receiving page count
+     * @return page-marked text
+     * @throws Exception when PDFBox cannot open or read the document
+     */
     private String extractPdf(byte[] bytes, FileExtractionMetadata metadata) throws Exception
     {
         try (PDDocument document = Loader.loadPDF(bytes))
@@ -170,6 +204,14 @@ public class ConversationFileParser
         }
     }
 
+    /**
+     * Extracts DOCX paragraphs, list markers, headings, and tables without executing macros.
+     *
+     * @param bytes DOCX bytes
+     * @param metadata provenance accumulator receiving paragraph/table counts
+     * @return normalized document text
+     * @throws Exception when the OOXML package is malformed
+     */
     private String extractDocx(byte[] bytes, FileExtractionMetadata metadata) throws Exception
     {
         configureZipSafety();
@@ -204,6 +246,15 @@ public class ConversationFileParser
         }
     }
 
+    /**
+     * Extracts XLSX display values and formulas with sheet/cell provenance so model answers can
+     * refer to coordinates rather than an untraceable flattened stream.
+     *
+     * @param bytes XLSX bytes
+     * @param metadata provenance accumulator receiving sheet count
+     * @return normalized spreadsheet text
+     * @throws Exception when the workbook is malformed
+     */
     private String extractXlsx(byte[] bytes, FileExtractionMetadata metadata) throws Exception
     {
         configureZipSafety();
@@ -235,6 +286,15 @@ public class ConversationFileParser
         }
     }
 
+    /**
+     * Extracts PPTX slide text, notes, and embedded-image inventory without attempting OCR on
+     * images.
+     *
+     * @param bytes PPTX bytes
+     * @param metadata provenance accumulator receiving slide/image counts
+     * @return slide-marked presentation text
+     * @throws Exception when the presentation package is malformed
+     */
     private String extractPptx(byte[] bytes, FileExtractionMetadata metadata) throws Exception
     {
         configureZipSafety();
@@ -268,6 +328,13 @@ public class ConversationFileParser
         }
     }
 
+    /**
+     * Appends visible text from nested PPTX shapes; non-text shapes are intentionally represented
+     * by the image inventory collected by the caller.
+     *
+     * @param builder output buffer
+     * @param shapes slide or notes shapes
+     */
     private void appendTextShapes(StringBuilder builder, Iterable<XSLFShape> shapes)
     {
         for (XSLFShape shape : shapes)
@@ -281,6 +348,14 @@ public class ConversationFileParser
         }
     }
 
+    /**
+     * Decodes plain-text formats as strict UTF-8 so invalid bytes cannot silently become misleading
+     * replacement characters in model context.
+     *
+     * @param bytes text file bytes
+     * @return decoded UTF-8 text
+     * @throws FileProcessingException when bytes are not valid UTF-8
+     */
     private String decodeUtf8(byte[] bytes) throws FileProcessingException
     {
         try
@@ -301,6 +376,14 @@ public class ConversationFileParser
      * Keeps evidence from the beginning, middle, and end instead of retaining only chapter one.
      * This is still a bounded context representation rather than lossless document storage; future
      * Knowledge Manager ingestion should chunk and retrieve the complete document when required.
+     */
+    /**
+     * Retains beginning, middle, and end excerpts under the configured model-context limit. The
+     * three-way sample is a deliberate compromise until Knowledge Manager provides lossless chunk
+     * retrieval and citations.
+     *
+     * @param text full extracted text
+     * @return retained text and whether any content was omitted
      */
     private TruncatedText retainTextWithinLimit(String text)
     {
@@ -327,6 +410,10 @@ public class ConversationFileParser
             true);
     }
 
+    /**
+     * Applies bounded ZIP-entry settings before reading Office Open XML containers, preventing a
+     * crafted compression bomb from expanding beyond configured processing limits.
+     */
     private void configureZipSafety()
     {
         ZipSecureFile.setMinInflateRatio(0.01);

@@ -55,6 +55,15 @@ public class ConversationMutationLock
      * Once acquired, lease renewal keeps a valid long-running database operation from losing its
      * lock before completion.</p>
      */
+    /**
+     * Acquires a Redis-backed mutation lease for one Conversation. The random token and renewal
+     * task protect the short provider-side SQL transaction; Runner's longer execution lease is a
+     * separate concern.
+     *
+     * @param conversationId aggregate ID used to scope the Redis key
+     * @return token-owning handle that must be closed after the transaction
+     * @throws IllegalStateException when the lock cannot be acquired before the bounded deadline
+     */
     public LockHandle acquire(String conversationId)
     {
         String key = "conversation-manager:mutation:" + conversationId;
@@ -93,6 +102,13 @@ public class ConversationMutationLock
         private final ScheduledFuture<?> renewal;
         private boolean closed;
 
+        /**
+         * Creates a handle bound to the exact token-owned Redis lease.
+         *
+         * @param key Redis mutation-lock key
+         * @param token random ownership token
+         * @param renewal scheduled lease-renewal task
+         */
         private LockHandle(String key, String token, ScheduledFuture<?> renewal)
         {
             this.key = key;

@@ -16,12 +16,14 @@ public class FileContentSecurityScanner
         "X5O!P%@AP[4\\PZX54(P^)7CC)7}$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*"
             .getBytes(StandardCharsets.US_ASCII);
 
+    /** Rejects known malware test signatures before any parser handles uploaded bytes. */
     public void scan(byte[] bytes) throws FileProcessingException
     {
         if (contains(bytes, EICAR_SIGNATURE))
             throw new FileProcessingException("MALWARE_DETECTED", "The uploaded file failed the security scan.");
     }
 
+    /** Performs a bounded byte-pattern search without converting binary data to text. */
     private boolean contains(byte[] bytes, byte[] signature)
     {
         if (bytes.length < signature.length)

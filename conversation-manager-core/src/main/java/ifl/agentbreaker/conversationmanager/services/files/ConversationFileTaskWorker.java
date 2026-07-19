@@ -26,6 +26,11 @@ import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 
+/**
+ * Claims durable file-processing and cleanup tasks for a multi-instance worker. Leases and bounded
+ * concurrency are part of the design: a crashed node must allow another node to reclaim work, but
+ * a healthy node must not read unlimited OSS bytes or parse every file concurrently.
+ */
 @Slf4j
 @Component
 public class ConversationFileTaskWorker
@@ -64,6 +69,11 @@ public class ConversationFileTaskWorker
 
     private volatile Semaphore concurrency;
 
+    /**
+     * Claims available processing and cleanup jobs and submits them under the configured semaphore.
+     * Processing is claimed first so parser latency cannot starve newly uploaded files behind old
+     * physical-cleanup work.
+     */
     @Scheduled(fixedDelayString = "${agent-breaker.files.task-poll-milliseconds:500}")
     public void dispatchTasks()
     {
@@ -89,6 +99,13 @@ public class ConversationFileTaskWorker
             submit(taskConcurrency, () -> cleanupFile(task));
     }
 
+    /**
+     * Reads, scans, parses, and durably completes one leased task. The method rechecks state after
+     * claiming because a retry/deletion may have won a race with the scheduler; every failure is
+     * converted to a durable FAILED state so the UI has an actionable reason.
+     *
+     * @param task leased processing task containing the resource ID and lease token
+     */
     private void processFile(FileProcessingTask task)
     {
         // A renewable lease makes processing restart-safe: another instance can reclaim the task if
@@ -147,6 +164,13 @@ public class ConversationFileTaskWorker
         }
     }
 
+    /**
+     * Deletes an unreferenced OSS object and marks cleanup complete or retryable. Reservations and
+     * Round links are checked immediately before deletion so asynchronous cleanup cannot remove a
+     * file that a newly persisted message still needs.
+     *
+     * @param task leased cleanup task
+     */
     private void cleanupFile(FileCleanupTask task)
     {
         ScheduledFuture<?> leaseRenewal = renewCleanupLease(task);
@@ -191,6 +215,13 @@ public class ConversationFileTaskWorker
         }
     }
 
+    /**
+     * Schedules lease renewal while parsing runs, preventing another worker from reclaiming a long
+     * document before this worker commits its result.
+     *
+     * @param task processing task whose lease must remain valid
+     * @return cancellable renewal schedule
+     */
     private ScheduledFuture<?> renewProcessingLease(FileProcessingTask task)
     {
         long intervalSeconds = Math.max(1, properties.getTaskLeaseSeconds() / 3L);
@@ -209,6 +240,12 @@ public class ConversationFileTaskWorker
         }, intervalSeconds, intervalSeconds, TimeUnit.SECONDS);
     }
 
+    /**
+     * Schedules lease renewal while OSS deletion runs, which may outlive the normal polling tick.
+     *
+     * @param task cleanup task whose lease must remain valid
+     * @return cancellable renewal schedule
+     */
     private ScheduledFuture<?> renewCleanupLease(FileCleanupTask task)
     {
         long intervalSeconds = Math.max(1, properties.getTaskLeaseSeconds() / 3L);
@@ -227,6 +264,14 @@ public class ConversationFileTaskWorker
         }, intervalSeconds, intervalSeconds, TimeUnit.SECONDS);
     }
 
+    /**
+     * Reads one private OSS object into bounded memory. Reading one byte over the limit detects an
+     * oversized object without allocating an unbounded buffer.
+     *
+     * @param fileResource resource containing the authorized bucket/key and expected size
+     * @return object bytes up to the configured maximum
+     * @throws FileProcessingException when OSS is unavailable or the object exceeds the limit
+     */
     private byte[] readObject(FileResource fileResource) throws FileProcessingException
     {
         int maximumBytes = Math.toIntExact(properties.getMaxBytes());
@@ -248,6 +293,13 @@ public class ConversationFileTaskWorker
         }
     }
 
+    /**
+     * Submits work only when the semaphore grants a bounded execution slot; releasing the permit
+     * in a finally block prevents a failed task from permanently reducing worker capacity.
+     *
+     * @param taskConcurrency shared worker semaphore
+     * @param task processing or cleanup action
+     */
     private void submit(Semaphore taskConcurrency, Runnable task)
     {
         if (!taskConcurrency.tryAcquire())
@@ -265,6 +317,12 @@ public class ConversationFileTaskWorker
         });
     }
 
+    /**
+     * Lazily creates the configured semaphore so Spring property binding is complete before the
+     * worker fixes its concurrency limit.
+     *
+     * @return shared semaphore for processing and cleanup tasks
+     */
     private Semaphore getConcurrency()
     {
         Semaphore current = concurrency;

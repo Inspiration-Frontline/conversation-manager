@@ -27,6 +27,7 @@ public final class ConversationFileTypeResolver
     {
     }
 
+    /** Normalizes an untrusted filename into a safe display value without changing its extension. */
     public static String normalizeFilename(String originalFilename)
     {
         String normalized = originalFilename.replace('\\', '/');
@@ -36,6 +37,7 @@ public final class ConversationFileTypeResolver
         return normalized.trim();
     }
 
+    /** Extracts the lowercase filename extension used for format dispatch. */
     public static String getExtension(String filename)
     {
         int dot = filename.lastIndexOf('.');
@@ -44,6 +46,7 @@ public final class ConversationFileTypeResolver
         return filename.substring(dot + 1).toLowerCase(Locale.ROOT);
     }
 
+    /** Maps an extension to the public file-kind enum used by the UI and model contract. */
     public static ConversationFileKind resolveKind(String extension)
     {
         return switch (extension)
@@ -57,6 +60,7 @@ public final class ConversationFileTypeResolver
         };
     }
 
+    /** Checks that declared MIME type and extension belong to an accepted format family. */
     public static boolean isMimeTypeCompatible(String extension, String mimeType)
     {
         Set<String> allowedMimeTypes = MIME_TYPES_BY_EXTENSION.get(extension);

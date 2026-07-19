@@ -14,6 +14,7 @@ import java.util.TimeZone;
 @EnableScheduling
 public class ConversationManagerMain
 {
+    /** Starts Conversation Manager with scheduling, transactions, and Dubbo enabled. */
     public static void main(String[] args)
     {
         TimeZone.setDefault(TimeZone.getTimeZone("UTC"));

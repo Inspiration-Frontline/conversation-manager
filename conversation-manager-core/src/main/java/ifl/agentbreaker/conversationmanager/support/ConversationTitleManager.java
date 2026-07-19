@@ -14,6 +14,7 @@ public final class ConversationTitleManager
     {
     }
 
+    /** Normalizes a user title and applies the configured default when it is blank. */
     public static String normalize(String title)
     {
         String trimmed = TextNormalizer.trimToEmpty(title);
@@ -21,12 +22,14 @@ public final class ConversationTitleManager
         return TextNormalizer.trimToMaxLength(normalized, MAX_TITLE_LENGTH);
     }
 
+    /** Derives a deterministic title from the first visible user message. */
     public static String deriveFromFirstUserMessage(String message)
     {
         String title = normalize(message);
         return title.isEmpty() ? DEFAULT_TITLE : title;
     }
 
+    /** Derives a deterministic title from the first attachment filename without its extension. */
     public static String deriveFromAttachmentFilename(String filename)
     {
         String normalized = normalize(filename);

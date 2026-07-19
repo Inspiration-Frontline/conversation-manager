@@ -20,6 +20,7 @@ public class ConversationFileTaskService
     @Autowired
     private FileCleanupTaskMapper fileCleanupTaskMapper;
 
+    /** Marks a leased processing task READY and stores extracted text and typed metadata. */
     @Transactional(rollbackFor = Exception.class)
     public void completeProcessing(long taskId,
                                    String leaseToken,
@@ -42,6 +43,7 @@ public class ConversationFileTaskService
             throw new IllegalStateException("The file processing task lease was lost.");
     }
 
+    /** Marks a leased processing task FAILED and records a retryable error on the file resource. */
     @Transactional(rollbackFor = Exception.class)
     public void failProcessing(long taskId,
                                String leaseToken,
@@ -53,6 +55,7 @@ public class ConversationFileTaskService
         fileProcessingTaskMapper.markFailed(taskId, leaseToken, errorMessage);
     }
 
+    /** Marks a physical cleanup task complete and finalizes the logical file deletion. */
     @Transactional(rollbackFor = Exception.class)
     public void completeCleanup(long taskId, String leaseToken, FileResource fileResource)
     {
