@@ -146,6 +146,46 @@ One row represents one complete saved Round or its tombstone.
 | `creation_time` | `TIMESTAMPTZ` | Database default `NOW()` |
 | `modification_time` | `TIMESTAMPTZ` | Database default and update trigger |
 
+#### User Request Content Representation
+
+`user_request_content` and `user_request_content_parts` are two mutually exclusive representations
+of the same user request. They are not duplicate copies and must never be populated together.
+
+- `user_request_content` stores a text-only request. It is used when the request contains no
+  structured content parts. In this form, `user_request_content_parts` is `NULL`.
+- `user_request_content_parts` stores a non-empty ordered JSONB array for a structured or multimodal
+  request, including requests with attachments. In this form, `user_request_content` is `NULL`.
+
+For example, a text-only request is stored as:
+
+```text
+user_request_content = "Explain the retry policy"
+user_request_content_parts = NULL
+```
+
+A request containing visible text and file references is stored conceptually as:
+
+```json
+[
+  { "type": "text", "text": "Compare these files" },
+  {
+    "type": "file",
+    "file_url": { "url": "agentbreaker-file://file_001" },
+    "filename": "design.md"
+  }
+]
+```
+
+and the corresponding scalar column remains `NULL`. Content parts contain stable file references
+and presentation metadata, not file bytes or expiring OSS URLs. File bytes and extracted evidence
+remain owned by the file-resource subsystem.
+
+The visible text inside a structured request may be projected by the service for HTTP history and
+automatic title derivation, but that projection is not written back into `user_request_content`.
+Keeping one canonical persisted representation prevents scalar text and structured JSON from
+drifting apart. PostgreSQL constraint `ck_round_user_request` enforces this rule: either non-blank
+scalar text is present with no parts, or a non-empty JSON array is present with no scalar text.
+
 Checks enforce:
 
 - Exactly one user-request content representation is present and non-empty.

@@ -31,6 +31,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.util.StringUtils;
+import stark.dataworks.boot.autoconfig.web.LogArgumentsAndResponse;
 import stark.dataworks.boot.web.ServiceResponse;
 
 import java.net.URL;
@@ -51,6 +52,7 @@ import java.util.Map;
  * extracted evidence or short-lived URLs and never receives storage credentials.
  */
 @Service
+@LogArgumentsAndResponse
 public class ConversationFileService
 {
     public static final int ERROR_INVALID_FILE = 2300;
@@ -294,11 +296,6 @@ public class ConversationFileService
         return ServiceResponse.buildSuccessResponse(result);
     }
 
-    /**
-     * Batch-loads files owned by the RPC caller and restores the exact order supplied by Agent
-     * Runner. The preparation RPC uses this to authorize a frozen attachment selection without an
-     * N+1 lookup; a missing result means at least one ID was absent, deleted, or owned by another user.
-     */
     /**
      * Batch-loads owned files for Runner's preparation RPC and restores caller order. A short
      * result signals that at least one stable ID is missing or unauthorized, allowing the caller to

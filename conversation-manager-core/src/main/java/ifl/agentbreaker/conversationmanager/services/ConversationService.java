@@ -53,6 +53,15 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Locale;
 
+/**
+ * Owns the HTTP and Dubbo lifecycle of user Conversations.
+ *
+ * <p>This service is the authorization boundary for Conversation metadata, legacy messages,
+ * sharing, export, pinning, and deletion. It resolves the current user from the trusted session
+ * context before every read or write and delegates file-reference cleanup to the file service.
+ * Round/Turn persistence remains in {@code ConversationRoundService}, preventing the legacy
+ * message projection from becoming a second execution-history source of truth.</p>
+ */
 @Slf4j
 @Service
 @DubboService
@@ -95,8 +104,12 @@ public class ConversationService implements IConversationRpcService
     private ConversationFileService conversationFileService;
 
     /**
-     * Create a new conversation.
-     * @return The created conversation.
+     * Creates the durable Conversation shell used before the first message is sent.
+     *
+     * <p>The shell gives the browser a stable ID for streaming, refresh, and retry flows. The
+     * first successfully persisted Round later replaces the default title.</p>
+     *
+     * @return newly created Conversation summary owned by the authenticated user
      */
     @Transactional(rollbackFor = Exception.class)
     public ServiceResponse<ConversationAbstract> createConversation()
@@ -115,7 +128,12 @@ public class ConversationService implements IConversationRpcService
         return ServiceResponse.buildSuccessResponse(toConversationAbstract(createdConversation == null ? conversation : createdConversation));
     }
 
-    /** Returns one owned Conversation summary for direct navigation and refresh. */
+    /**
+     * Returns one owned Conversation summary for direct navigation and refresh.
+     *
+     * @param conversationId stable public ID from the route
+     * @return owned summary, or a not-found response that does not disclose another user's data
+     */
     public ServiceResponse<ConversationAbstract> getConversationInfo(String conversationId)
     {
         long userId = UserContextService.getCurrentUserId();
@@ -127,7 +145,12 @@ public class ConversationService implements IConversationRpcService
         return ServiceResponse.buildSuccessResponse(toConversationAbstract(conversation));
     }
 
-    /** Creates or refreshes a share record after verifying the owner and requested message boundary. */
+    /**
+     * Creates a share snapshot after verifying ownership and freezing its message boundary.
+     *
+     * @param request owned Conversation ID and post-deletion accessibility policy
+     * @return generated public share ID and its parent Conversation ID
+     */
     @Transactional(rollbackFor = Exception.class)
     public ServiceResponse<ConversationSharingResult> shareConversation(ShareConversationRequest request)
     {
@@ -152,10 +175,14 @@ public class ConversationService implements IConversationRpcService
     }
 
     /**
-     * Forks a conversation from a shared conversation.
-     * @return The forked conversation.
+     * Creates an owned fork containing the messages visible through a share record.
+     *
+     * <p>The source remains unchanged; the new Conversation receives a new business ID and audit
+     * owner, so later edits or deletion do not cross ownership boundaries.</p>
+     *
+     * @param request shared Conversation ID and fork options
+     * @return new owned Conversation summary, or an error when the share is unavailable
      */
-    /** Creates an owned fork containing the selected shared Conversation messages. */
     @Transactional(rollbackFor = Exception.class)
     public ServiceResponse<ConversationAbstract> forkConversation(@Valid ForkConversationRequest request)
     {
@@ -181,7 +208,15 @@ public class ConversationService implements IConversationRpcService
         return ServiceResponse.buildSuccessResponse(toConversationAbstract(createdConversation == null ? forked : createdConversation));
     }
 
-    /** Lists root-level owned Conversations with stable pagination and modification ordering. */
+    /**
+     * Lists root-level owned Conversations for sidebar navigation.
+     *
+     * <p>Grouped Conversations are excluded by the mapper; page bounds and keyword whitespace are
+     * normalized here so every caller receives deterministic pagination.</p>
+     *
+     * @param request page index, page size, and optional title keyword
+     * @return owner-scoped page ordered according to the mapper's pin/time policy
+     */
     public ServiceResponse<PaginatedData<ConversationAbstract>> getConversations(@Valid GetConversationsRequest request)
     {
         long userId = UserContextService.getCurrentUserId();
@@ -206,7 +241,12 @@ public class ConversationService implements IConversationRpcService
         return ServiceResponse.buildSuccessResponse(page);
     }
 
-    /** Returns the legacy message-history projection for one owned Conversation. */
+    /**
+     * Returns the legacy flat-message projection for one owned Conversation.
+     *
+     * @param conversationId stable public ID used for ownership lookup
+     * @return ordered legacy messages, or a not-found response
+     */
     public ServiceResponse<ConversationMessageHistory> getConversationMessageHistory(String conversationId)
     {
         long userId = UserContextService.getCurrentUserId();
@@ -218,7 +258,11 @@ public class ConversationService implements IConversationRpcService
         return ServiceResponse.buildSuccessResponse(buildConversationMessageHistory(conversation, null));
     }
 
-    /** Returns only export formats that have a real implementation in this service. */
+    /**
+     * Returns only export formats backed by a concrete renderer in this service.
+     *
+     * @return enum names accepted by {@link #exportConversation}
+     */
     public ServiceResponse<List<String>> getAcceptableExportFormats()
     {
         List<String> exportFormats = new ArrayList<>();
@@ -229,10 +273,14 @@ public class ConversationService implements IConversationRpcService
     }
 
     /**
-     * Exports a conversation to a file with the specified format.
-     * @param request The export request.
+     * Streams a requested Conversation export without buffering it in the browser.
+     *
+     * <p>Ownership is checked before rendering. Serialization failures are converted to an HTTP
+     * error because this method writes directly to the servlet response.</p>
+     *
+     * @param request owned Conversation ID and implemented export format
+     * @param response servlet response receiving content type, headers, and bytes
      */
-    /** Streams a requested Conversation export without buffering it in the browser. */
     public void exportConversation(@Valid ExportConversationRequest request, HttpServletResponse response)
     {
         long userId = UserContextService.getCurrentUserId();
@@ -260,7 +308,12 @@ public class ConversationService implements IConversationRpcService
         }
     }
 
-    /** Updates an owned Conversation title and returns the refreshed summary. */
+    /**
+     * Updates an owned Conversation title through the shared title-normalization policy.
+     *
+     * @param request owned Conversation ID and replacement title
+     * @return updated summary, or a not-found response
+     */
     @Transactional(rollbackFor = Exception.class)
     public ServiceResponse<ConversationAbstract> updateTitle(@Valid UpdateTitleRequest request)
     {
@@ -274,7 +327,12 @@ public class ConversationService implements IConversationRpcService
         return ServiceResponse.buildSuccessResponse(toConversationAbstract(conversation));
     }
 
-    /** Soft-deletes one owned Conversation and releases its file references. */
+    /**
+     * Soft-deletes one owned Conversation and releases relation and file references.
+     *
+     * @param conversationId stable public ID selected by the caller
+     * @return success when the Conversation existed and all cleanup committed
+     */
     @Transactional(rollbackFor = Exception.class)
     public ServiceResponse<Boolean> deleteConversation(String conversationId)
     {
@@ -284,7 +342,13 @@ public class ConversationService implements IConversationRpcService
         return ServiceResponse.buildSuccessResponse(true);
     }
 
-    /** Performs one Conversation soft delete for reuse by the single and batch APIs. */
+    /**
+     * Performs the single-Conversation cleanup contract after ownership-scoped deletion.
+     *
+     * @param conversationId stable public ID to delete
+     * @param userId authenticated owner applied to every mapper predicate
+     * @return {@code true} when the Conversation row was transitioned, otherwise {@code false}
+     */
     private boolean deleteSingleConversation(String conversationId, long userId)
     {
         int updated = conversationMapper.deleteConversation(conversationId, userId);
@@ -295,8 +359,15 @@ public class ConversationService implements IConversationRpcService
         return true;
     }
 
-    /** Deletes an owned conversation batch while preserving the existing per-conversation cleanup contract. */
-    /** Soft-deletes an owned Conversation batch and performs set-based relation cleanup. */
+    /**
+     * Soft-deletes an owned Conversation batch and performs set-based relation cleanup.
+     *
+     * <p>Relations and file references are released in batches so deleting many Conversations does
+     * not create nested per-Conversation database loops.</p>
+     *
+     * @param conversationIds candidate owned Conversation IDs; blanks and duplicates are removed
+     * @return success after logical deletion and reference cleanup commit
+     */
     @Transactional(rollbackFor = Exception.class)
     public ServiceResponse<Boolean> deleteConversations(List<String> conversationIds)
     {
@@ -312,7 +383,12 @@ public class ConversationService implements IConversationRpcService
         return ServiceResponse.buildSuccessResponse(true);
     }
 
-    /** Deletes selected messages after verifying that their parent Conversation is owned. */
+    /**
+     * Deletes selected legacy messages after verifying ownership of their parent Conversation.
+     *
+     * @param request parent Conversation ID and message IDs selected by the caller
+     * @return success after the owner-scoped delete completes
+     */
     @Transactional(rollbackFor = Exception.class)
     public ServiceResponse<Boolean> deleteMessages(DeleteMessagesRequest request)
     {
@@ -325,7 +401,15 @@ public class ConversationService implements IConversationRpcService
         return ServiceResponse.buildSuccessResponse(true);
     }
 
-    /** Pins or unpins root-level owned Conversations as one set-based operation. */
+    /**
+     * Pins or unpins root-level owned Conversations as one set-based operation.
+     *
+     * <p>Grouped Conversations cannot be pinned because pinning is a property of root navigation.
+     * An empty ID list combined with unpin clears all pins for the current user.</p>
+     *
+     * @param request target IDs and desired pin state
+     * @return success after validation and update
+     */
     @Transactional(rollbackFor = Exception.class)
     public ServiceResponse<Boolean> pinConversation(@Valid PinConversationRequest request)
     {
@@ -352,7 +436,12 @@ public class ConversationService implements IConversationRpcService
         return ServiceResponse.buildSuccessResponse(true);
     }
 
-    /** Normalizes optional pin IDs while preserving the empty-list unpin-all behavior. */
+    /**
+     * Normalizes optional pin IDs while preserving the empty-list unpin-all behavior.
+     *
+     * @param request nullable pin command
+     * @return ordered, unique, non-blank Conversation IDs
+     */
     private List<String> getPinConversationIds(PinConversationRequest request)
     {
         if (request == null)
@@ -361,7 +450,13 @@ public class ConversationService implements IConversationRpcService
         return BusinessIdManager.normalizeIds(request.getConversationIds());
     }
 
-    /** Builds the message-history DTO and applies the optional end-message boundary. */
+    /**
+     * Builds a legacy message-history DTO up to an optional share snapshot boundary.
+     *
+     * @param conversation authorized parent entity
+     * @param endMessageId inclusive upper message ID, or {@code null} for current history
+     * @return ordered public history projection
+     */
     private ConversationMessageHistory buildConversationMessageHistory(Conversation conversation, Long endMessageId)
     {
         List<ConversationMessage> messages = conversationMessageMapper.listConversationMessages(conversation.getConversationId(), endMessageId);
@@ -376,7 +471,12 @@ public class ConversationService implements IConversationRpcService
         return history;
     }
 
-    /** Maps a persisted message and its JSON content metadata into the HTTP DTO. */
+    /**
+     * Maps a persisted message and deserializes its structured JSON fields for HTTP clients.
+     *
+     * @param message persisted legacy message row
+     * @return public message projection
+     */
     private ConversationMessageInfo toConversationMessageInfo(ConversationMessage message)
     {
         ConversationMessageInfo messageInfo = new ConversationMessageInfo();
@@ -386,7 +486,14 @@ public class ConversationService implements IConversationRpcService
         return messageInfo;
     }
 
-    /** Deserializes an optional JSON array and returns an empty list for blank or malformed data. */
+    /**
+     * Deserializes an optional JSON array without failing the entire history projection.
+     *
+     * @param json nullable persisted JSON text
+     * @param typeReference concrete list element type retained for Jackson
+     * @param <T> structured content or tool-call element type
+     * @return parsed list, {@code null} when absent, or an empty list when malformed
+     */
     private <T> List<T> readJsonList(String json, TypeReference<List<T>> typeReference)
     {
         if (!StringUtils.hasText(json))
@@ -403,7 +510,12 @@ public class ConversationService implements IConversationRpcService
         }
     }
 
-    /** Maps the persistence entity into the stable sidebar/navigation summary. */
+    /**
+     * Maps the persistence entity into the stable sidebar/navigation summary.
+     *
+     * @param conversation authorized persistence entity
+     * @return public summary containing identity, title, pin state, and timestamps
+     */
     private ConversationAbstract toConversationAbstract(Conversation conversation)
     {
         ConversationAbstract conversationAbstract = new ConversationAbstract();
@@ -411,7 +523,14 @@ public class ConversationService implements IConversationRpcService
         return conversationAbstract;
     }
 
-    /** Renders one history projection into the selected downloadable export format. */
+    /**
+     * Renders one history projection into the selected downloadable export format.
+     *
+     * @param history authorized history projection
+     * @param exportFormat implemented renderer selection
+     * @return filename, media type, and serialized content
+     * @throws IOException when JSON serialization fails
+     */
     private ExportPayload buildExportPayload(ConversationMessageHistory history, ExportFormat exportFormat) throws IOException
     {
         String baseFilename = history.getConversationId() + "." + exportFormat.name().toLowerCase(Locale.ROOT);
@@ -424,7 +543,12 @@ public class ConversationService implements IConversationRpcService
         };
     }
 
-    /** Renders conversation history as plain text for portable export. */
+    /**
+     * Renders conversation history as portable role-prefixed plain text.
+     *
+     * @param history authorized history projection
+     * @return UTF-8-safe text content
+     */
     private String toPlainText(ConversationMessageHistory history)
     {
         StringBuilder builder = new StringBuilder();
@@ -435,7 +559,12 @@ public class ConversationService implements IConversationRpcService
         return builder.toString();
     }
 
-    /** Renders conversation history as Markdown while preserving attachment summaries. */
+    /**
+     * Renders conversation history as Markdown headings and message bodies.
+     *
+     * @param history authorized history projection
+     * @return Markdown document text
+     */
     private String toMarkdown(ConversationMessageHistory history)
     {
         StringBuilder builder = new StringBuilder();
@@ -446,7 +575,12 @@ public class ConversationService implements IConversationRpcService
         return builder.toString();
     }
 
-    /** Renders conversation history as escaped standalone HTML. */
+    /**
+     * Renders conversation history as escaped standalone HTML.
+     *
+     * @param history authorized history projection
+     * @return complete HTML document with untrusted text escaped
+     */
     private String toHtml(ConversationMessageHistory history)
     {
         StringBuilder builder = new StringBuilder();
@@ -467,7 +601,13 @@ public class ConversationService implements IConversationRpcService
         return builder.toString();
     }
 
-    /** Writes a minimal UTF-8 error response when export rendering fails after headers are available. */
+    /**
+     * Writes an HTTP error when export lookup or rendering cannot produce a file.
+     *
+     * @param response servlet response to complete
+     * @param status HTTP status code
+     * @param message client-safe failure message
+     */
     private void sendError(HttpServletResponse response, int status, String message)
     {
         try
@@ -480,7 +620,12 @@ public class ConversationService implements IConversationRpcService
         }
     }
 
-    /** Escapes untrusted conversation text before embedding it in exported HTML. */
+    /**
+     * Escapes untrusted conversation text before embedding it in exported HTML.
+     *
+     * @param value nullable title or message content
+     * @return HTML-safe text, or an empty string for {@code null}
+     */
     private static String escapeHtml(String value)
     {
         if (value == null)
@@ -494,13 +639,23 @@ public class ConversationService implements IConversationRpcService
             .replace("'", "&#39;");
     }
 
-    /** Clamps an invalid page index to the first page. */
+    /**
+     * Clamps an invalid page index to the first page.
+     *
+     * @param pageIndex caller-supplied one-based page index
+     * @return positive one-based page index
+     */
     private static int normalizePageIndex(int pageIndex)
     {
         return pageIndex <= 0 ? DEFAULT_PAGE_INDEX : pageIndex;
     }
 
-    /** Applies the service page-size default and upper bound. */
+    /**
+     * Applies the service page-size default and upper bound.
+     *
+     * @param pageSize caller-supplied page size
+     * @return bounded positive page size
+     */
     private static int normalizePageSize(int pageSize)
     {
         if (pageSize <= 0)
@@ -509,6 +664,14 @@ public class ConversationService implements IConversationRpcService
         return Math.min(pageSize, MAX_PAGE_SIZE);
     }
 
+    /**
+     * Carries renderer output to the servlet-writing boundary without exposing format branches to
+     * the controller.
+     *
+     * @param filename download filename derived from the Conversation ID and format
+     * @param contentType HTTP media type
+     * @param content serialized export body
+     */
     private record ExportPayload(String filename, String contentType, String content)
     {
     }

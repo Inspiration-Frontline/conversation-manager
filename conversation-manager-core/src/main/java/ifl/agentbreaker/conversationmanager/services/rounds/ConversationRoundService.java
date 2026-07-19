@@ -278,13 +278,6 @@ public class ConversationRoundService
     }
 
     /**
-     * Validates, serializes, and atomically persists one complete Round.
-     *
-     * <p>The Redis mutation lock is deliberately acquired before the PostgreSQL transaction starts.
-     * TransactionTemplate keeps that boundary explicit without requiring a separate command
-     * service solely to trigger Spring's transactional proxy.</p>
-     */
-    /**
      * Validates, hashes, and persists one idempotent Round mutation under the distributed
      * Conversation lock. The lock is acquired before the SQL transaction so two Runner retries
      * cannot both observe the same high-water mark and allocate one Round number.
@@ -369,12 +362,6 @@ public class ConversationRoundService
         return request;
     }
 
-    /**
-     * Persists every Turn-owned table with one batch statement per table.
-     *
-     * <p>PostgreSQL does not contractually preserve input order for RETURNING rows. Associations
-     * are therefore rebuilt from persisted business keys instead of list positions.</p>
-     */
     /**
      * Validates stable file references, creates all Round links in one batch, and cancels orphan
      * cleanup tasks. The loop only normalizes IDs; it does not issue one SQL write per file.

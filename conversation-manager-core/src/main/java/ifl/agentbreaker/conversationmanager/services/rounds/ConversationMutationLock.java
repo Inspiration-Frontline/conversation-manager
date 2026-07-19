@@ -48,17 +48,13 @@ public class ConversationMutationLock
     });
 
     /**
-     * Acquires the mutation lock for one Conversation.
+     * Acquires a Redis-backed mutation lease for one Conversation.
      *
-     * <p>Redis SET NX creates the lock with a random ownership token and a bounded lease. The call
-     * waits for at most two seconds so a competing mutation fails instead of waiting indefinitely.
-     * Once acquired, lease renewal keeps a valid long-running database operation from losing its
-     * lock before completion.</p>
-     */
-    /**
-     * Acquires a Redis-backed mutation lease for one Conversation. The random token and renewal
-     * task protect the short provider-side SQL transaction; Runner's longer execution lease is a
-     * separate concern.
+     * <p>Redis {@code SET NX} gives the caller a random ownership token and a bounded lease. The
+     * bounded wait makes competing mutations fail predictably instead of blocking indefinitely. A
+     * renewal task keeps the lease alive while the short SQL transaction is running, and the token
+     * check prevents stale cleanup from deleting a newer lease. Agent Runner's longer execution
+     * lease is a separate concern.</p>
      *
      * @param conversationId aggregate ID used to scope the Redis key
      * @return token-owning handle that must be closed after the transaction

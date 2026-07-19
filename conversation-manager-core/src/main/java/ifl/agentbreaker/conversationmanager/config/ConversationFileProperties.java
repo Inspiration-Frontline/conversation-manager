@@ -25,8 +25,13 @@ public class ConversationFileProperties
     private Set<String> allowedExtensions = new LinkedHashSet<>();
     private Set<String> allowedMimeTypes = new LinkedHashSet<>();
 
+    /**
+     * Normalizes configured extension and MIME collections once during bean initialization.
+     *
+     * <p>Configuration may contain leading dots, mixed case, blanks, or duplicates. Normalizing at
+     * this boundary lets file validation use stable set membership for every upload.</p>
+     */
     @PostConstruct
-    /** Normalizes configured extension and MIME collections once during bean initialization. */
     public void normalizeConfiguredTypes()
     {
         Set<String> normalizedExtensions = new LinkedHashSet<>();

@@ -54,11 +54,6 @@ public class ConversationFileParser
     private final Tika tika = new Tika();
 
     /**
-     * Validates the immutable uploaded bytes and extracts a bounded, provenance-preserving text
-     * representation for Agent Runner. This method never executes active Office content or performs
-     * OCR. A returned result is safe to persist only after the caller's security scan has passed.
-     */
-    /**
      * Scans and extracts one immutable file into bounded text plus typed provenance metadata. The
      * returned text is intentionally a bounded context snapshot; complete lossless retrieval is a
      * future Knowledge Manager responsibility.
@@ -140,12 +135,6 @@ public class ConversationFileParser
         }
     }
 
-    /**
-     * Apache Tika is intentionally used for MIME detection, not {@code parseToString()} extraction.
-     * The format-specific readers below preserve evidence boundaries that generic Tika text flattens:
-     * PDF page numbers, DOCX headings/lists/tables, XLSX sheet/cell/formula coordinates, and PPTX
-     * slides/notes/embedded-image inventory. They also enforce strict UTF-8 for plain-text files.
-     */
     /**
      * Dispatches format-specific readers while keeping Tika limited to MIME detection. Explicit
      * readers retain boundaries that {@code Tika.parseToString()} would discard.
@@ -372,11 +361,6 @@ public class ConversationFileParser
         }
     }
 
-    /**
-     * Keeps evidence from the beginning, middle, and end instead of retaining only chapter one.
-     * This is still a bounded context representation rather than lossless document storage; future
-     * Knowledge Manager ingestion should chunk and retrieve the complete document when required.
-     */
     /**
      * Retains beginning, middle, and end excerpts under the configured model-context limit. The
      * three-way sample is a deliberate compromise until Knowledge Manager provides lossless chunk
