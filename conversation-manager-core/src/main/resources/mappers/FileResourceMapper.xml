@@ -20,7 +20,8 @@
         <result column="file_size" property="fileSize"/>
         <result column="sha256" property="sha256"/>
         <result column="extracted_text" property="extractedText"/>
-        <result column="extraction_metadata" property="extractionMetadata"/>
+        <result column="extraction_metadata" property="extractionMetadata"
+                typeHandler="ifl.agentbreaker.conversationmanager.dao.typehandlers.FileExtractionMetadataTypeHandler"/>
         <result column="extraction_truncated" property="extractionTruncated"/>
         <result column="width" property="width"/>
         <result column="height" property="height"/>
@@ -149,7 +150,8 @@
             "detected_mime_type" = #{detectedMimeType},
             "sha256" = #{sha256},
             "extracted_text" = #{extractedText},
-            "extraction_metadata" = CAST(#{extractionMetadata} AS JSONB),
+            "extraction_metadata" = #{extractionMetadata, jdbcType=OTHER,
+                typeHandler=ifl.agentbreaker.conversationmanager.dao.typehandlers.FileExtractionMetadataTypeHandler},
             "extraction_truncated" = #{extractionTruncated},
             "width" = #{width},
             "height" = #{height},
@@ -208,13 +210,16 @@
           )
     </update>
 
-    <update id="clearReservationsForConversation">
+    <update id="clearReservationsForConversations">
         UPDATE "file_resource"
         SET "reserved_conversation_id" = NULL,
             "reserved_request_id" = NULL,
             "reserved_until" = NULL
         WHERE "creator_id" = #{userId}
-          AND "reserved_conversation_id" = #{conversationId}
+          AND "reserved_conversation_id" IN
+        <foreach collection="conversationIds" item="conversationId" open="(" separator="," close=")">
+            #{conversationId}
+        </foreach>
           AND "deleted" = FALSE
     </update>
 

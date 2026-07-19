@@ -2,6 +2,7 @@ package ifl.agentbreaker.conversationmanager.domain.entities.pg;
 
 import ifl.agentbreaker.conversationmanager.domain.constants.ConversationFileKind;
 import ifl.agentbreaker.conversationmanager.domain.constants.ConversationFileStatus;
+import ifl.agentbreaker.conversationmanager.domain.valueobjects.FileExtractionMetadata;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
 
@@ -14,6 +15,10 @@ public class FileResource extends EntityBase
     private String fileId;
     private ConversationFileKind kind;
     private ConversationFileStatus status;
+    /**
+     * Monotonic version of the user-visible file status. SQL increments it only when the status
+     * transitions, allowing polling clients to detect a newer state without comparing timestamps.
+     */
     private long statusRevision;
     private String bucketName;
     private String objectKey;
@@ -24,7 +29,8 @@ public class FileResource extends EntityBase
     private long fileSize;
     private String sha256;
     private String extractedText;
-    private String extractionMetadata;
+    /** Typed JSONB describing format-specific extraction evidence; see FileExtractionMetadata. */
+    private FileExtractionMetadata extractionMetadata;
     private boolean extractionTruncated;
     private Integer width;
     private Integer height;

@@ -1,9 +1,10 @@
 package ifl.agentbreaker.conversationmanager.services.files;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import ifl.agentbreaker.conversationmanager.config.ConversationFileProperties;
 import ifl.agentbreaker.conversationmanager.domain.constants.ConversationFileKind;
+import ifl.agentbreaker.conversationmanager.domain.constants.FileTextExtractionStrategy;
 import ifl.agentbreaker.conversationmanager.domain.entities.pg.FileResource;
+import ifl.agentbreaker.conversationmanager.domain.valueobjects.FileExtractionMetadata;
 import org.apache.pdfbox.Loader;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.text.PDFTextStripper;
@@ -36,27 +37,28 @@ import java.nio.charset.CharacterCodingException;
 import java.nio.charset.CodingErrorAction;
 import java.security.MessageDigest;
 import java.util.HexFormat;
-import java.util.LinkedHashMap;
-import java.util.Map;
 
 @Component
 public class ConversationFileParser
 {
-    private static final String TRUNCATION_MARKER = "\n\n[Content truncated by the configured extraction limit.]";
+    private static final String TRUNCATION_MARKER = "\n\n[Content truncated here by the configured extraction limit.]\n\n";
 
     @Autowired
     private ConversationFileProperties properties;
 
-    @Autowired
-    private ObjectMapper objectMapper;
-
     private final Tika tika = new Tika();
 
+    /**
+     * Validates the immutable uploaded bytes and extracts a bounded, provenance-preserving text
+     * representation for Agent Runner. This method never executes active Office content or performs
+     * OCR. A returned result is safe to persist only after the caller's security scan has passed.
+     */
     public FileExtractionResult parse(FileResource fileResource, byte[] bytes) throws FileProcessingException
     {
         try
         {
-            // Detect MIME type.
+            // Detection uses file bytes plus the original filename; the declared browser MIME type
+            // is not trusted because it is supplied by the client.
             String detectedMimeType = tika.detect(bytes, fileResource.getOriginalFilename());
             if (!ConversationFileTypeResolver.isMimeTypeCompatible(
                 fileResource.getFileExtension(), detectedMimeType))
@@ -64,15 +66,18 @@ public class ConversationFileParser
                     "FILE_TYPE_MISMATCH",
                     "The uploaded file content does not match its filename extension.");
 
-            // Validate sha256.
+            // Recompute SHA-256 from the OSS bytes so confirmation and asynchronous processing are
+            // tied to exactly the same immutable payload.
             String sha256 = HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(bytes));
             if (fileResource.getSha256() != null && !fileResource.getSha256().equalsIgnoreCase(sha256))
                 throw new FileProcessingException("CHECKSUM_MISMATCH", "The uploaded file checksum does not match.");
 
-            Map<String, Object> metadata = new LinkedHashMap<>();
-            metadata.put("kind", fileResource.getKind().name());
-            metadata.put("detectedMimeType", detectedMimeType);
+            FileExtractionMetadata metadata = new FileExtractionMetadata();
+            metadata.setKind(fileResource.getKind());
+            metadata.setDetectedMimeType(detectedMimeType);
 
+            // Images keep dimensions and are sent to a vision-capable model through a signed URL.
+            // Document families instead produce stable text with explicit page/sheet/slide markers.
             String extractedText = "";
             Integer width = null;
             Integer height = null;
@@ -83,8 +88,8 @@ public class ConversationFileParser
                 {
                     width = image.getWidth();
                     height = image.getHeight();
-                    metadata.put("width", width);
-                    metadata.put("height", height);
+                    metadata.setWidth(width);
+                    metadata.setHeight(height);
                 }
                 else if (!"image/webp".equalsIgnoreCase(detectedMimeType))
                     throw new FileProcessingException("INVALID_IMAGE", "The uploaded image cannot be decoded.");
@@ -92,12 +97,17 @@ public class ConversationFileParser
             else
                 extractedText = extractText(fileResource, bytes, metadata);
 
-            TruncatedText truncatedText = truncate(extractedText);
+            TruncatedText truncatedText = retainTextWithinLimit(extractedText);
+            metadata.setOriginalCharacterCount(extractedText.length());
+            metadata.setRetainedCharacterCount(truncatedText.text().length());
+            metadata.setTextExtractionStrategy(truncatedText.truncated()
+                ? FileTextExtractionStrategy.BALANCED_EXCERPTS
+                : FileTextExtractionStrategy.FULL_TEXT);
             return new FileExtractionResult(
                 detectedMimeType,
                 sha256,
                 truncatedText.text(),
-                objectMapper.writeValueAsString(metadata),
+                metadata,
                 truncatedText.truncated(),
                 width,
                 height);
@@ -112,7 +122,16 @@ public class ConversationFileParser
         }
     }
 
-    private String extractText(FileResource fileResource, byte[] bytes, Map<String, Object> metadata) throws Exception
+    /**
+     * Apache Tika is intentionally used for MIME detection, not {@code parseToString()} extraction.
+     * The format-specific readers below preserve evidence boundaries that generic Tika text flattens:
+     * PDF page numbers, DOCX headings/lists/tables, XLSX sheet/cell/formula coordinates, and PPTX
+     * slides/notes/embedded-image inventory. They also enforce strict UTF-8 for plain-text files.
+     */
+    private String extractText(
+        FileResource fileResource,
+        byte[] bytes,
+        FileExtractionMetadata metadata) throws Exception
     {
         return switch (fileResource.getFileExtension())
         {
@@ -125,11 +144,11 @@ public class ConversationFileParser
         };
     }
 
-    private String extractPdf(byte[] bytes, Map<String, Object> metadata) throws Exception
+    private String extractPdf(byte[] bytes, FileExtractionMetadata metadata) throws Exception
     {
         try (PDDocument document = Loader.loadPDF(bytes))
         {
-            metadata.put("pageCount", document.getNumberOfPages());
+            metadata.setPageCount(document.getNumberOfPages());
             PDFTextStripper stripper = new PDFTextStripper();
             StringBuilder builder = new StringBuilder();
             for (int page = 1; page <= document.getNumberOfPages(); page++)
@@ -148,13 +167,13 @@ public class ConversationFileParser
         }
     }
 
-    private String extractDocx(byte[] bytes, Map<String, Object> metadata) throws Exception
+    private String extractDocx(byte[] bytes, FileExtractionMetadata metadata) throws Exception
     {
         configureZipSafety();
         try (XWPFDocument document = new XWPFDocument(new ByteArrayInputStream(bytes)))
         {
-            metadata.put("paragraphCount", document.getParagraphs().size());
-            metadata.put("tableCount", document.getTables().size());
+            metadata.setParagraphCount(document.getParagraphs().size());
+            metadata.setTableCount(document.getTables().size());
             StringBuilder builder = new StringBuilder();
             for (XWPFParagraph paragraph : document.getParagraphs())
             {
@@ -182,12 +201,12 @@ public class ConversationFileParser
         }
     }
 
-    private String extractXlsx(byte[] bytes, Map<String, Object> metadata) throws Exception
+    private String extractXlsx(byte[] bytes, FileExtractionMetadata metadata) throws Exception
     {
         configureZipSafety();
         try (Workbook workbook = WorkbookFactory.create(new ByteArrayInputStream(bytes)))
         {
-            metadata.put("sheetCount", workbook.getNumberOfSheets());
+            metadata.setSheetCount(workbook.getNumberOfSheets());
             DataFormatter formatter = new DataFormatter();
             formatter.setUseCachedValuesForFormulaCells(true);
             StringBuilder builder = new StringBuilder();
@@ -213,13 +232,13 @@ public class ConversationFileParser
         }
     }
 
-    private String extractPptx(byte[] bytes, Map<String, Object> metadata) throws Exception
+    private String extractPptx(byte[] bytes, FileExtractionMetadata metadata) throws Exception
     {
         configureZipSafety();
         try (XMLSlideShow slideShow = new XMLSlideShow(new ByteArrayInputStream(bytes)))
         {
-            metadata.put("slideCount", slideShow.getSlides().size());
-            metadata.put("embeddedImageCount", slideShow.getPictureData().size());
+            metadata.setSlideCount(slideShow.getSlides().size());
+            metadata.setEmbeddedImageCount(slideShow.getPictureData().size());
             StringBuilder builder = new StringBuilder();
             int slideNumber = 0;
             for (XSLFSlide slide : slideShow.getSlides())
@@ -275,13 +294,34 @@ public class ConversationFileParser
         }
     }
 
-    private TruncatedText truncate(String text)
+    /**
+     * Keeps evidence from the beginning, middle, and end instead of retaining only chapter one.
+     * This is still a bounded context representation rather than lossless document storage; future
+     * Knowledge Manager ingestion should chunk and retrieve the complete document when required.
+     */
+    private TruncatedText retainTextWithinLimit(String text)
     {
         int maximum = properties.getMaxExtractedCharacters();
         if (text.length() <= maximum)
             return new TruncatedText(text, false);
 
-        return new TruncatedText(text.substring(0, maximum) + TRUNCATION_MARKER, true);
+        int markerCharacters = TRUNCATION_MARKER.length() * 2;
+        if (maximum <= markerCharacters + 3)
+            return new TruncatedText(text.substring(0, maximum) + TRUNCATION_MARKER, true);
+
+        int retainedCharacters = maximum - markerCharacters;
+        int headLength = retainedCharacters / 3;
+        int middleLength = retainedCharacters / 3;
+        int tailLength = retainedCharacters - headLength - middleLength;
+        int middleStart = Math.max(headLength, (text.length() - middleLength) / 2);
+        int tailStart = text.length() - tailLength;
+        return new TruncatedText(
+            text.substring(0, headLength)
+                + TRUNCATION_MARKER
+                + text.substring(middleStart, middleStart + middleLength)
+                + TRUNCATION_MARKER
+                + text.substring(tailStart),
+            true);
     }
 
     private void configureZipSafety()

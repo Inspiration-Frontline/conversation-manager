@@ -5,6 +5,7 @@ import ifl.agentbreaker.conversationmanager.domain.dtos.responses.ConversationRo
 import ifl.agentbreaker.conversationmanager.domain.dtos.responses.ConversationReplayResult;
 import ifl.agentbreaker.conversationmanager.domain.entities.pg.ConversationRound;
 import ifl.agentbreaker.conversationmanager.domain.entities.pg.FileResource;
+import ifl.agentbreaker.conversationmanager.config.ConversationFileProperties;
 import ifl.agentbreaker.conversationmanager.dao.ConversationMapper;
 import ifl.agentbreaker.conversationmanager.rpc.AssistantAnswer;
 import ifl.agentbreaker.conversationmanager.rpc.ConversationAbstract;
@@ -52,6 +53,9 @@ public class ConversationRoundRpcProvider implements ConversationRpcService
 
     @Autowired
     private ConversationFileService conversationFileService;
+
+    @Autowired
+    private ConversationFileProperties conversationFileProperties;
 
     @Autowired
     private ConversationMapper conversationMapper;
@@ -218,10 +222,10 @@ public class ConversationRoundRpcProvider implements ConversationRpcService
                         "Every selected file must have a confirmed upload.");
                 totalBytes += fileResource.getFileSize();
             }
-            if (totalBytes > conversationFileService.getFileProperties().getMaxTotalBytesPerMessage())
+            if (totalBytes > conversationFileProperties.getMaxTotalBytesPerMessage())
                 return prepareFilesError(data, ConversationErrorCode.CONVERSATION_ERROR_CODE_INVALID_FILE_SELECTION,
                     "The selected files exceed the total size limit.");
-            if (!conversationFileService.reserveFiles(
+            if (!conversationFileService.reserveFilesForRequest(
                 request.getFileIdsList(),
                 request.getUserId(),
                 request.getConversationId(),
@@ -280,7 +284,7 @@ public class ConversationRoundRpcProvider implements ConversationRpcService
             || request.getConversationId().isBlank()
             || request.getRequestId().isBlank()
             || request.getFileIdsCount() <= 0
-            || request.getFileIdsCount() > conversationFileService.getFileProperties().getMaxCountPerMessage())
+            || request.getFileIdsCount() > conversationFileProperties.getMaxCountPerMessage())
             throw new IllegalArgumentException("The file preparation request is invalid.");
         Set<String> uniqueFileIds = new HashSet<>(request.getFileIdsList());
         if (uniqueFileIds.size() != request.getFileIdsCount() || uniqueFileIds.stream().anyMatch(String::isBlank))

@@ -27,20 +27,14 @@
         ORDER BY round."round_number", relation."file_order"
     </select>
 
-    <select id="listFileResourceIdsByConversation" resultType="long">
-        SELECT DISTINCT relation."file_resource_id"
-        FROM "conversation_round_file" relation
-        INNER JOIN "conversation_round" round ON round."id" = relation."round_id"
-        INNER JOIN "conversation" conversation ON conversation."conversation_id" = round."conversation_id"
-        WHERE round."conversation_id" = #{conversationId}
-          AND conversation."creator_id" = #{userId}
-    </select>
-
-    <delete id="deleteByConversationId">
+    <delete id="deleteByConversationIds">
         DELETE FROM "conversation_round_file" relation
         USING "conversation_round" round, "conversation" conversation
         WHERE relation."round_id" = round."id"
-          AND round."conversation_id" = #{conversationId}
+          AND round."conversation_id" IN
+        <foreach collection="conversationIds" item="conversationId" open="(" separator="," close=")">
+            #{conversationId}
+        </foreach>
           AND conversation."conversation_id" = round."conversation_id"
           AND conversation."creator_id" = #{userId}
     </delete>

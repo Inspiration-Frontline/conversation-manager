@@ -2,6 +2,8 @@ package ifl.agentbreaker.conversationmanager.controllers;
 
 import ifl.agentbreaker.conversationmanager.domain.dtos.requests.ConfirmFileUploadRequest;
 import ifl.agentbreaker.conversationmanager.domain.dtos.requests.CreateFileUploadSessionRequest;
+import ifl.agentbreaker.conversationmanager.domain.dtos.requests.DeleteFileResourceRequest;
+import ifl.agentbreaker.conversationmanager.domain.dtos.requests.RetryFileProcessingRequest;
 import ifl.agentbreaker.conversationmanager.domain.dtos.responses.FileDownloadUrl;
 import ifl.agentbreaker.conversationmanager.domain.dtos.responses.FileResourceInfo;
 import ifl.agentbreaker.conversationmanager.domain.dtos.responses.FileUploadSession;
@@ -31,12 +33,19 @@ public class ConversationFileController
         return conversationFileService.createFileUploadSession(request);
     }
 
-    @PostMapping("/{fileId}/confirm")
+    /**
+     * Completes a browser-to-OSS upload handshake.
+     *
+     * <p>The bytes bypass this service and are uploaded through a short-lived signed OSS URL. This
+     * endpoint is therefore required to verify that the expected object now exists, validate its
+     * size/checksum, atomically move the resource out of PENDING_UPLOAD, and enqueue durable parsing.
+     * It does not upload or parse the file in the HTTP request thread.</p>
+     */
+    @PostMapping("/confirm")
     public ServiceResponse<FileResourceInfo> confirmFileUpload(
-        @PathVariable String fileId,
-        @Valid @RequestBody(required = false) ConfirmFileUploadRequest request)
+        @Valid @RequestBody ConfirmFileUploadRequest request)
     {
-        return conversationFileService.confirmFileUpload(fileId, request);
+        return conversationFileService.confirmFileUpload(request);
     }
 
     @GetMapping("/{fileId}")
@@ -45,16 +54,22 @@ public class ConversationFileController
         return conversationFileService.getFileResource(fileId);
     }
 
-    @PostMapping("/{fileId}/retry")
-    public ServiceResponse<FileResourceInfo> retryFileProcessing(@PathVariable String fileId)
+    /**
+     * Requeues a failed asynchronous parser task without forcing the user to upload the same bytes
+     * again. Ownership and FAILED state are rechecked so the HTTP action cannot duplicate a running
+     * task or retry another user's resource.
+     */
+    @PostMapping("/retry")
+    public ServiceResponse<FileResourceInfo> retryFileProcessing(
+        @Valid @RequestBody RetryFileProcessingRequest request)
     {
-        return conversationFileService.retryFileProcessing(fileId);
+        return conversationFileService.retryFileProcessing(request);
     }
 
-    @DeleteMapping("/{fileId}")
-    public ServiceResponse<Boolean> deleteFileResource(@PathVariable String fileId)
+    @DeleteMapping
+    public ServiceResponse<Boolean> deleteFileResource(@Valid @RequestBody DeleteFileResourceRequest request)
     {
-        return conversationFileService.deleteFileResource(fileId);
+        return conversationFileService.deleteFileResource(request);
     }
 
     @GetMapping("/{fileId}/download-url")

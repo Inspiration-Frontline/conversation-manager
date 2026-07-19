@@ -16,6 +16,8 @@ import ifl.agentbreaker.conversationmanager.domain.constants.ConversationFileSta
 import ifl.agentbreaker.conversationmanager.domain.constants.FileCleanupReason;
 import ifl.agentbreaker.conversationmanager.domain.dtos.requests.ConfirmFileUploadRequest;
 import ifl.agentbreaker.conversationmanager.domain.dtos.requests.CreateFileUploadSessionRequest;
+import ifl.agentbreaker.conversationmanager.domain.dtos.requests.DeleteFileResourceRequest;
+import ifl.agentbreaker.conversationmanager.domain.dtos.requests.RetryFileProcessingRequest;
 import ifl.agentbreaker.conversationmanager.domain.dtos.responses.FileDownloadUrl;
 import ifl.agentbreaker.conversationmanager.domain.dtos.responses.FileResourceInfo;
 import ifl.agentbreaker.conversationmanager.domain.dtos.responses.FileUploadSession;
@@ -48,6 +50,13 @@ public class ConversationFileService
     public static final int ERROR_INVALID_FILE = 2300;
     public static final int ERROR_FILE_NOT_FOUND = 2301;
     public static final int ERROR_FILE_BUSY = 2302;
+
+    /**
+     * OSS layout: configured prefix / owner / UTC year / UTC month / stable file ID / source.
+     * Date partitioning keeps operational listings bounded; the stable file ID prevents filename
+     * collisions and the original untrusted filename never becomes part of the object key.
+     */
+    private static final String OBJECT_KEY_LAYOUT = "%s/%d/%04d/%02d/%s/source";
 
     @Autowired
     private FileResourceMapper fileResourceMapper;
@@ -104,7 +113,7 @@ public class ConversationFileService
         FileResource inserted = fileResourceMapper.insertFileResource(fileResource);
         if (inserted == null)
             throw new IllegalStateException("The file resource could not be created.");
-        fileCleanupTaskMapper.scheduleTask(
+        fileCleanupTaskMapper.addTask(
             inserted.getId(), userId, FileCleanupReason.UPLOAD_EXPIRED,
             ossProperties.getPresignedUrlTtlSeconds());
 
@@ -122,9 +131,10 @@ public class ConversationFileService
         return ServiceResponse.buildSuccessResponse(session);
     }
 
-    public ServiceResponse<FileResourceInfo> confirmFileUpload(String fileId, ConfirmFileUploadRequest request)
+    public ServiceResponse<FileResourceInfo> confirmFileUpload(ConfirmFileUploadRequest request)
     {
         long userId = UserContextService.getCurrentUserId();
+        String fileId = request.getFileId();
         FileResource existing = requireOwnedFile(fileId, userId);
         if (existing.getStatus() != ConversationFileStatus.PENDING_UPLOAD)
             return ServiceResponse.buildSuccessResponse(toFileResourceInfo(existing));
@@ -143,7 +153,7 @@ public class ConversationFileService
         if (metadata.getContentLength() != existing.getFileSize())
             throw new ServiceResponseException(ERROR_INVALID_FILE, "The uploaded file size does not match the request.");
 
-        String sha256 = request == null || !StringUtils.hasText(request.getSha256())
+        String sha256 = !StringUtils.hasText(request.getSha256())
             ? null
             : request.getSha256().toLowerCase(Locale.ROOT);
         String objectMimeType = StringUtils.hasText(metadata.getContentType())
@@ -156,7 +166,7 @@ public class ConversationFileService
             if (updated == null)
                 throw new ServiceResponseException(ERROR_INVALID_FILE, "The upload cannot be confirmed in its current state.");
             fileProcessingTaskMapper.upsertPendingTask(updated.getId(), userId);
-            fileCleanupTaskMapper.scheduleTask(
+            fileCleanupTaskMapper.addTask(
                 updated.getId(), userId, FileCleanupReason.ORPHANED, fileProperties.getOrphanTtlSeconds());
             return updated;
         });
@@ -170,9 +180,10 @@ public class ConversationFileService
     }
 
     @Transactional(rollbackFor = Exception.class)
-    public ServiceResponse<FileResourceInfo> retryFileProcessing(String fileId)
+    public ServiceResponse<FileResourceInfo> retryFileProcessing(RetryFileProcessingRequest request)
     {
         long userId = UserContextService.getCurrentUserId();
+        String fileId = request.getFileId();
         FileResource fileResource = requireOwnedFile(fileId, userId);
         if (fileResource.getStatus() != ConversationFileStatus.FAILED)
             throw new ServiceResponseException(ERROR_INVALID_FILE, "Only a failed file can be retried.");
@@ -183,15 +194,16 @@ public class ConversationFileService
     }
 
     @Transactional(rollbackFor = Exception.class)
-    public ServiceResponse<Boolean> deleteFileResource(String fileId)
+    public ServiceResponse<Boolean> deleteFileResource(DeleteFileResourceRequest request)
     {
         long userId = UserContextService.getCurrentUserId();
+        String fileId = request.getFileId();
         FileResource fileResource = requireOwnedFile(fileId, userId);
         if (fileResourceMapper.requestDelete(fileId, userId) != 1)
             throw new ServiceResponseException(ERROR_FILE_BUSY, "The file is referenced by an active request or conversation.");
 
         fileProcessingTaskMapper.cancelByFileResourceId(fileResource.getId());
-        fileCleanupTaskMapper.scheduleTask(fileResource.getId(), userId, FileCleanupReason.USER_REMOVED, 0);
+        fileCleanupTaskMapper.addTask(fileResource.getId(), userId, FileCleanupReason.USER_REMOVED, 0);
         return ServiceResponse.buildSuccessResponse(true);
     }
 
@@ -210,6 +222,11 @@ public class ConversationFileService
         return ServiceResponse.buildSuccessResponse(result);
     }
 
+    /**
+     * Batch-loads files owned by the RPC caller and restores the exact order supplied by Agent
+     * Runner. The preparation RPC uses this to authorize a frozen attachment selection without an
+     * N+1 lookup; a missing result means at least one ID was absent, deleted, or owned by another user.
+     */
     public List<FileResource> listOwnedFiles(Collection<String> fileIds, long userId)
     {
         if (fileIds == null || fileIds.isEmpty())
@@ -228,7 +245,15 @@ public class ConversationFileService
         return ordered;
     }
 
-    public boolean reserveFiles(Collection<String> fileIds, long userId, String conversationId, String requestId)
+    /**
+     * Temporarily reserves the selected resources for one chat request so concurrent sends cannot
+     * attach the same draft files to different conversations before the Round references are saved.
+     */
+    public boolean reserveFilesForRequest(
+        Collection<String> fileIds,
+        long userId,
+        String conversationId,
+        String requestId)
     {
         return fileResourceMapper.reserveFileResources(
             fileIds,
@@ -241,26 +266,36 @@ public class ConversationFileService
     @Transactional(rollbackFor = Exception.class)
     public void releaseConversationReferences(String conversationId, long userId)
     {
-        List<Long> fileResourceIds = conversationRoundFileMapper.listFileResourceIdsByConversation(conversationId, userId);
-        conversationRoundFileMapper.deleteByConversationId(conversationId, userId);
-        fileResourceMapper.clearReservationsForConversation(conversationId, userId);
-        for (Long fileResourceId : fileResourceIds)
-        {
-            fileCleanupTaskMapper.scheduleTask(
-                fileResourceId, userId, FileCleanupReason.CONVERSATION_DELETED,
-                fileProperties.getOrphanTtlSeconds());
-        }
+        releaseConversationReferences(List.of(conversationId), userId);
+    }
+
+    /**
+     * Releases file reservations and durable Round references for multiple conversations as set
+     * operations. Cleanup tasks are inserted directly from the relation tables in one SQL statement;
+     * no file ID is loaded into Java and no database call occurs inside a loop.
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public void releaseConversationReferences(Collection<String> conversationIds, long userId)
+    {
+        List<String> uniqueConversationIds = conversationIds == null
+            ? List.of()
+            : conversationIds.stream().filter(StringUtils::hasText).distinct().toList();
+        if (uniqueConversationIds.isEmpty())
+            return;
+
+        fileCleanupTaskMapper.addTasksForConversationReferences(
+            uniqueConversationIds,
+            userId,
+            FileCleanupReason.CONVERSATION_DELETED,
+            fileProperties.getOrphanTtlSeconds());
+        conversationRoundFileMapper.deleteByConversationIds(uniqueConversationIds, userId);
+        fileResourceMapper.clearReservationsForConversations(uniqueConversationIds, userId);
     }
 
     public String createSignedGetUrl(FileResource fileResource)
     {
         Date expiresAt = Date.from(Instant.now().plusSeconds(ossProperties.getPresignedUrlTtlSeconds()));
         return createSignedGetUrl(fileResource, expiresAt);
-    }
-
-    public ConversationFileProperties getFileProperties()
-    {
-        return fileProperties;
     }
 
     public FileResourceInfo toFileResourceInfo(FileResource fileResource)
@@ -307,7 +342,7 @@ public class ConversationFileService
         ZonedDateTime now = ZonedDateTime.now(ZoneOffset.UTC);
         return String.format(
             Locale.ROOT,
-            "%s/%d/%04d/%02d/%s/source",
+            OBJECT_KEY_LAYOUT,
             trimSlashes(ossProperties.getObjectPrefix()),
             userId,
             now.getYear(),

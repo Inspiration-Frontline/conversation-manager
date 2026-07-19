@@ -5,15 +5,22 @@ import ifl.agentbreaker.conversationmanager.domain.entities.pg.FileCleanupTask;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 
+import java.util.Collection;
 import java.util.List;
 
 @Mapper
 public interface FileCleanupTaskMapper
 {
-    int scheduleTask(@Param("fileResourceId") long fileResourceId,
-                     @Param("userId") long userId,
-                     @Param("reason") FileCleanupReason reason,
-                     @Param("delaySeconds") long delaySeconds);
+    int addTask(@Param("fileResourceId") long fileResourceId,
+                @Param("userId") long userId,
+                @Param("reason") FileCleanupReason reason,
+                @Param("delaySeconds") long delaySeconds);
+
+    int addTasksForConversationReferences(
+        @Param("conversationIds") Collection<String> conversationIds,
+        @Param("userId") long userId,
+        @Param("reason") FileCleanupReason reason,
+        @Param("delaySeconds") long delaySeconds);
 
     List<FileCleanupTask> claimTasks(@Param("leaseToken") String leaseToken,
                                      @Param("leaseSeconds") int leaseSeconds,

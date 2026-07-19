@@ -1,6 +1,6 @@
 package ifl.agentbreaker.conversationmanager.domain.entities.pg;
 
-import ifl.agentbreaker.conversationmanager.domain.constants.FileTaskStatus;
+import ifl.agentbreaker.conversationmanager.domain.constants.FileTaskExecutionStatus;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
 
@@ -11,7 +11,7 @@ import java.util.Date;
 public class FileProcessingTask extends EntityBase
 {
     private long fileResourceId;
-    private FileTaskStatus status;
+    private FileTaskExecutionStatus status;
     private int attempt;
     private Date executeAfter;
     private String leaseToken;

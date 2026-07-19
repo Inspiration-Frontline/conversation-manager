@@ -17,13 +17,7 @@
         <result column="last_error" property="lastError"/>
     </resultMap>
 
-    <insert id="scheduleTask">
-        INSERT INTO "file_cleanup_task" (
-            "creator_id", "modifier_id", "file_resource_id", "reason", "status", "execute_after"
-        ) VALUES (
-            #{userId}, #{userId}, #{fileResourceId}, #{reason}, 'PENDING',
-            NOW() + (#{delaySeconds} * INTERVAL '1 second')
-        )
+    <sql id="UpsertPendingTask">
         ON CONFLICT ("file_resource_id") DO UPDATE
         SET "reason" = EXCLUDED."reason",
             "status" = 'PENDING',
@@ -36,6 +30,33 @@
             "lease_until" = NULL,
             "last_error" = ''
         WHERE "file_cleanup_task"."status" != 'RUNNING'
+    </sql>
+
+    <insert id="addTask">
+        INSERT INTO "file_cleanup_task" (
+            "creator_id", "modifier_id", "file_resource_id", "reason", "status", "execute_after"
+        ) VALUES (
+            #{userId}, #{userId}, #{fileResourceId}, #{reason}, 'PENDING',
+            NOW() + (#{delaySeconds} * INTERVAL '1 second')
+        )
+        <include refid="UpsertPendingTask"/>
+    </insert>
+
+    <insert id="addTasksForConversationReferences">
+        INSERT INTO "file_cleanup_task" (
+            "creator_id", "modifier_id", "file_resource_id", "reason", "status", "execute_after"
+        )
+        SELECT DISTINCT #{userId}, #{userId}, relation."file_resource_id", #{reason}, 'PENDING',
+            NOW() + (#{delaySeconds} * INTERVAL '1 second')
+        FROM "conversation_round_file" relation
+        INNER JOIN "conversation_round" round ON round."id" = relation."round_id"
+        INNER JOIN "conversation" conversation ON conversation."conversation_id" = round."conversation_id"
+        WHERE conversation."creator_id" = #{userId}
+          AND round."conversation_id" IN
+        <foreach collection="conversationIds" item="conversationId" open="(" separator="," close=")">
+            #{conversationId}
+        </foreach>
+        <include refid="UpsertPendingTask"/>
     </insert>
 
     <select id="claimTasks" resultMap="FileCleanupTaskResultMap" affectData="true">

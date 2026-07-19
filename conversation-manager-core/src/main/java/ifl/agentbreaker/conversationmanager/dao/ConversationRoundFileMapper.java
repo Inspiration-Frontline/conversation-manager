@@ -16,9 +16,6 @@ public interface ConversationRoundFileMapper
 
     List<RoundFileHistory> listRoundFiles(@Param("conversationId") String conversationId);
 
-    List<Long> listFileResourceIdsByConversation(@Param("conversationId") String conversationId,
-                                                 @Param("userId") long userId);
-
-    int deleteByConversationId(@Param("conversationId") String conversationId,
-                               @Param("userId") long userId);
+    int deleteByConversationIds(@Param("conversationIds") Collection<String> conversationIds,
+                                @Param("userId") long userId);
 }

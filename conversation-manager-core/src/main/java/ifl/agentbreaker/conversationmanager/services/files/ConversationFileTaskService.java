@@ -32,7 +32,7 @@ public class ConversationFileTaskService
             extractionResult.detectedMimeType(),
             extractionResult.sha256(),
             extractionResult.extractedText(),
-            extractionResult.metadataJson(),
+            extractionResult.metadata(),
             extractionResult.truncated(),
             extractionResult.width(),
             extractionResult.height());

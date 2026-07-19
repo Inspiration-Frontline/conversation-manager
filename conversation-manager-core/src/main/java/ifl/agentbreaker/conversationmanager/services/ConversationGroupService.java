@@ -130,8 +130,7 @@ public class ConversationGroupService
         {
             List<String> conversationIds = conversationMapper.listConversationIdsByGroupId(request.getGroupId(), userId);
             conversationMapper.deleteConversationsByGroupId(request.getGroupId(), userId);
-            for (String conversationId : conversationIds)
-                conversationFileService.releaseConversationReferences(conversationId, userId);
+            conversationFileService.releaseConversationReferences(conversationIds, userId);
         }
 
         conversationGroupRelationMapper.deleteConversationGroupRelationsByGroupId(request.getGroupId(), userId);

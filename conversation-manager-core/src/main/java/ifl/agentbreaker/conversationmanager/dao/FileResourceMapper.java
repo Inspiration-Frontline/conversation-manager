@@ -1,6 +1,7 @@
 package ifl.agentbreaker.conversationmanager.dao;
 
 import ifl.agentbreaker.conversationmanager.domain.entities.pg.FileResource;
+import ifl.agentbreaker.conversationmanager.domain.valueobjects.FileExtractionMetadata;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 
@@ -38,7 +39,7 @@ public interface FileResourceMapper
                   @Param("detectedMimeType") String detectedMimeType,
                   @Param("sha256") String sha256,
                   @Param("extractedText") String extractedText,
-                  @Param("extractionMetadata") String extractionMetadata,
+                  @Param("extractionMetadata") FileExtractionMetadata extractionMetadata,
                   @Param("extractionTruncated") boolean extractionTruncated,
                   @Param("width") Integer width,
                   @Param("height") Integer height);
@@ -50,8 +51,8 @@ public interface FileResourceMapper
 
     int resetFailedForRetry(@Param("id") long id, @Param("userId") long userId);
 
-    int clearReservationsForConversation(@Param("conversationId") String conversationId,
-                                         @Param("userId") long userId);
+    int clearReservationsForConversations(@Param("conversationIds") Collection<String> conversationIds,
+                                          @Param("userId") long userId);
 
     int requestDelete(@Param("fileId") String fileId, @Param("userId") long userId);
 

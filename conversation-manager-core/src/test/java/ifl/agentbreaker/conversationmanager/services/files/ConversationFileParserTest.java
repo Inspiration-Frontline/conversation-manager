@@ -1,8 +1,8 @@
 package ifl.agentbreaker.conversationmanager.services.files;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import ifl.agentbreaker.conversationmanager.config.ConversationFileProperties;
 import ifl.agentbreaker.conversationmanager.domain.constants.ConversationFileKind;
+import ifl.agentbreaker.conversationmanager.domain.constants.FileTextExtractionStrategy;
 import ifl.agentbreaker.conversationmanager.domain.entities.pg.FileResource;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.pdmodel.PDPage;
@@ -20,16 +20,16 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 public class ConversationFileParserTest
 {
     private ConversationFileParser parser;
+    private ConversationFileProperties properties;
 
     @BeforeEach
     public void setUp()
     {
-        ConversationFileProperties properties = new ConversationFileProperties();
+        properties = new ConversationFileProperties();
         properties.setMaxBytes(10 * 1024 * 1024);
         properties.setMaxExtractedCharacters(32);
         parser = new ConversationFileParser();
         ReflectionTestUtils.setField(parser, "properties", properties);
-        ReflectionTestUtils.setField(parser, "objectMapper", new ObjectMapper());
     }
 
     @Test
@@ -44,7 +44,30 @@ public class ConversationFileParserTest
         assertEquals("text/plain", result.detectedMimeType());
         assertTrue(result.truncated());
         assertTrue(result.extractedText().contains("Content truncated"));
+        assertEquals(FileTextExtractionStrategy.BALANCED_EXCERPTS, result.metadata().getTextExtractionStrategy());
         assertEquals(64, result.sha256().length());
+    }
+
+    @Test
+    public void boundedTextRetainsBeginningMiddleAndEndEvidence() throws Exception
+    {
+        properties.setMaxExtractedCharacters(180);
+        String text = "BEGIN-EVIDENCE "
+            + "a".repeat(180)
+            + " MIDDLE-EVIDENCE "
+            + "b".repeat(180)
+            + " END-EVIDENCE";
+
+        FileExtractionResult result = parser.parse(
+            file("long.txt", "txt", ConversationFileKind.TEXT),
+            text.getBytes(StandardCharsets.UTF_8));
+
+        assertTrue(result.truncated());
+        assertTrue(result.extractedText().contains("BEGIN-EVIDENCE"));
+        assertTrue(result.extractedText().contains("MIDDLE-EVIDENCE"));
+        assertTrue(result.extractedText().contains("END-EVIDENCE"));
+        assertEquals(text.length(), result.metadata().getOriginalCharacterCount());
+        assertEquals(result.extractedText().length(), result.metadata().getRetainedCharacterCount());
     }
 
     @Test

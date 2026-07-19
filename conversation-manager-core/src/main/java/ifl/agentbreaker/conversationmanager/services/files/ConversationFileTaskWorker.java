@@ -91,9 +91,13 @@ public class ConversationFileTaskWorker
 
     private void processFile(FileProcessingTask task)
     {
+        // A renewable lease makes processing restart-safe: another instance can reclaim the task if
+        // this worker dies, while a healthy worker prevents duplicate parsing during long documents.
         ScheduledFuture<?> leaseRenewal = renewProcessingLease(task);
         try
         {
+            // Recheck the durable resource state after claiming the task. A retry, deletion, or a
+            // competing worker may have changed it between polling and execution.
             FileResource fileResource = fileResourceMapper.getFileResourceById(task.getFileResourceId());
             if (fileResource == null)
             {
@@ -116,6 +120,9 @@ public class ConversationFileTaskWorker
 
             try
             {
+                // Processing is more than text extraction: it bounds the OSS read, performs the
+                // security gate, verifies MIME/checksum, extracts text plus structural metadata,
+                // and atomically marks both the resource and task complete.
                 byte[] bytes = readObject(fileResource);
                 securityScanner.scan(bytes);
                 FileExtractionResult extractionResult = parser.parse(fileResource, bytes);

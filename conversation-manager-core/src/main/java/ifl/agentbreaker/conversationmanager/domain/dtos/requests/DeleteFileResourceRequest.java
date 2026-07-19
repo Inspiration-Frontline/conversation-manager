@@ -1,15 +1,11 @@
 package ifl.agentbreaker.conversationmanager.domain.dtos.requests;
 
-import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.NotBlank;
 import lombok.Data;
 
 @Data
-public class ConfirmFileUploadRequest
+public class DeleteFileResourceRequest
 {
     @NotBlank(message = "File ID is required.")
     private String fileId;
-
-    @Pattern(regexp = "^[0-9a-fA-F]{64}$")
-    private String sha256;
 }

@@ -7,6 +7,11 @@ import java.nio.charset.StandardCharsets;
 @Component
 public class FileContentSecurityScanner
 {
+    /**
+     * EICAR is a harmless, standardized antivirus test string recognized by security products. It
+     * lets local and CI tests verify the rejection path without storing real malware. Matching this
+     * signature is a deterministic safety check, not a replacement for a production malware scanner.
+     */
     private static final byte[] EICAR_SIGNATURE =
         "X5O!P%@AP[4\\PZX54(P^)7CC)7}$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*"
             .getBytes(StandardCharsets.US_ASCII);

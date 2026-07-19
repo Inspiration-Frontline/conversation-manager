@@ -3,6 +3,7 @@ package ifl.agentbreaker.conversationmanager.controllers;
 import ifl.agentbreaker.authcenter.session.UserContextService;
 import ifl.agentbreaker.conversationmanager.api.dto.responses.ConversationAbstract;
 import ifl.agentbreaker.conversationmanager.api.dto.responses.ConversationMessageHistory;
+import ifl.agentbreaker.conversationmanager.api.dto.requests.DeleteConversationRequest;
 import ifl.agentbreaker.conversationmanager.api.dto.requests.DeleteMessagesRequest;
 import ifl.agentbreaker.conversationmanager.api.dto.requests.UpdateTitleRequest;
 import ifl.agentbreaker.conversationmanager.domain.dtos.requests.*;
@@ -67,10 +68,10 @@ public class ConversationController
         return conversationService.updateTitle(request);
     }
 
-    @DeleteMapping("/{conversationId}")
-    public ServiceResponse<Boolean> deleteConversation(@PathVariable String conversationId)
+    @DeleteMapping
+    public ServiceResponse<Boolean> deleteConversation(@Valid @RequestBody DeleteConversationRequest request)
     {
-        return conversationService.deleteConversation(conversationId);
+        return conversationService.deleteConversation(request.getConversationId());
     }
 
     @DeleteMapping("/messages")
