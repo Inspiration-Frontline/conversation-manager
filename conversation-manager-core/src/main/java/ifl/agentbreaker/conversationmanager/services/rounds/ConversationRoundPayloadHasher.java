@@ -1,4 +1,4 @@
-package ifl.agentbreaker.conversationmanager.services.round;
+package ifl.agentbreaker.conversationmanager.services.rounds;
 
 import com.google.protobuf.CodedOutputStream;
 import ifl.agentbreaker.conversationmanager.rpc.SaveConversationRoundRequest;

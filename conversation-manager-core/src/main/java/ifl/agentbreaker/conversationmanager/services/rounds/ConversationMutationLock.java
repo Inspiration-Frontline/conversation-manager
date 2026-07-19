@@ -1,4 +1,4 @@
-package ifl.agentbreaker.conversationmanager.services.round;
+package ifl.agentbreaker.conversationmanager.services.rounds;
 
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.script.DefaultRedisScript;

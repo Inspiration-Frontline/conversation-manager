@@ -1,4 +1,4 @@
-package ifl.agentbreaker.conversationmanager.services.round;
+package ifl.agentbreaker.conversationmanager.services.rounds;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import ifl.agentbreaker.commons.api.dto.AgentIdentity;

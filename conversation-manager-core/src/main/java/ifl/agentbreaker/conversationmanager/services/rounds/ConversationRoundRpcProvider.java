@@ -1,4 +1,4 @@
-package ifl.agentbreaker.conversationmanager.services.round;
+package ifl.agentbreaker.conversationmanager.services.rounds;
 
 import ifl.agentbreaker.commons.api.dto.ResponseBase;
 import ifl.agentbreaker.conversationmanager.domain.dtos.responses.ConversationRoundHistoryResult;
@@ -35,7 +35,6 @@ import ifl.agentbreaker.conversationmanager.rpc.PreparedConversationFile;
 import ifl.agentbreaker.conversationmanager.rpc.RoundStatus;
 import ifl.agentbreaker.conversationmanager.rpc.SaveConversationRoundRequest;
 import ifl.agentbreaker.conversationmanager.rpc.SaveConversationRoundResponse;
-import ifl.agentbreaker.conversationmanager.rpc.UserRequest;
 import ifl.agentbreaker.conversationmanager.services.files.ConversationFileService;
 import org.apache.dubbo.config.annotation.DubboService;
 import org.springframework.beans.factory.annotation.Autowired;

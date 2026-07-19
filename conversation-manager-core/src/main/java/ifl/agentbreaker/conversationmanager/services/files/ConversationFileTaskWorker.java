@@ -94,45 +94,45 @@ public class ConversationFileTaskWorker
         ScheduledFuture<?> leaseRenewal = renewProcessingLease(task);
         try
         {
-        FileResource fileResource = fileResourceMapper.getFileResourceById(task.getFileResourceId());
-        if (fileResource == null)
-        {
-            fileProcessingTaskMapper.markFailed(task.getId(), task.getLeaseToken(), "File resource does not exist.");
-            return;
-        }
-        if (fileResource.getStatus() == ConversationFileStatus.VALIDATING
-            && fileResourceMapper.markProcessing(fileResource.getId(), fileResource.getCreatorId()) != 1)
-        {
-            fileProcessingTaskMapper.markCompleted(task.getId(), task.getLeaseToken());
-            return;
-        }
-        if (fileResource.getStatus() != ConversationFileStatus.VALIDATING
-            && fileResource.getStatus() != ConversationFileStatus.PROCESSING)
-        {
-            fileProcessingTaskMapper.markCompleted(task.getId(), task.getLeaseToken());
-            return;
-        }
-        fileResource.setStatus(ConversationFileStatus.PROCESSING);
+            FileResource fileResource = fileResourceMapper.getFileResourceById(task.getFileResourceId());
+            if (fileResource == null)
+            {
+                fileProcessingTaskMapper.markFailed(task.getId(), task.getLeaseToken(), "File resource does not exist.");
+                return;
+            }
+            if (fileResource.getStatus() == ConversationFileStatus.VALIDATING
+                && fileResourceMapper.markProcessing(fileResource.getId(), fileResource.getCreatorId()) != 1)
+            {
+                fileProcessingTaskMapper.markCompleted(task.getId(), task.getLeaseToken());
+                return;
+            }
+            if (fileResource.getStatus() != ConversationFileStatus.VALIDATING
+                && fileResource.getStatus() != ConversationFileStatus.PROCESSING)
+            {
+                fileProcessingTaskMapper.markCompleted(task.getId(), task.getLeaseToken());
+                return;
+            }
+            fileResource.setStatus(ConversationFileStatus.PROCESSING);
 
-        try
-        {
-            byte[] bytes = readObject(fileResource);
-            securityScanner.scan(bytes);
-            FileExtractionResult extractionResult = parser.parse(fileResource, bytes);
-            taskService.completeProcessing(task.getId(), task.getLeaseToken(), fileResource, extractionResult);
-        }
-        catch (FileProcessingException e)
-        {
-            log.warn("File processing failed for {} with {}.", fileResource.getFileId(), e.getErrorCode(), e);
-            taskService.failProcessing(
-                task.getId(), task.getLeaseToken(), fileResource, e.getErrorCode(), e.getMessage());
-        }
-        catch (Exception e)
-        {
-            log.error("Unexpected file processing failure for {}.", fileResource.getFileId(), e);
-            taskService.failProcessing(
-                task.getId(), task.getLeaseToken(), fileResource, "FILE_PROCESSING_FAILED", "The file could not be processed.");
-        }
+            try
+            {
+                byte[] bytes = readObject(fileResource);
+                securityScanner.scan(bytes);
+                FileExtractionResult extractionResult = parser.parse(fileResource, bytes);
+                taskService.completeProcessing(task.getId(), task.getLeaseToken(), fileResource, extractionResult);
+            }
+            catch (FileProcessingException e)
+            {
+                log.warn("File processing failed for {} with {}.", fileResource.getFileId(), e.getErrorCode(), e);
+                taskService.failProcessing(
+                    task.getId(), task.getLeaseToken(), fileResource, e.getErrorCode(), e.getMessage());
+            }
+            catch (Exception e)
+            {
+                log.error("Unexpected file processing failure for {}.", fileResource.getFileId(), e);
+                taskService.failProcessing(
+                    task.getId(), task.getLeaseToken(), fileResource, "FILE_PROCESSING_FAILED", "The file could not be processed.");
+            }
         }
         finally
         {
@@ -145,38 +145,38 @@ public class ConversationFileTaskWorker
         ScheduledFuture<?> leaseRenewal = renewCleanupLease(task);
         try
         {
-        FileResource fileResource = fileResourceMapper.getFileResourceById(task.getFileResourceId());
-        if (fileResource == null || fileResource.isDeleted())
-        {
-            fileCleanupTaskMapper.markCompleted(task.getId(), task.getLeaseToken());
-            return;
-        }
+            FileResource fileResource = fileResourceMapper.getFileResourceById(task.getFileResourceId());
+            if (fileResource == null || fileResource.isDeleted())
+            {
+                fileCleanupTaskMapper.markCompleted(task.getId(), task.getLeaseToken());
+                return;
+            }
 
-        Date now = new Date();
-        boolean activelyReserved = fileResource.getReservedUntil() != null && fileResource.getReservedUntil().after(now);
-        if (activelyReserved || fileResourceMapper.hasRoundReferences(fileResource.getId()))
-        {
-            fileCleanupTaskMapper.reschedule(
-                task.getId(),
-                task.getLeaseToken(),
-                properties.getOrphanTtlSeconds(),
-                "Cleanup deferred because the file is referenced.");
-            return;
-        }
+            Date now = new Date();
+            boolean activelyReserved = fileResource.getReservedUntil() != null && fileResource.getReservedUntil().after(now);
+            if (activelyReserved || fileResourceMapper.hasRoundReferences(fileResource.getId()))
+            {
+                fileCleanupTaskMapper.reschedule(
+                    task.getId(),
+                    task.getLeaseToken(),
+                    properties.getOrphanTtlSeconds(),
+                    "Cleanup deferred because the file is referenced.");
+                return;
+            }
 
-        try
-        {
-            if (ossClient.doesObjectExist(fileResource.getBucketName(), fileResource.getObjectKey()))
-                ossClient.deleteObject(fileResource.getBucketName(), fileResource.getObjectKey());
-            taskService.completeCleanup(task.getId(), task.getLeaseToken(), fileResource);
-        }
-        catch (Exception e)
-        {
-            log.warn("File cleanup failed for {}.", fileResource.getFileId(), e);
-            long retryDelay = Math.min(300, Math.max(5, 1L << Math.min(task.getAttempt(), 8)));
-            fileCleanupTaskMapper.reschedule(
-                task.getId(), task.getLeaseToken(), retryDelay, "OSS cleanup failed; retry scheduled.");
-        }
+            try
+            {
+                if (ossClient.doesObjectExist(fileResource.getBucketName(), fileResource.getObjectKey()))
+                    ossClient.deleteObject(fileResource.getBucketName(), fileResource.getObjectKey());
+                taskService.completeCleanup(task.getId(), task.getLeaseToken(), fileResource);
+            }
+            catch (Exception e)
+            {
+                log.warn("File cleanup failed for {}.", fileResource.getFileId(), e);
+                long retryDelay = Math.min(300, Math.max(5, 1L << Math.min(task.getAttempt(), 8)));
+                fileCleanupTaskMapper.reschedule(
+                    task.getId(), task.getLeaseToken(), retryDelay, "OSS cleanup failed; retry scheduled.");
+            }
         }
         finally
         {
@@ -187,7 +187,8 @@ public class ConversationFileTaskWorker
     private ScheduledFuture<?> renewProcessingLease(FileProcessingTask task)
     {
         long intervalSeconds = Math.max(1, properties.getTaskLeaseSeconds() / 3L);
-        return conversationFileLeaseExecutor.scheduleAtFixedRate(() -> {
+        return conversationFileLeaseExecutor.scheduleAtFixedRate(() ->
+        {
             try
             {
                 if (fileProcessingTaskMapper.renewLease(
@@ -204,7 +205,8 @@ public class ConversationFileTaskWorker
     private ScheduledFuture<?> renewCleanupLease(FileCleanupTask task)
     {
         long intervalSeconds = Math.max(1, properties.getTaskLeaseSeconds() / 3L);
-        return conversationFileLeaseExecutor.scheduleAtFixedRate(() -> {
+        return conversationFileLeaseExecutor.scheduleAtFixedRate(() ->
+        {
             try
             {
                 if (fileCleanupTaskMapper.renewLease(
@@ -243,7 +245,8 @@ public class ConversationFileTaskWorker
     {
         if (!taskConcurrency.tryAcquire())
             return;
-        conversationFileTaskExecutor.submit(() -> {
+        conversationFileTaskExecutor.submit(() ->
+        {
             try
             {
                 task.run();

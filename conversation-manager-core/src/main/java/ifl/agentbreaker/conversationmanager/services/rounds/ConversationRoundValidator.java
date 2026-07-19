@@ -1,4 +1,4 @@
-package ifl.agentbreaker.conversationmanager.services.round;
+package ifl.agentbreaker.conversationmanager.services.rounds;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;

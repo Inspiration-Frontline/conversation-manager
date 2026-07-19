@@ -9,7 +9,7 @@ import ifl.agentbreaker.conversationmanager.domain.dtos.requests.*;
 import ifl.agentbreaker.conversationmanager.domain.dtos.responses.ConversationSharingResult;
 import ifl.agentbreaker.conversationmanager.domain.dtos.responses.RoundHistoryView;
 import ifl.agentbreaker.conversationmanager.services.ConversationService;
-import ifl.agentbreaker.conversationmanager.services.round.ConversationRoundService;
+import ifl.agentbreaker.conversationmanager.services.rounds.ConversationRoundService;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
 import lombok.extern.slf4j.Slf4j;

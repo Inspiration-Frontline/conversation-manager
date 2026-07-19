@@ -189,6 +189,7 @@ public class ConversationFileService
         FileResource fileResource = requireOwnedFile(fileId, userId);
         if (fileResourceMapper.requestDelete(fileId, userId) != 1)
             throw new ServiceResponseException(ERROR_FILE_BUSY, "The file is referenced by an active request or conversation.");
+
         fileProcessingTaskMapper.cancelByFileResourceId(fileResource.getId());
         fileCleanupTaskMapper.scheduleTask(fileResource.getId(), userId, FileCleanupReason.USER_REMOVED, 0);
         return ServiceResponse.buildSuccessResponse(true);
@@ -200,6 +201,7 @@ public class ConversationFileService
         FileResource fileResource = requireOwnedFile(fileId, userId);
         if (fileResource.getStatus() != ConversationFileStatus.READY)
             throw new ServiceResponseException(ERROR_INVALID_FILE, "The file is not ready for download.");
+
         Date expiresAt = Date.from(Instant.now().plusSeconds(ossProperties.getPresignedUrlTtlSeconds()));
         FileDownloadUrl result = new FileDownloadUrl();
         result.setFileId(fileId);

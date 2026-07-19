@@ -56,12 +56,15 @@ public class ConversationFileParser
     {
         try
         {
+            // Detect MIME type.
             String detectedMimeType = tika.detect(bytes, fileResource.getOriginalFilename());
             if (!ConversationFileTypeResolver.isMimeTypeCompatible(
                 fileResource.getFileExtension(), detectedMimeType))
                 throw new FileProcessingException(
                     "FILE_TYPE_MISMATCH",
                     "The uploaded file content does not match its filename extension.");
+
+            // Validate sha256.
             String sha256 = HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(bytes));
             if (fileResource.getSha256() != null && !fileResource.getSha256().equalsIgnoreCase(sha256))
                 throw new FileProcessingException("CHECKSUM_MISMATCH", "The uploaded file checksum does not match.");
