@@ -58,6 +58,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.util.StringUtils;
+import stark.dataworks.boot.autoconfig.web.LogArgumentsAndResponse;
 import stark.dataworks.boot.web.ServiceResponse;
 
 import java.util.ArrayList;
@@ -75,6 +76,7 @@ import java.util.stream.Collectors;
  * keeping that unit here prevents Runner retries from creating half-visible history.
  */
 @Service
+@LogArgumentsAndResponse
 public class ConversationRoundService
 {
     @Autowired
