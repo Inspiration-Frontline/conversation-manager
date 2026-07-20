@@ -17,6 +17,9 @@ public interface FileResourceMapper
 
     FileResource getOwnedFileResource(@Param("fileId") String fileId, @Param("userId") long userId);
 
+    FileResource getConversationReferencedFileResource(@Param("fileId") String fileId,
+                                                        @Param("userId") long userId);
+
     List<FileResource> listOwnedFileResources(@Param("fileIds") Collection<String> fileIds,
                                               @Param("userId") long userId);
 

@@ -19,6 +19,8 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import stark.dataworks.boot.web.ServiceResponse;
 
+import java.util.List;
+
 @RestController
 @RequestMapping("/conversation/files")
 public class ConversationFileController
@@ -51,7 +53,7 @@ public class ConversationFileController
      * @return updated resource states, normally transitioning to PROCESSING
      */
     @PostMapping("/confirm")
-    public ServiceResponse<java.util.List<FileResourceInfo>> confirmFileUpload(
+    public ServiceResponse<List<FileResourceInfo>> confirmFileUpload(
         @Valid @RequestBody ConfirmFileUploadRequest request)
     {
         return conversationFileService.confirmFileUpload(request);
@@ -78,7 +80,7 @@ public class ConversationFileController
      * @return resources reset to PROCESSING/PENDING state
      */
     @PostMapping("/retry")
-    public ServiceResponse<java.util.List<FileResourceInfo>> retryFileProcessing(
+    public ServiceResponse<List<FileResourceInfo>> retryFileProcessing(
         @Valid @RequestBody RetryFileProcessingRequest request)
     {
         return conversationFileService.retryFileProcessing(request);

@@ -73,6 +73,26 @@
           AND "deleted" = FALSE
     </select>
 
+    <select id="getConversationReferencedFileResource" resultMap="FileResourceResultMap">
+        SELECT <include refid="FileResourceColumns"/>
+        FROM "file_resource" file
+        WHERE file."file_id" = #{fileId}
+          AND file."deleted" = FALSE
+          AND (
+            file."creator_id" = #{userId}
+            OR EXISTS (
+              SELECT 1
+              FROM "conversation_round_file" relation
+              INNER JOIN "conversation_round" round ON round."id" = relation."round_id"
+              INNER JOIN "conversation" conversation ON conversation."conversation_id" = round."conversation_id"
+              WHERE relation."file_resource_id" = file."id"
+                AND conversation."creator_id" = #{userId}
+                AND conversation."deleted" = FALSE
+                AND round."deleted" = FALSE
+            )
+          )
+    </select>
+
     <select id="listOwnedFileResources" resultMap="FileResourceResultMap">
         SELECT <include refid="FileResourceColumns"/>
         FROM "file_resource"
@@ -203,11 +223,6 @@
           AND f."deleted" = FALSE
           AND f."status" NOT IN ('DELETE_REQUESTED', 'DELETED')
           AND (f."reserved_until" IS NULL OR f."reserved_until" &lt; NOW())
-          AND NOT EXISTS (
-              SELECT 1
-              FROM "conversation_round_file" rf
-              WHERE rf."file_resource_id" = f."id"
-          )
     </update>
 
     <update id="clearReservationsForConversations">

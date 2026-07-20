@@ -146,7 +146,8 @@ public class ConversationController
 
     /** Returns owner-scoped share records for one Conversation. */
     @GetMapping("/shares")
-    public ServiceResponse<List<ConversationShareSummary>> listConversationShares(@RequestParam String conversationId)
+    public ServiceResponse<List<ConversationShareSummary>> listConversationShares(
+        @RequestParam(required = false) String conversationId)
     {
         return conversationService.listConversationShares(conversationId);
     }

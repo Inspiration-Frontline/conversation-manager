@@ -1,0 +1,1 @@
+DROP FUNCTION IF EXISTS fork_conversation_history(VARCHAR, VARCHAR, BIGINT, BIGINT);

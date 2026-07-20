@@ -258,8 +258,9 @@ public class ConversationFileService
     }
 
     /**
-     * Requests logical deletion and schedules physical OSS cleanup. The resource remains visible to
-     * in-flight references until the cleanup worker can prove that no active Round/request uses it.
+     * Requests logical deletion and schedules physical OSS cleanup. An active request reservation
+     * still closes the persistence race, while durable Round references become unavailable as soon
+     * as the owner explicitly removes the underlying resource.
      *
      * @param request owned file IDs to delete
      * @return true after all logical transitions and cleanup tasks are recorded
@@ -272,7 +273,7 @@ public class ConversationFileService
         {
             FileResource fileResource = requireOwnedFile(fileId, userId);
             if (fileResourceMapper.requestDelete(fileId, userId) != 1)
-                throw new ServiceResponseException(ERROR_FILE_BUSY, "The file is referenced by an active request or conversation.");
+                throw new ServiceResponseException(ERROR_FILE_BUSY, "The file is reserved by an active request.");
             fileProcessingTaskMapper.cancelByFileResourceId(fileResource.getId());
             fileCleanupTaskMapper.addTask(fileResource.getId(), userId, FileCleanupReason.USER_REMOVED, 0);
         }
@@ -289,7 +290,9 @@ public class ConversationFileService
     public ServiceResponse<FileDownloadUrl> getFileDownloadUrl(String fileId)
     {
         long userId = UserContextService.getCurrentUserId();
-        FileResource fileResource = requireOwnedFile(fileId, userId);
+        FileResource fileResource = fileResourceMapper.getConversationReferencedFileResource(fileId, userId);
+        if (fileResource == null)
+            throw new ServiceResponseException(ERROR_FILE_NOT_FOUND, "File does not exist or is not accessible.");
         if (fileResource.getStatus() != ConversationFileStatus.READY)
             throw new ServiceResponseException(ERROR_INVALID_FILE, "The file is not ready for download.");
 

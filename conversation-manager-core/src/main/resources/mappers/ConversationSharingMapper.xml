@@ -56,6 +56,23 @@
         ORDER BY "creation_time" DESC
     </select>
 
+    <select id="listAllConversationShareSummaries"
+            resultType="ifl.agentbreaker.conversationmanager.domain.dtos.responses.ConversationShareSummary">
+        SELECT sharing."parent_conversation_id" AS "parentConversationId",
+               sharing."shared_conversation_id" AS "sharedConversationId",
+               CASE WHEN conversation."deleted" = FALSE THEN conversation."title" ELSE NULL END AS "title",
+               sharing."creation_time" AS "creationTime",
+               sharing."end_round_number" AS "endRoundNumber",
+               sharing."expires_at" AS "expiresAt",
+               sharing."revoked" AS "revoked",
+               sharing."revoked_at" AS "revokedAt"
+        FROM "conversation_sharing" sharing
+        LEFT JOIN "conversation" conversation
+          ON conversation."conversation_id" = sharing."parent_conversation_id"
+        WHERE sharing."creator_id" = #{userId}
+        ORDER BY sharing."creation_time" DESC
+    </select>
+
     <update id="revokeConversationSharing">
         UPDATE "conversation_sharing"
         SET "revoked" = TRUE, "revoked_at" = NOW(), "modifier_id" = #{userId}

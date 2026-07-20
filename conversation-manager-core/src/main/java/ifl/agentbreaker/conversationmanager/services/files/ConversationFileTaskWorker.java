@@ -7,6 +7,7 @@ import ifl.agentbreaker.conversationmanager.dao.FileCleanupTaskMapper;
 import ifl.agentbreaker.conversationmanager.dao.FileProcessingTaskMapper;
 import ifl.agentbreaker.conversationmanager.dao.FileResourceMapper;
 import ifl.agentbreaker.conversationmanager.domain.constants.ConversationFileStatus;
+import ifl.agentbreaker.conversationmanager.domain.constants.FileCleanupReason;
 import ifl.agentbreaker.conversationmanager.domain.entities.pg.FileCleanupTask;
 import ifl.agentbreaker.conversationmanager.domain.entities.pg.FileProcessingTask;
 import ifl.agentbreaker.conversationmanager.domain.entities.pg.FileResource;
@@ -165,9 +166,9 @@ public class ConversationFileTaskWorker
     }
 
     /**
-     * Deletes an unreferenced OSS object and marks cleanup complete or retryable. Reservations and
-     * Round links are checked immediately before deletion so asynchronous cleanup cannot remove a
-     * file that a newly persisted message still needs.
+     * Deletes an OSS object and marks cleanup complete or retryable. Automatic cleanup protects
+     * durable Round links; an explicit owner removal intentionally invalidates every historical
+     * attachment reference while active request reservations remain protected.
      *
      * @param task leased cleanup task
      */
@@ -185,7 +186,8 @@ public class ConversationFileTaskWorker
 
             Date now = new Date();
             boolean activelyReserved = fileResource.getReservedUntil() != null && fileResource.getReservedUntil().after(now);
-            if (activelyReserved || fileResourceMapper.hasRoundReferences(fileResource.getId()))
+            boolean referenceProtected = isReferenceProtectedCleanup(task.getReason());
+            if (activelyReserved || (referenceProtected && fileResourceMapper.hasRoundReferences(fileResource.getId())))
             {
                 fileCleanupTaskMapper.reschedule(
                     task.getId(),
@@ -213,6 +215,11 @@ public class ConversationFileTaskWorker
         {
             leaseRenewal.cancel(false);
         }
+    }
+
+    static boolean isReferenceProtectedCleanup(FileCleanupReason reason)
+    {
+        return reason != FileCleanupReason.USER_REMOVED;
     }
 
     /**

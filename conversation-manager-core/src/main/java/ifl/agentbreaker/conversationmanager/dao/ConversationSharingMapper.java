@@ -1,6 +1,7 @@
 package ifl.agentbreaker.conversationmanager.dao;
 
 import ifl.agentbreaker.conversationmanager.domain.entities.pg.ConversationSharing;
+import ifl.agentbreaker.conversationmanager.domain.dtos.responses.ConversationShareSummary;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 
@@ -18,6 +19,8 @@ public interface ConversationSharingMapper
 
     List<ConversationSharing> listConversationSharingsByParentId(@Param("parentConversationId") String parentConversationId,
                                                                   @Param("userId") long userId);
+
+    List<ConversationShareSummary> listAllConversationShareSummaries(@Param("userId") long userId);
 
     int revokeConversationSharing(@Param("sharedConversationId") String sharedConversationId,
                                   @Param("userId") long userId);
