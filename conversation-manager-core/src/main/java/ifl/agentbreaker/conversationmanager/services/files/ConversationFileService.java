@@ -4,6 +4,7 @@ import com.aliyun.oss.HttpMethod;
 import com.aliyun.oss.OSS;
 import com.aliyun.oss.model.GeneratePresignedUrlRequest;
 import com.aliyun.oss.model.ObjectMetadata;
+import com.aliyun.oss.model.ResponseHeaderOverrides;
 import ifl.agentbreaker.authcenter.session.UserContextService;
 import ifl.agentbreaker.conversationmanager.config.ConversationFileProperties;
 import ifl.agentbreaker.conversationmanager.config.OssStorageProperties;
@@ -37,6 +38,8 @@ import stark.dataworks.boot.autoconfig.web.LogArgumentsAndResponse;
 import stark.dataworks.boot.web.ServiceResponse;
 
 import java.net.URL;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.time.ZonedDateTime;
@@ -299,7 +302,7 @@ public class ConversationFileService
         Date expiresAt = Date.from(Instant.now().plusSeconds(ossProperties.getPresignedUrlTtlSeconds()));
         FileDownloadUrl result = new FileDownloadUrl();
         result.setFileId(fileId);
-        result.setUrl(createSignedGetUrl(fileResource, expiresAt));
+        result.setUrl(createDownloadUrl(fileResource, expiresAt));
         result.setExpiresAt(expiresAt);
         return ServiceResponse.buildSuccessResponse(result);
     }
@@ -326,7 +329,7 @@ public class ConversationFileService
         Date expiresAt = Date.from(Instant.now().plusSeconds(ossProperties.getPresignedUrlTtlSeconds()));
         FileDownloadUrl result = new FileDownloadUrl();
         result.setFileId(fileId);
-        result.setUrl(createSignedGetUrl(fileResource, expiresAt));
+        result.setUrl(createDownloadUrl(fileResource, expiresAt));
         result.setExpiresAt(expiresAt);
         return ServiceResponse.buildSuccessResponse(result);
     }
@@ -541,6 +544,27 @@ public class ConversationFileService
             fileResource.getBucketName(), fileResource.getObjectKey(), HttpMethod.GET);
         request.setExpiration(expiresAt);
         return ossClient.generatePresignedUrl(request).toString();
+    }
+
+    /** Creates a browser download signature whose response restores the original filename. */
+    private String createDownloadUrl(FileResource fileResource, Date expiresAt)
+    {
+        GeneratePresignedUrlRequest request = new GeneratePresignedUrlRequest(
+            fileResource.getBucketName(), fileResource.getObjectKey(), HttpMethod.GET);
+        request.setExpiration(expiresAt);
+        ResponseHeaderOverrides responseHeaders = new ResponseHeaderOverrides();
+        responseHeaders.setContentDisposition(buildAttachmentContentDisposition(fileResource.getOriginalFilename()));
+        request.setResponseHeaders(responseHeaders);
+        return ossClient.generatePresignedUrl(request).toString();
+    }
+
+    static String buildAttachmentContentDisposition(String filename)
+    {
+        String normalized = StringUtils.hasText(filename) ? filename.trim() : "download";
+        normalized = normalized.replaceAll("[\\r\\n\\\\\"]+", "_");
+        String asciiFallback = normalized.replaceAll("[^\\x20-\\x7E]", "_");
+        String encoded = URLEncoder.encode(normalized, StandardCharsets.UTF_8).replace("+", "%20");
+        return "attachment; filename=\"" + asciiFallback + "\"; filename*=UTF-8''" + encoded;
     }
 
     /**
