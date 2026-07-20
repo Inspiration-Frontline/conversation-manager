@@ -213,10 +213,13 @@ public class ConversationService implements IConversationRpcService
     public ServiceResponse<List<ConversationShareSummary>> listConversationShares(String conversationId)
     {
         long userId = UserContextService.getCurrentUserId();
+
         if (!StringUtils.hasText(conversationId))
             return ServiceResponse.buildSuccessResponse(conversationSharingMapper.listAllConversationShareSummaries(userId));
+
         if (!conversationMapper.existsByIdAndUser(conversationId, userId))
             return ServiceResponse.buildErrorResponse(ERROR_CONVERSATION_NOT_FOUND, "Conversation does not exist.");
+
         Conversation parent = conversationMapper.getConversationByIdAndUser(conversationId, userId);
         List<ConversationShareSummary> result = conversationSharingMapper
             .listConversationSharingsByParentId(conversationId, userId).stream()
@@ -226,6 +229,7 @@ public class ConversationService implements IConversationRpcService
                 sharing.getCreationTime(), sharing.getEndRoundNumber(),
                 sharing.getExpiresAt(), sharing.isRevoked(), sharing.getRevokedAt()))
             .toList();
+
         return ServiceResponse.buildSuccessResponse(result);
     }
 
