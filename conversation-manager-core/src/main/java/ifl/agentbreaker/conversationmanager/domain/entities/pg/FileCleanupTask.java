@@ -5,7 +5,7 @@ import ifl.agentbreaker.conversationmanager.domain.constants.FileTaskExecutionSt
 import lombok.Data;
 import lombok.EqualsAndHashCode;
 
-import java.util.Date;
+import java.time.Instant;
 
 @Data
 @EqualsAndHashCode(callSuper = true)
@@ -15,8 +15,8 @@ public class FileCleanupTask extends EntityBase
     private FileCleanupReason reason;
     private FileTaskExecutionStatus status;
     private int attempt;
-    private Date executeAfter;
+    private Instant executeAfter;
     private String leaseToken;
-    private Date leaseUntil;
+    private Instant leaseUntil;
     private String lastError;
 }

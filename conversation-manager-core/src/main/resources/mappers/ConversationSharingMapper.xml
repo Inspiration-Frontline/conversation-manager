@@ -9,7 +9,6 @@
         <result column="modification_time" property="modificationTime"/>
         <result column="parent_conversation_id" property="parentConversationId"/>
         <result column="shared_conversation_id" property="sharedConversationId"/>
-        <result column="end_message_id" property="endMessageId"/>
         <result column="end_round_number" property="endRoundNumber"/>
         <result column="accessible_after_deleted" property="accessibleAfterDeleted"/>
         <result column="expires_at" property="expiresAt"/>
@@ -19,18 +18,18 @@
 
     <sql id="ConversationSharingColumns">
         "id", "creator_id", "creation_time", "modifier_id", "modification_time",
-        "parent_conversation_id", "shared_conversation_id", "end_message_id", "end_round_number",
+        "parent_conversation_id", "shared_conversation_id", "end_round_number",
         "accessible_after_deleted", "expires_at", "revoked", "revoked_at"
     </sql>
 
     <insert id="insertConversationSharing" useGeneratedKeys="true" keyProperty="id" keyColumn="id">
         INSERT INTO "conversation_sharing" (
             "creator_id", "modifier_id", "parent_conversation_id", "shared_conversation_id",
-            "end_message_id", "end_round_number", "accessible_after_deleted", "expires_at", "revoked", "revoked_at"
+            "end_round_number", "accessible_after_deleted", "expires_at", "revoked", "revoked_at"
         )
         VALUES (
             #{creatorId}, #{modifierId}, #{parentConversationId}, #{sharedConversationId},
-            #{endMessageId}, #{endRoundNumber}, FALSE, #{expiresAt}, FALSE, NULL
+            #{endRoundNumber}, FALSE, #{expiresAt}, FALSE, NULL
         )
     </insert>
 

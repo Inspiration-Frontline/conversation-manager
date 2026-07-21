@@ -4,7 +4,7 @@ import ifl.agentbreaker.conversationmanager.domain.constants.ConversationRoundSt
 import lombok.Data;
 import lombok.EqualsAndHashCode;
 
-import java.util.Date;
+import java.time.Instant;
 
 /**
  * Complete persisted result of one user request through its final answer or terminal failure.
@@ -61,12 +61,12 @@ public class ConversationRound extends EntityBase
     /**
      * UTC instant at which Round processing started.
      */
-    private Date startTime;
+    private Instant startTime;
 
     /**
      * UTC instant at which Round processing finished.
      */
-    private Date endTime;
+    private Instant endTime;
 
     /**
      * Version of the canonical payload-hash algorithm.
@@ -86,7 +86,7 @@ public class ConversationRound extends EntityBase
     /**
      * UTC instant at which the Round was logically deleted.
      */
-    private Date deletionTime;
+    private Instant deletionTime;
 
     /**
      * ID of the user who logically deleted the Round.

@@ -4,7 +4,7 @@ import ifl.agentbreaker.conversationmanager.domain.constants.ToolCallExecutionSt
 import lombok.Data;
 import lombok.EqualsAndHashCode;
 
-import java.util.Date;
+import java.time.Instant;
 
 /**
  * Persisted outcome of executing one Tool call emitted by the current LLM response.
@@ -61,10 +61,10 @@ public class ConversationToolCallExecution extends EntityBase
     /**
      * UTC instant at which Tool execution started.
      */
-    private Date startTime;
+    private Instant startTime;
 
     /**
      * UTC instant at which Tool execution finished.
      */
-    private Date endTime;
+    private Instant endTime;
 }

@@ -7,13 +7,13 @@ spring:
     profiles:
         active: local
     jackson:
-        date-format: yyyy-MM-dd HH:mm:ss
         time-zone: UTC
         default-property-inclusion: ALWAYS
 
 mybatis:
     mapper-locations:
         - classpath:mappers/*.xml
+    type-handlers-package: ifl.agentbreaker.conversationmanager.dao.typehandlers
 
 dubbo:
     application:

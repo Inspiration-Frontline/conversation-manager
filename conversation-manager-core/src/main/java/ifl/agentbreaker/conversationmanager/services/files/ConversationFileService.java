@@ -24,6 +24,7 @@ import ifl.agentbreaker.conversationmanager.domain.dtos.requests.RetryFileProces
 import ifl.agentbreaker.conversationmanager.domain.dtos.responses.FileDownloadUrl;
 import ifl.agentbreaker.conversationmanager.domain.dtos.responses.FileResourceInfo;
 import ifl.agentbreaker.conversationmanager.domain.dtos.responses.FileUploadSession;
+import ifl.agentbreaker.conversationmanager.domain.dtos.responses.RoundFileHistory;
 import ifl.agentbreaker.conversationmanager.domain.entities.pg.FileResource;
 import ifl.agentbreaker.conversationmanager.domain.entities.pg.ConversationSharing;
 import ifl.agentbreaker.conversationmanager.exceptions.ServiceResponseException;
@@ -117,7 +118,7 @@ public class ConversationFileService
 
         ConversationFileKind kind = ConversationFileTypeResolver.resolveKind(extension);
         String fileId = BusinessIdManager.newFileId();
-        Date expiresAt = Date.from(Instant.now().plusSeconds(ossProperties.getPresignedUrlTtlSeconds()));
+        Instant expiresAt = Instant.now().plusSeconds(ossProperties.getPresignedUrlTtlSeconds());
         String objectKey = buildObjectKey(userId, fileId);
 
         FileResource fileResource = new FileResource();
@@ -143,7 +144,7 @@ public class ConversationFileService
 
         GeneratePresignedUrlRequest signedRequest = new GeneratePresignedUrlRequest(
             ossProperties.getBucketName(), objectKey, HttpMethod.PUT);
-        signedRequest.setExpiration(expiresAt);
+        signedRequest.setExpiration(Date.from(expiresAt));
         signedRequest.setContentType(mimeType);
         URL signedUrl = ossClient.generatePresignedUrl(signedRequest);
 
@@ -187,7 +188,7 @@ public class ConversationFileService
         FileResource existing = requireOwnedFile(fileId, userId);
         if (existing.getStatus() != ConversationFileStatus.PENDING_UPLOAD)
             return toFileResourceInfo(existing);
-        if (existing.getUploadExpiresAt().before(new Date()))
+        if (existing.getUploadExpiresAt().isBefore(Instant.now()))
             throw new ServiceResponseException(ERROR_INVALID_FILE, "The upload session has expired.");
 
         ObjectMetadata metadata;
@@ -299,7 +300,7 @@ public class ConversationFileService
         if (fileResource.getStatus() != ConversationFileStatus.READY)
             throw new ServiceResponseException(ERROR_INVALID_FILE, "The file is not ready for download.");
 
-        Date expiresAt = Date.from(Instant.now().plusSeconds(ossProperties.getPresignedUrlTtlSeconds()));
+        Instant expiresAt = Instant.now().plusSeconds(ossProperties.getPresignedUrlTtlSeconds());
         FileDownloadUrl result = new FileDownloadUrl();
         result.setFileId(fileId);
         result.setUrl(createDownloadUrl(fileResource, expiresAt));
@@ -315,18 +316,16 @@ public class ConversationFileService
     public ServiceResponse<FileDownloadUrl> getSharedFileDownloadUrl(
         String conversationId, long endRoundNumber, String fileId)
     {
-        boolean visible = conversationRoundFileMapper.listRoundFiles(conversationId).stream()
-            .anyMatch(file -> file.fileId().equals(fileId) && file.roundNumber() <= endRoundNumber);
-        if (!visible)
+        RoundFileHistory sharedFile = conversationRoundFileMapper.getSharedRoundFile(
+            conversationId, endRoundNumber, fileId);
+        if (sharedFile == null)
             throw new ServiceResponseException(ERROR_FILE_NOT_FOUND, "File does not exist in the shared snapshot.");
-        FileResource fileResource = conversationRoundFileMapper.listRoundFiles(conversationId).stream()
-            .filter(file -> file.fileId().equals(fileId))
-            .findFirst()
-            .map(file -> fileResourceMapper.getFileResourceById(file.fileResourceId()))
-            .orElse(null);
+
+        FileResource fileResource = fileResourceMapper.getFileResourceById(sharedFile.fileResourceId());
         if (fileResource == null || fileResource.getStatus() != ConversationFileStatus.READY || fileResource.isDeleted())
             throw new ServiceResponseException(ERROR_INVALID_FILE, "The file is not ready for download.");
-        Date expiresAt = Date.from(Instant.now().plusSeconds(ossProperties.getPresignedUrlTtlSeconds()));
+
+        Instant expiresAt = Instant.now().plusSeconds(ossProperties.getPresignedUrlTtlSeconds());
         FileDownloadUrl result = new FileDownloadUrl();
         result.setFileId(fileId);
         result.setUrl(createDownloadUrl(fileResource, expiresAt));
@@ -442,7 +441,7 @@ public class ConversationFileService
      */
     public String createSignedGetUrl(FileResource fileResource)
     {
-        Date expiresAt = Date.from(Instant.now().plusSeconds(ossProperties.getPresignedUrlTtlSeconds()));
+        Instant expiresAt = Instant.now().plusSeconds(ossProperties.getPresignedUrlTtlSeconds());
         return createSignedGetUrl(fileResource, expiresAt);
     }
 
@@ -538,20 +537,20 @@ public class ConversationFileService
      * @param expiresAt exact signature expiry
      * @return signed OSS URL
      */
-    private String createSignedGetUrl(FileResource fileResource, Date expiresAt)
+    private String createSignedGetUrl(FileResource fileResource, Instant expiresAt)
     {
         GeneratePresignedUrlRequest request = new GeneratePresignedUrlRequest(
             fileResource.getBucketName(), fileResource.getObjectKey(), HttpMethod.GET);
-        request.setExpiration(expiresAt);
+        request.setExpiration(Date.from(expiresAt));
         return ossClient.generatePresignedUrl(request).toString();
     }
 
     /** Creates a browser download signature whose response restores the original filename. */
-    private String createDownloadUrl(FileResource fileResource, Date expiresAt)
+    private String createDownloadUrl(FileResource fileResource, Instant expiresAt)
     {
         GeneratePresignedUrlRequest request = new GeneratePresignedUrlRequest(
             fileResource.getBucketName(), fileResource.getObjectKey(), HttpMethod.GET);
-        request.setExpiration(expiresAt);
+        request.setExpiration(Date.from(expiresAt));
         ResponseHeaderOverrides responseHeaders = new ResponseHeaderOverrides();
         responseHeaders.setContentDisposition(buildAttachmentContentDisposition(fileResource.getOriginalFilename()));
         request.setResponseHeaders(responseHeaders);

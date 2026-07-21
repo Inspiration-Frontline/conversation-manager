@@ -4,7 +4,7 @@ import ifl.agentbreaker.conversationmanager.domain.constants.ConversationFileKin
 import ifl.agentbreaker.conversationmanager.domain.constants.ConversationFileStatus;
 import lombok.Data;
 
-import java.util.Date;
+import java.time.Instant;
 
 @Data
 public class FileResourceInfo
@@ -22,6 +22,6 @@ public class FileResourceInfo
     private String errorCode;
     private String errorMessage;
     private boolean extractionTruncated;
-    private Date creationTime;
-    private Date modificationTime;
+    private Instant creationTime;
+    private Instant modificationTime;
 }

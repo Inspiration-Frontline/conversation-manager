@@ -157,13 +157,23 @@ public class ConversationService implements IConversationRpcService
         return ServiceResponse.buildSuccessResponse(toConversationAbstract(conversation));
     }
 
-    /** Creates one independent authenticated share snapshot for an owned Conversation. */
+    /**
+     * Creates an immutable, independently revocable snapshot of an owned Conversation.
+     *
+     * <p>The current Round high-water mark freezes the upper boundary. Shared reads still exclude
+     * failed, cancelled, and deleted Rounds inside that boundary. Expiry is validated against the
+     * supported product policy before the share record is inserted transactionally.</p>
+     *
+     * @param request owned Conversation ID and requested expiry policy
+     * @return the new share ID, frozen Round boundary, and optional expiry instant
+     */
     @Transactional(rollbackFor = Exception.class)
     public ServiceResponse<ConversationSharingResult> shareConversation(ShareConversationRequest request)
     {
         long userId = UserContextService.getCurrentUserId();
 
-        if (!conversationMapper.existsByIdAndUser(request.getConversationId(), userId))
+        Conversation conversation = conversationMapper.getConversationByIdAndUser(request.getConversationId(), userId);
+        if (conversation == null)
             return ServiceResponse.buildErrorResponse(ERROR_CONVERSATION_NOT_FOUND, "Conversation does not exist.");
 
         ShareExpiry expiry;
@@ -182,8 +192,7 @@ public class ConversationService implements IConversationRpcService
         sharing.setModifierId(userId);
         sharing.setParentConversationId(request.getConversationId());
         sharing.setSharedConversationId(BusinessIdManager.newConversationSharingId());
-        sharing.setEndMessageId(conversationMessageMapper.getMaxMessageId(request.getConversationId()));
-        sharing.setEndRoundNumber(conversationRoundService.getLatestCompletedRoundNumber(request.getConversationId()));
+        sharing.setEndRoundNumber(conversation.getLatestRoundNumber());
         sharing.setExpiresAt(expiry.getDuration() == null ? null : Instant.now().plus(expiry.getDuration()));
         conversationSharingMapper.insertConversationSharing(sharing);
 
@@ -195,21 +204,40 @@ public class ConversationService implements IConversationRpcService
         return ServiceResponse.buildSuccessResponse(result);
     }
 
-    /** Returns one authenticated read-only snapshot through a valid share link. */
+    /**
+     * Resolves one authenticated, read-only share snapshot.
+     *
+     * <p>The share token grants read access only while the record is active and its source
+     * Conversation still exists. Round and attachment queries remain bounded by the immutable
+     * high-water mark stored when the link was created.</p>
+     *
+     * @param sharedConversationId unguessable share identifier supplied by an authenticated user
+     * @return the source title, expiry, and completed Round snapshot, or an unavailable response
+     */
     public ServiceResponse<SharedConversationView> getSharedConversation(String sharedConversationId)
     {
         ConversationSharing sharing = conversationSharingMapper.getActiveConversationSharingBySharedId(sharedConversationId);
         if (sharing == null)
             return ServiceResponse.buildErrorResponse(ERROR_SHARE_NOT_FOUND, "Shared conversation does not exist or has expired.");
+
         Conversation source = conversationMapper.getConversationById(sharing.getParentConversationId());
         if (source == null || source.isDeleted())
             return ServiceResponse.buildErrorResponse(ERROR_CONVERSATION_NOT_FOUND, "Conversation does not exist.");
+
         return ServiceResponse.buildSuccessResponse(new SharedConversationView(
             source.getConversationId(), sharing.getSharedConversationId(), source.getTitle(), sharing.getExpiresAt(),
             conversationRoundService.getSharedHttpHistory(source.getConversationId(), sharing.getEndRoundNumber())));
     }
 
-    /** Lists all share records belonging to the authenticated owner. */
+    /**
+     * Lists share records created by the authenticated owner.
+     *
+     * <p>An empty Conversation ID lists links across all owned Conversations for the management
+     * page. A supplied ID is ownership-checked before its independent links are projected.</p>
+     *
+     * @param conversationId optional parent Conversation filter
+     * @return owner-visible share metadata ordered from newest to oldest
+     */
     public ServiceResponse<List<ConversationShareSummary>> listConversationShares(String conversationId)
     {
         long userId = UserContextService.getCurrentUserId();
@@ -233,21 +261,30 @@ public class ConversationService implements IConversationRpcService
         return ServiceResponse.buildSuccessResponse(result);
     }
 
-    /** Revokes one owner-created share without affecting other links for the Conversation. */
+    /**
+     * Revokes one owner-created share without modifying sibling links or the source Conversation.
+     *
+     * @param sharedConversationId share identifier to revoke
+     * @return success when the active owner-scoped record was revoked, otherwise not found
+     */
     @Transactional(rollbackFor = Exception.class)
     public ServiceResponse<Boolean> revokeConversationShare(String sharedConversationId)
     {
         long userId = UserContextService.getCurrentUserId();
+
         if (conversationSharingMapper.revokeConversationSharing(sharedConversationId, userId) <= 0)
             return ServiceResponse.buildErrorResponse(ERROR_SHARE_NOT_FOUND, "Shared conversation does not exist.");
+
         return ServiceResponse.buildSuccessResponse(true);
     }
 
     /**
-     * Creates an owned fork containing the messages visible through a share record.
+     * Creates an owned fork containing the normalized execution history visible through a share.
      *
      * <p>The source remains unchanged; the new Conversation receives a new business ID and audit
-     * owner, so later edits or deletion do not cross ownership boundaries.</p>
+     * owner. Completed Round, Turn, LLM, Tool, and attachment-reference rows are copied while file
+     * resources and OSS objects remain shared by reference, so later Conversation edits or deletion
+     * do not cross ownership boundaries.</p>
      *
      * @param request shared Conversation ID and fork options
      * @return new owned Conversation summary, or an error when the share is unavailable
@@ -273,7 +310,6 @@ public class ConversationService implements IConversationRpcService
         forked.setPinned(false);
         forked.setDeleted(false);
         Conversation createdConversation = conversationMapper.insertConversation(forked);
-        conversationMessageMapper.forkConversationMessages(source.getConversationId(), forked.getConversationId(), userId, sharing.getEndMessageId());
         conversationRoundMapper.forkConversationHistory(
             source.getConversationId(), forked.getConversationId(), userId, sharing.getEndRoundNumber());
         conversationMapper.updateLatestRoundNumber(
@@ -328,7 +364,7 @@ public class ConversationService implements IConversationRpcService
         if (conversation == null)
             return ServiceResponse.buildErrorResponse(ERROR_CONVERSATION_NOT_FOUND, "Conversation does not exist.");
 
-        return ServiceResponse.buildSuccessResponse(buildConversationMessageHistory(conversation, null));
+        return ServiceResponse.buildSuccessResponse(buildConversationMessageHistory(conversation));
     }
 
     /**
@@ -367,7 +403,7 @@ public class ConversationService implements IConversationRpcService
 
         try
         {
-            ConversationMessageHistory history = buildConversationMessageHistory(conversation, null);
+            ConversationMessageHistory history = buildConversationMessageHistory(conversation);
             ExportPayload payload = buildExportPayload(history, request.getExportFormat());
             response.setCharacterEncoding(StandardCharsets.UTF_8.name());
             response.setContentType(payload.contentType());
@@ -529,12 +565,12 @@ public class ConversationService implements IConversationRpcService
      * Builds a legacy message-history DTO up to an optional share snapshot boundary.
      *
      * @param conversation authorized parent entity
-     * @param endMessageId inclusive upper message ID, or {@code null} for current history
      * @return ordered public history projection
      */
-    private ConversationMessageHistory buildConversationMessageHistory(Conversation conversation, Long endMessageId)
+    private ConversationMessageHistory buildConversationMessageHistory(Conversation conversation)
     {
-        List<ConversationMessage> messages = conversationMessageMapper.listConversationMessages(conversation.getConversationId(), endMessageId);
+        List<ConversationMessage> messages = conversationMessageMapper
+            .listConversationMessages(conversation.getConversationId());
         List<ConversationMessageInfo> messageInfos = messages.stream()
             .map(this::toConversationMessageInfo)
             .toList();

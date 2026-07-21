@@ -62,7 +62,7 @@ import stark.dataworks.boot.autoconfig.web.LogArgumentsAndResponse;
 import stark.dataworks.boot.web.ServiceResponse;
 
 import java.util.ArrayList;
-import java.util.Date;
+import java.time.Instant;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -174,7 +174,7 @@ public class ConversationRoundService
                 history.rounds().stream().map(round -> new RoundHistoryView.RoundView(
                     round.getRoundNumber(), extractTextContent(round), round.getFinalAnswerContent(),
                     round.getStatus().name(), round.getErrorMessage(), round.getTurnCount(),
-                    round.getStartTime().getTime(), round.getEndTime().getTime(),
+                    round.getStartTime().toEpochMilli(), round.getEndTime().toEpochMilli(),
                     filesByRound.getOrDefault(round.getRoundNumber(), List.of()).stream()
                         .map(file -> new RoundHistoryView.FileView(
                             file.fileId(), file.originalFilename(), file.mimeType(), file.fileSize(),
@@ -199,38 +199,28 @@ public class ConversationRoundService
     public RoundHistoryView getSharedHttpHistory(String conversationId, long endRoundNumber)
     {
         Map<Long, List<RoundFileHistory>> filesByRound = conversationRoundFileMapper
-            .listRoundFiles(conversationId)
+            .listCompletedRoundFilesAtOrBefore(conversationId, endRoundNumber)
             .stream()
             .collect(Collectors.groupingBy(RoundFileHistory::roundNumber));
-        List<ConversationRound> visibleRounds = conversationRoundMapper.listActiveRounds(conversationId).stream()
-            .filter(round -> round.getRoundNumber() <= endRoundNumber)
-            .filter(round -> round.getStatus() == ConversationRoundStatus.COMPLETED)
-            .toList();
+        List<ConversationRound> visibleRounds = conversationRoundMapper
+            .listCompletedRoundsAtOrBefore(conversationId, endRoundNumber);
+
         long latestRoundNumber = visibleRounds.isEmpty()
             ? 0
             : visibleRounds.get(visibleRounds.size() - 1).getRoundNumber();
+
         return new RoundHistoryView(
             conversationId,
             latestRoundNumber,
             visibleRounds.stream().map(round -> new RoundHistoryView.RoundView(
                 round.getRoundNumber(), extractTextContent(round), round.getFinalAnswerContent(),
                 round.getStatus().name(), round.getErrorMessage(), round.getTurnCount(),
-                round.getStartTime().getTime(), round.getEndTime().getTime(),
+                round.getStartTime().toEpochMilli(), round.getEndTime().toEpochMilli(),
                 filesByRound.getOrDefault(round.getRoundNumber(), List.of()).stream()
                     .map(file -> new RoundHistoryView.FileView(
                         file.fileId(), file.originalFilename(), file.mimeType(), file.fileSize(),
                         file.kind(), file.status()))
                 .toList())).toList());
-    }
-
-    /** Returns the latest active completed Round number used to freeze a share boundary. */
-    public long getLatestCompletedRoundNumber(String conversationId)
-    {
-        return conversationRoundMapper.listActiveRounds(conversationId).stream()
-            .filter(round -> round.getStatus() == ConversationRoundStatus.COMPLETED)
-            .mapToLong(ConversationRound::getRoundNumber)
-            .max()
-            .orElse(0L);
     }
 
     /**
@@ -548,8 +538,8 @@ public class ConversationRoundService
             default -> throw new IllegalArgumentException("Unsupported round status.");
         });
         conversationRound.setErrorMessage(request.getErrorMessage());
-        conversationRound.setStartTime(new Date(request.getStartTime()));
-        conversationRound.setEndTime(new Date(request.getEndTime()));
+        conversationRound.setStartTime(Instant.ofEpochMilli(request.getStartTime()));
+        conversationRound.setEndTime(Instant.ofEpochMilli(request.getEndTime()));
         conversationRound.setPayloadHashVersion(ConversationRoundPayloadHasher.CURRENT_VERSION);
         conversationRound.setPayloadHash(payloadHash);
         conversationRound.setDeleted(false);
@@ -582,8 +572,8 @@ public class ConversationRoundService
             default -> throw new IllegalArgumentException("Unsupported turn status.");
         });
         conversationTurn.setErrorMessage(source.getErrorMessage());
-        conversationTurn.setStartTime(new Date(source.getStartTime()));
-        conversationTurn.setEndTime(new Date(source.getEndTime()));
+        conversationTurn.setStartTime(Instant.ofEpochMilli(source.getStartTime()));
+        conversationTurn.setEndTime(Instant.ofEpochMilli(source.getEndTime()));
         return conversationTurn;
     }
 
@@ -620,8 +610,8 @@ public class ConversationRoundService
         conversationLlmCall.setMaxOutputTokens(
             llmRequest.hasMaxOutputTokens() ? llmRequest.getMaxOutputTokens() : null);
         conversationLlmCall.setRawRequest(llmRequest.hasRawRequest() ? llmRequest.getRawRequest() : null);
-        conversationLlmCall.setStartTime(new Date(source.getStartTime()));
-        conversationLlmCall.setEndTime(new Date(source.getEndTime()));
+        conversationLlmCall.setStartTime(Instant.ofEpochMilli(source.getStartTime()));
+        conversationLlmCall.setEndTime(Instant.ofEpochMilli(source.getEndTime()));
         conversationLlmCall.setResponseMessagePresent(llmResponse.hasMessage());
         conversationLlmCall.setResponseContent(llmResponse.getMessage().getContent());
         conversationLlmCall.setFinishReason(llmResponse.getFinishReason());
@@ -999,8 +989,8 @@ public class ConversationRoundService
         execution.setResultContent(source.getResultContent().isEmpty() ? null : source.getResultContent());
         execution.setRawResult(source.hasRawResult() ? source.getRawResult() : null);
         execution.setErrorMessage(source.getErrorMessage());
-        execution.setStartTime(new Date(source.getStartTime()));
-        execution.setEndTime(new Date(source.getEndTime()));
+        execution.setStartTime(Instant.ofEpochMilli(source.getStartTime()));
+        execution.setEndTime(Instant.ofEpochMilli(source.getEndTime()));
         return execution;
     }
 

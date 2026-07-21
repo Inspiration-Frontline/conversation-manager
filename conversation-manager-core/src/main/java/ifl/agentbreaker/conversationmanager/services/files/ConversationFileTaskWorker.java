@@ -18,7 +18,7 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
 import java.io.InputStream;
-import java.util.Date;
+import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.ExecutorService;
@@ -184,8 +184,9 @@ public class ConversationFileTaskWorker
                 return;
             }
 
-            Date now = new Date();
-            boolean activelyReserved = fileResource.getReservedUntil() != null && fileResource.getReservedUntil().after(now);
+            Instant now = Instant.now();
+            boolean activelyReserved = fileResource.getReservedUntil() != null
+                && fileResource.getReservedUntil().isAfter(now);
             boolean referenceProtected = isReferenceProtectedCleanup(task.getReason());
             if (activelyReserved || (referenceProtected && fileResourceMapper.hasRoundReferences(fileResource.getId())))
             {

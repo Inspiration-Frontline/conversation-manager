@@ -3,4 +3,5 @@ ALTER TABLE "conversation_sharing"
     DROP COLUMN IF EXISTS "revoked_at",
     DROP COLUMN IF EXISTS "revoked",
     DROP COLUMN IF EXISTS "expires_at",
-    DROP COLUMN IF EXISTS "end_round_number";
+    DROP COLUMN IF EXISTS "end_round_number",
+    ADD COLUMN IF NOT EXISTS "end_message_id" BIGINT NOT NULL DEFAULT 0;

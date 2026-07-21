@@ -4,7 +4,7 @@ import ifl.agentbreaker.conversationmanager.domain.constants.ConversationTurnSta
 import lombok.Data;
 import lombok.EqualsAndHashCode;
 
-import java.util.Date;
+import java.time.Instant;
 
 /**
  * One LLM call and all Tool executions triggered by that call.
@@ -51,10 +51,10 @@ public class ConversationTurn extends EntityBase
     /**
      * UTC instant at which Turn processing started.
      */
-    private Date startTime;
+    private Instant startTime;
 
     /**
      * UTC instant at which Turn processing finished.
      */
-    private Date endTime;
+    private Instant endTime;
 }

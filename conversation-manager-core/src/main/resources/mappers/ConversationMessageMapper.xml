@@ -51,37 +51,12 @@
         </foreach>
     </insert>
 
-    <insert id="forkConversationMessages">
-        INSERT INTO "conversation_message" (
-            "creator_id", "modifier_id", "conversation_id", "role", "name", "content",
-            "content_parts", "tool_calls", "tool_call_id", "agent_id", "finish_reason", "deleted"
-        )
-        SELECT
-            #{userId}, #{userId}, #{targetConversationId}, m."role", m."name", m."content",
-            m."content_parts", m."tool_calls", m."tool_call_id", m."agent_id", m."finish_reason", FALSE
-        FROM "conversation_message" m
-        WHERE m."conversation_id" = #{sourceConversationId}
-          AND m."deleted" = FALSE
-          AND m."id" &lt;= #{endMessageId}
-        ORDER BY m."id" ASC
-    </insert>
-
     <select id="listConversationMessages" resultMap="ConversationMessageResultMap">
         SELECT <include refid="ConversationMessageColumns"/>
         FROM "conversation_message"
         WHERE "conversation_id" = #{conversationId}
           AND "deleted" = FALSE
-        <if test="endMessageId != null">
-          AND "id" &lt;= #{endMessageId}
-        </if>
         ORDER BY "id" ASC
-    </select>
-
-    <select id="getMaxMessageId" resultType="long">
-        SELECT COALESCE(MAX("id"), 0)
-        FROM "conversation_message"
-        WHERE "conversation_id" = #{conversationId}
-          AND "deleted" = FALSE
     </select>
 
     <update id="deleteMessages">

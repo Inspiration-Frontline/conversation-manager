@@ -19,14 +19,6 @@ public class ConversationSharing extends EntityBase
      */
     private String sharedConversationId;
 
-    /**
-     * ID of the last message in the shared conversation.
-     * A user can share a conversation multiple times, with different messages.
-     * In this case, each time when a user share a conversation, we should save the last message id,
-     * as the range of the messages.
-     */
-    private long endMessageId;
-
     /** Inclusive upper boundary of the completed Round snapshot. */
     private long endRoundNumber;
 

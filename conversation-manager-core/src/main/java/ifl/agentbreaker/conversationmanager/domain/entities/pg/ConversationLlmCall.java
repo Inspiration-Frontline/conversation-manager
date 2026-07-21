@@ -5,7 +5,7 @@ import ifl.agentbreaker.conversationmanager.domain.constants.ToolChoiceMode;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
 
-import java.util.Date;
+import java.time.Instant;
 
 /**
  * Persisted request and response snapshot for the single LLM call in a Turn.
@@ -82,12 +82,12 @@ public class ConversationLlmCall extends EntityBase
     /**
      * UTC instant at which the provider call started.
      */
-    private Date startTime;
+    private Instant startTime;
 
     /**
      * UTC instant at which the provider call finished.
      */
-    private Date endTime;
+    private Instant endTime;
 
     /**
      * Whether the provider returned a normalized assistant message.

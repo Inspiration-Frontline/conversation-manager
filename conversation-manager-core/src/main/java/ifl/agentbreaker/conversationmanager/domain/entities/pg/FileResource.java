@@ -6,7 +6,7 @@ import ifl.agentbreaker.conversationmanager.domain.valueobjects.FileExtractionMe
 import lombok.Data;
 import lombok.EqualsAndHashCode;
 
-import java.util.Date;
+import java.time.Instant;
 
 @Data
 @EqualsAndHashCode(callSuper = true)
@@ -36,12 +36,12 @@ public class FileResource extends EntityBase
     private Integer height;
     private String errorCode;
     private String errorMessage;
-    private Date uploadExpiresAt;
-    private Date confirmedTime;
-    private Date readyTime;
-    private Date orphanedTime;
+    private Instant uploadExpiresAt;
+    private Instant confirmedTime;
+    private Instant readyTime;
+    private Instant orphanedTime;
     private String reservedConversationId;
     private String reservedRequestId;
-    private Date reservedUntil;
+    private Instant reservedUntil;
     private boolean deleted;
 }

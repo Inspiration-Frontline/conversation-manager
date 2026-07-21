@@ -2,7 +2,7 @@ package ifl.agentbreaker.conversationmanager.domain.dtos.responses;
 
 import lombok.Data;
 
-import java.util.Date;
+import java.time.Instant;
 
 @Data
 public class FileUploadSession
@@ -10,5 +10,5 @@ public class FileUploadSession
     private FileResourceInfo file;
     private String method;
     private String uploadUrl;
-    private Date expiresAt;
+    private Instant expiresAt;
 }

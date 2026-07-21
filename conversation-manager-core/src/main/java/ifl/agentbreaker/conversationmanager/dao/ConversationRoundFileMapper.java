@@ -16,6 +16,13 @@ public interface ConversationRoundFileMapper
 
     List<RoundFileHistory> listRoundFiles(@Param("conversationId") String conversationId);
 
+    List<RoundFileHistory> listCompletedRoundFilesAtOrBefore(@Param("conversationId") String conversationId,
+                                                              @Param("endRoundNumber") long endRoundNumber);
+
+    RoundFileHistory getSharedRoundFile(@Param("conversationId") String conversationId,
+                                        @Param("endRoundNumber") long endRoundNumber,
+                                        @Param("fileId") String fileId);
+
     int deleteByConversationIds(@Param("conversationIds") Collection<String> conversationIds,
                                 @Param("userId") long userId);
 }

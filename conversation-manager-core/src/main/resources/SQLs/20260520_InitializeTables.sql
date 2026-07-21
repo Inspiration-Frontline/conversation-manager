@@ -498,7 +498,6 @@ CREATE TABLE IF NOT EXISTS "conversation_sharing"
     "modification_time"        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     "parent_conversation_id"   VARCHAR(64) NOT NULL,
     "shared_conversation_id"   VARCHAR(64) NOT NULL,
-    "end_message_id"           BIGINT      NOT NULL DEFAULT 0,
     "accessible_after_deleted" BOOLEAN     NOT NULL DEFAULT FALSE,
     CONSTRAINT "uk_conversation_sharing_shared_id" UNIQUE ("shared_conversation_id")
 );

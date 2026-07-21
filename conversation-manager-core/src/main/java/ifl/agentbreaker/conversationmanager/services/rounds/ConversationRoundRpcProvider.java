@@ -505,8 +505,8 @@ public class ConversationRoundRpcProvider implements ConversationRpcService
             })
         .setTurnCount(round.getTurnCount())
             .setErrorMessage(round.getErrorMessage())
-            .setStartTime(round.getStartTime().getTime())
-            .setEndTime(round.getEndTime().getTime());
+            .setStartTime(round.getStartTime().toEpochMilli())
+            .setEndTime(round.getEndTime().toEpochMilli());
         if (round.getFinalAnswerContent() != null)
             summary.setFinalAnswer(AssistantAnswer.newBuilder()
                 .setContent(round.getFinalAnswerContent())

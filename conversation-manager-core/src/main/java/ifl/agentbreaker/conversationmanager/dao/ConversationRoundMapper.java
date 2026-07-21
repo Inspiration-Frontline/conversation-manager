@@ -16,13 +16,11 @@ public interface ConversationRoundMapper
 
     List<ConversationRound> listActiveRounds(@Param("conversationId") String conversationId);
 
+    List<ConversationRound> listCompletedRoundsAtOrBefore(@Param("conversationId") String conversationId,
+                                                           @Param("endRoundNumber") long endRoundNumber);
+
     ConversationRound getLatestCompletedRoundAtOrBefore(@Param("conversationId") String conversationId,
                                                          @Param("endRoundNumber") long endRoundNumber);
-
-    int forkCompletedRounds(@Param("sourceConversationId") String sourceConversationId,
-                            @Param("targetConversationId") String targetConversationId,
-                            @Param("userId") long userId,
-                            @Param("endRoundNumber") long endRoundNumber);
 
     int forkConversationHistory(@Param("sourceConversationId") String sourceConversationId,
                                 @Param("targetConversationId") String targetConversationId,

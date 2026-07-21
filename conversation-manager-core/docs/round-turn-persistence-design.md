@@ -62,13 +62,13 @@ The existing tables remain responsible for current HTTP behavior:
 | `conversation` | Ownership, title, pinning, soft deletion, list ordering | Extend with high-water mark |
 | `conversation_message` | Legacy flat message history | Preserve; no new RPC dual-write |
 | `conversation_group*` | Grouping and root-list behavior | Preserve |
-| `conversation_sharing` | Legacy snapshot through `end_message_id` | Preserve |
+| `conversation_sharing` | Round snapshot through `end_round_number` | Use normalized Round high-water mark |
 | `message_file` | Uploaded file metadata | Preserve |
 
-The first RPC provider milestone must not change legacy HTTP response shapes. Until a later product
-integration is designed, legacy sharing and forking include only `conversation_message` data and do
-not copy Round/Turn execution records. Enabling sharing/forking for conversations whose history is
-stored only in the new model is a separate release gate.
+The first RPC provider milestone preserved legacy HTTP response shapes. Phase 8 later moved sharing
+and Fork to normalized Round/Turn execution records and removed the legacy message boundary from
+`conversation_sharing`. The `conversation_message` table remains only for its separate legacy HTTP
+history/export surface and is not dual-written by the current Agent execution path.
 
 ## Aggregate Layout
 

@@ -28,6 +28,48 @@
         ORDER BY round."round_number", relation."file_order"
     </select>
 
+    <select id="listCompletedRoundFilesAtOrBefore"
+            resultType="ifl.agentbreaker.conversationmanager.domain.dtos.responses.RoundFileHistory">
+        SELECT round."round_number" AS "roundNumber",
+               file."id" AS "fileResourceId",
+               file."file_id" AS "fileId",
+               file."original_filename" AS "originalFilename",
+               COALESCE(file."detected_mime_type", file."declared_mime_type") AS "mimeType",
+               file."file_size" AS "fileSize",
+               file."kind" AS "kind",
+               file."status" AS "status"
+        FROM "conversation_round" round
+        INNER JOIN "conversation_round_file" relation ON relation."round_id" = round."id"
+        INNER JOIN "file_resource" file ON file."id" = relation."file_resource_id"
+        WHERE round."conversation_id" = #{conversationId}
+          AND round."round_number" &lt;= #{endRoundNumber}
+          AND round."status" = 'COMPLETED'
+          AND round."deleted" = FALSE
+        ORDER BY round."round_number", relation."file_order"
+    </select>
+
+    <select id="getSharedRoundFile"
+            resultType="ifl.agentbreaker.conversationmanager.domain.dtos.responses.RoundFileHistory">
+        SELECT round."round_number" AS "roundNumber",
+               file."id" AS "fileResourceId",
+               file."file_id" AS "fileId",
+               file."original_filename" AS "originalFilename",
+               COALESCE(file."detected_mime_type", file."declared_mime_type") AS "mimeType",
+               file."file_size" AS "fileSize",
+               file."kind" AS "kind",
+               file."status" AS "status"
+        FROM "conversation_round" round
+        INNER JOIN "conversation_round_file" relation ON relation."round_id" = round."id"
+        INNER JOIN "file_resource" file ON file."id" = relation."file_resource_id"
+        WHERE round."conversation_id" = #{conversationId}
+          AND round."round_number" &lt;= #{endRoundNumber}
+          AND round."status" = 'COMPLETED'
+          AND round."deleted" = FALSE
+          AND file."file_id" = #{fileId}
+        ORDER BY round."round_number", relation."file_order"
+        LIMIT 1
+    </select>
+
     <delete id="deleteByConversationIds">
         DELETE FROM "conversation_round_file" relation
         USING "conversation_round" round, "conversation" conversation

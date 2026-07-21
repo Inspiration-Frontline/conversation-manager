@@ -57,14 +57,21 @@
     </select>
 
     <select id="listActiveRounds" resultMap="RoundResultMap">
-        SELECT <include refid="RoundColumns"/>, COALESCE(turn_counts."turn_count", 0) AS "turn_count"
+        SELECT <include refid="RoundColumns"/>,
+               (SELECT COUNT(*) FROM "conversation_turn" turn WHERE turn."round_id" = r."id") AS "turn_count"
         FROM "conversation_round" r
-        LEFT JOIN (
-            SELECT "round_id", COUNT(*) AS "turn_count"
-            FROM "conversation_turn"
-            GROUP BY "round_id"
-        ) turn_counts ON turn_counts."round_id" = r."id"
         WHERE r."conversation_id" = #{conversationId}
+          AND r."deleted" = FALSE
+        ORDER BY r."round_number" ASC
+    </select>
+
+    <select id="listCompletedRoundsAtOrBefore" resultMap="RoundResultMap">
+        SELECT <include refid="RoundColumns"/>,
+               (SELECT COUNT(*) FROM "conversation_turn" turn WHERE turn."round_id" = r."id") AS "turn_count"
+        FROM "conversation_round" r
+        WHERE r."conversation_id" = #{conversationId}
+          AND r."round_number" &lt;= #{endRoundNumber}
+          AND r."status" = 'COMPLETED'
           AND r."deleted" = FALSE
         ORDER BY r."round_number" ASC
     </select>
@@ -79,25 +86,6 @@
         ORDER BY "round_number" DESC
         LIMIT 1
     </select>
-
-    <insert id="forkCompletedRounds">
-        INSERT INTO "conversation_round" (
-            "creator_id", "modifier_id", "conversation_id", "round_number", "user_request_content",
-            "user_request_content_parts", "final_answer_content", "final_answer_content_parts",
-            "final_source_turn_number", "status", "error_message", "start_time", "end_time",
-            "payload_hash_version", "payload_hash", "deleted"
-        )
-        SELECT #{userId}, #{userId}, #{targetConversationId}, "round_number", "user_request_content",
-               "user_request_content_parts", "final_answer_content", "final_answer_content_parts",
-               "final_source_turn_number", 'COMPLETED', '', "start_time", "end_time",
-               "payload_hash_version", "payload_hash", FALSE
-        FROM "conversation_round"
-        WHERE "conversation_id" = #{sourceConversationId}
-          AND "round_number" &lt;= #{endRoundNumber}
-          AND "status" = 'COMPLETED'
-          AND "deleted" = FALSE
-        ORDER BY "round_number"
-    </insert>
 
     <select id="forkConversationHistory" resultType="int">
         SELECT fork_conversation_history(

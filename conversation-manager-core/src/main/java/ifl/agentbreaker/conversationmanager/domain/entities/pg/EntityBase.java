@@ -2,7 +2,7 @@ package ifl.agentbreaker.conversationmanager.domain.entities.pg;
 
 import lombok.Data;
 
-import java.util.Date;
+import java.time.Instant;
 
 @Data
 public abstract class EntityBase
@@ -20,7 +20,7 @@ public abstract class EntityBase
     /**
      * Creation time of the record.
      */
-    private Date creationTime;
+    private Instant creationTime;
 
     /**
      * ID of the user who modifies the record.
@@ -30,5 +30,5 @@ public abstract class EntityBase
     /**
      * Last modification time of the record.
      */
-    private Date modificationTime;
+    private Instant modificationTime;
 }
