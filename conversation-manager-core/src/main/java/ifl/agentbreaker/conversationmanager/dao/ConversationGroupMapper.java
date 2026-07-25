@@ -13,6 +13,8 @@ public interface ConversationGroupMapper
 
     ConversationGroup getConversationGroupByIdForUser(@Param("groupId") String groupId, @Param("userId") long userId);
 
+    ConversationGroup lockConversationGroupByIdForUser(@Param("groupId") String groupId, @Param("userId") long userId);
+
     boolean existsByIdAndUser(@Param("groupId") String groupId, @Param("userId") long userId);
 
     int updateConversationGroupAbstract(ConversationGroup group);
@@ -23,5 +25,9 @@ public interface ConversationGroupMapper
 
     int updateConversationGroupSortOrder(@Param("groupId") String groupId, @Param("userId") long userId, @Param("sortOrder") int sortOrder);
 
-    int getMaxConversationGroupSortOrder(@Param("userId") long userId);
+    int incrementConversationGroupSortOrders(@Param("userId") long userId);
+
+    List<String> listConversationGroupIdsForUpdate(@Param("userId") long userId);
+
+    void acquireUserGroupLock(@Param("userId") long userId);
 }

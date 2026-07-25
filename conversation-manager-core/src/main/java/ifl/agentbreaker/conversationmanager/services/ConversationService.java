@@ -11,8 +11,8 @@ import ifl.agentbreaker.conversationmanager.api.dto.requests.UpdateTitleRequest;
 import ifl.agentbreaker.conversationmanager.api.dto.responses.ConversationAbstract;
 import ifl.agentbreaker.conversationmanager.api.dto.responses.ConversationMessageHistory;
 import ifl.agentbreaker.conversationmanager.api.dto.responses.ConversationMessageInfo;
-import ifl.agentbreaker.conversationmanager.dao.ConversationGroupRelationMapper;
 import ifl.agentbreaker.conversationmanager.dao.ConversationMapper;
+import ifl.agentbreaker.conversationmanager.dao.ConversationGroupMapper;
 import ifl.agentbreaker.conversationmanager.dao.ConversationMessageMapper;
 import ifl.agentbreaker.conversationmanager.dao.ConversationRoundMapper;
 import ifl.agentbreaker.conversationmanager.dao.ConversationSharingMapper;
@@ -20,6 +20,7 @@ import ifl.agentbreaker.conversationmanager.services.files.ConversationFileServi
 import ifl.agentbreaker.conversationmanager.domain.constants.ExportFormat;
 import ifl.agentbreaker.conversationmanager.domain.constants.ShareExpiry;
 import ifl.agentbreaker.conversationmanager.domain.dtos.requests.ExportConversationRequest;
+import ifl.agentbreaker.conversationmanager.domain.dtos.requests.CreateConversationRequest;
 import ifl.agentbreaker.conversationmanager.domain.dtos.requests.ForkConversationRequest;
 import ifl.agentbreaker.conversationmanager.domain.dtos.requests.GetConversationsRequest;
 import ifl.agentbreaker.conversationmanager.domain.dtos.requests.PinConversationRequest;
@@ -28,6 +29,7 @@ import ifl.agentbreaker.conversationmanager.domain.dtos.responses.ConversationSh
 import ifl.agentbreaker.conversationmanager.domain.dtos.responses.ConversationShareSummary;
 import ifl.agentbreaker.conversationmanager.domain.dtos.responses.SharedConversationView;
 import ifl.agentbreaker.conversationmanager.domain.entities.pg.Conversation;
+import ifl.agentbreaker.conversationmanager.domain.entities.pg.ConversationGroup;
 import ifl.agentbreaker.conversationmanager.domain.entities.pg.ConversationMessage;
 import ifl.agentbreaker.conversationmanager.domain.entities.pg.ConversationSharing;
 import ifl.agentbreaker.conversationmanager.support.BusinessIdManager;
@@ -98,13 +100,13 @@ public class ConversationService implements IConversationRpcService
     private ConversationMapper conversationMapper;
 
     @Autowired
+    private ConversationGroupMapper conversationGroupMapper;
+
+    @Autowired
     private ConversationMessageMapper conversationMessageMapper;
 
     @Autowired
     private ConversationRoundMapper conversationRoundMapper;
-
-    @Autowired
-    private ConversationGroupRelationMapper conversationGroupRelationMapper;
 
     @Autowired
     private ConversationSharingMapper conversationSharingMapper;
@@ -124,9 +126,17 @@ public class ConversationService implements IConversationRpcService
      * @return newly created Conversation summary owned by the authenticated user
      */
     @Transactional(rollbackFor = Exception.class)
-    public ServiceResponse<ConversationAbstract> createConversation()
+    public ServiceResponse<ConversationAbstract> createConversation(CreateConversationRequest request)
     {
         long userId = UserContextService.getCurrentUserId();
+        String groupId = request == null ? null : TextNormalizer.trimToNull(request.getConversationGroupId());
+        ConversationGroup group = null;
+        if (StringUtils.hasText(groupId))
+        {
+            group = conversationGroupMapper.getConversationGroupByIdForUser(groupId, userId);
+            if (group == null)
+                return ServiceResponse.buildErrorResponse(ERROR_INVALID_CONVERSATION, "Conversation Group does not exist.");
+        }
 
         Conversation conversation = new Conversation();
         conversation.setCreatorId(userId);
@@ -134,6 +144,8 @@ public class ConversationService implements IConversationRpcService
         conversation.setConversationId(BusinessIdManager.newConversationId());
         conversation.setTitle(ConversationTitleManager.DEFAULT_TITLE);
         conversation.setPinned(false);
+        conversation.setConversationGroupId(groupId);
+        conversation.setConversationGroupName(group == null ? null : group.getName());
         conversation.setDeleted(false);
 
         Conversation createdConversation = conversationMapper.insertConversation(conversation);
@@ -335,8 +347,11 @@ public class ConversationService implements IConversationRpcService
         int offset = (pageIndex - 1) * pageSize;
         String keyword = TextNormalizer.trimToEmpty(request.getKeyword());
 
-        long total = conversationMapper.countConversations(userId, keyword);
-        List<Conversation> conversations = conversationMapper.listConversations(userId, keyword, pageSize, offset);
+        String conversationGroupId = TextNormalizer.trimToNull(request.getConversationGroupId());
+        boolean includeGrouped = request.isIncludeGrouped() && conversationGroupId == null;
+        long total = conversationMapper.countConversations(userId, keyword, conversationGroupId, includeGrouped);
+        List<Conversation> conversations = conversationMapper.listConversations(
+            userId, keyword, conversationGroupId, includeGrouped, pageSize, offset);
         List<ConversationAbstract> conversationAbstracts = conversations.stream()
             .map(this::toConversationAbstract)
             .toList();
@@ -464,7 +479,6 @@ public class ConversationService implements IConversationRpcService
         if (updated <= 0)
             return false;
         conversationSharingMapper.revokeByParentConversationIds(List.of(conversationId), userId);
-        conversationGroupRelationMapper.deleteConversationGroupRelationsByConversationId(conversationId, userId);
         conversationFileService.releaseConversationReferences(conversationId, userId);
         return true;
     }
@@ -489,7 +503,6 @@ public class ConversationService implements IConversationRpcService
             return ServiceResponse.buildErrorResponse(ERROR_CONVERSATION_NOT_FOUND, "Conversation does not exist.");
         conversationMapper.deleteConversations(uniqueIds, userId);
         conversationSharingMapper.revokeByParentConversationIds(uniqueIds, userId);
-        conversationGroupRelationMapper.deleteConversationGroupRelationsByConversationIds(uniqueIds, userId);
         conversationFileService.releaseConversationReferences(uniqueIds, userId);
         return ServiceResponse.buildSuccessResponse(true);
     }

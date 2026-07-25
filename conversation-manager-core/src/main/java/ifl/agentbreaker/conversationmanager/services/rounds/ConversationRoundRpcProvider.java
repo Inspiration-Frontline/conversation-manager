@@ -32,6 +32,9 @@ import ifl.agentbreaker.conversationmanager.rpc.ReplayDetailLevel;
 import ifl.agentbreaker.conversationmanager.rpc.PrepareConversationFilesRequest;
 import ifl.agentbreaker.conversationmanager.rpc.PrepareConversationFilesResponse;
 import ifl.agentbreaker.conversationmanager.rpc.PrepareConversationFilesResult;
+import ifl.agentbreaker.conversationmanager.rpc.PrepareConversationReferencesRequest;
+import ifl.agentbreaker.conversationmanager.rpc.PrepareConversationReferencesResponse;
+import ifl.agentbreaker.conversationmanager.rpc.PrepareConversationReferencesResult;
 import ifl.agentbreaker.conversationmanager.rpc.PreparedConversationFile;
 import ifl.agentbreaker.conversationmanager.rpc.RoundStatus;
 import ifl.agentbreaker.conversationmanager.rpc.SaveConversationRoundRequest;
@@ -362,6 +365,37 @@ public class ConversationRoundRpcProvider implements ConversationRpcService
         PrepareConversationFilesRequest request)
     {
         return CompletableFuture.completedFuture(prepareConversationFiles(request));
+    }
+
+    /** Authorizes and resolves a frozen batch of same-Group Conversation references. */
+    @Override
+    public PrepareConversationReferencesResponse prepareConversationReferences(
+        PrepareConversationReferencesRequest request)
+    {
+        try
+        {
+            return PrepareConversationReferencesResponse.newBuilder()
+                .setBase(successBase())
+                .setData(PrepareConversationReferencesResult.newBuilder().addAllReferences(
+                    conversationRoundService.prepareReferences(
+                        request.getUserId(), request.getDestinationConversationId(), request.getReferencesList())))
+                .build();
+        }
+        catch (RoundPersistenceException e)
+        {
+            return PrepareConversationReferencesResponse.newBuilder()
+                .setBase(errorBase(e.getCode(), e.getMessage()))
+                .setData(PrepareConversationReferencesResult.getDefaultInstance())
+                .build();
+        }
+    }
+
+    /** Adapts Conversation reference preparation to Dubbo's asynchronous signature. */
+    @Override
+    public CompletableFuture<PrepareConversationReferencesResponse> prepareConversationReferencesAsync(
+        PrepareConversationReferencesRequest request)
+    {
+        return CompletableFuture.completedFuture(prepareConversationReferences(request));
     }
 
     /**

@@ -26,4 +26,9 @@ public class ConversationGroup extends EntityBase
      * Sort order of the conversation group.
      */
     private int sortOrder;
+
+    /**
+     * Number of active Conversations assigned to this Group.
+     */
+    private long conversationCount;
 }

@@ -1,6 +1,12 @@
 package ifl.agentbreaker.conversationmanager.controllers;
 
-import ifl.agentbreaker.conversationmanager.domain.dtos.requests.*;
+import ifl.agentbreaker.conversationmanager.domain.dtos.requests.AddConversationToGroupRequest;
+import ifl.agentbreaker.conversationmanager.domain.dtos.requests.CreateConversationGroupRequest;
+import ifl.agentbreaker.conversationmanager.domain.dtos.requests.DeleteConversationGroupRequest;
+import ifl.agentbreaker.conversationmanager.domain.dtos.requests.MoveConversationsRequest;
+import ifl.agentbreaker.conversationmanager.domain.dtos.requests.RemoveConversationFromGroupRequest;
+import ifl.agentbreaker.conversationmanager.domain.dtos.requests.ReorderConversationGroupsRequest;
+import ifl.agentbreaker.conversationmanager.domain.dtos.requests.UpdateConversationGroupAbstractRequest;
 import ifl.agentbreaker.conversationmanager.domain.dtos.responses.ConversationGroupAbstract;
 import ifl.agentbreaker.conversationmanager.services.ConversationGroupService;
 import jakarta.validation.Valid;
@@ -50,9 +56,10 @@ public class ConversationGroupController
      * @return all owned Groups in their resulting order
      */
     @PutMapping("/reorder")
-    public ServiceResponse<List<ConversationGroupAbstract>> reorderConversationGroups(@Valid @RequestBody ReorderConversationGroupRequest request)
+    public ServiceResponse<List<ConversationGroupAbstract>> reorderConversationGroups(
+        @Valid @RequestBody ReorderConversationGroupsRequest request)
     {
-        return conversationGroupService.reorderConversationGroup(request);
+        return conversationGroupService.reorderConversationGroups(request);
     }
 
     /**
@@ -88,6 +95,18 @@ public class ConversationGroupController
     public ServiceResponse<Boolean> addConversationsToGroup(@Valid @RequestBody AddConversationToGroupRequest request)
     {
         return conversationGroupService.addConversationsToGroup(request);
+    }
+
+    /**
+     * Moves owned Conversations directly to one Group or back to the root list.
+     *
+     * @param request Conversation IDs and nullable target Group ID
+     * @return true after the owner-scoped move commits
+     */
+    @PutMapping("/conversations/move")
+    public ServiceResponse<Boolean> moveConversations(@Valid @RequestBody MoveConversationsRequest request)
+    {
+        return conversationGroupService.moveConversations(request);
     }
 
     /**

@@ -5,6 +5,7 @@ import ifl.agentbreaker.commons.api.dto.AgentIdentity;
 import ifl.agentbreaker.conversationmanager.rpc.AssistantAnswer;
 import ifl.agentbreaker.conversationmanager.rpc.AssistantMessage;
 import ifl.agentbreaker.conversationmanager.rpc.ConversationErrorCode;
+import ifl.agentbreaker.conversationmanager.rpc.ConversationReference;
 import ifl.agentbreaker.conversationmanager.rpc.ConversationTurn;
 import ifl.agentbreaker.conversationmanager.rpc.FunctionCall;
 import ifl.agentbreaker.conversationmanager.rpc.LlmCall;
@@ -56,6 +57,41 @@ class ConversationRoundValidatorTest
     void acceptsTwoTurnLoopWithParallelCallsAndPartialToolFailure()
     {
         assertDoesNotThrow(() -> validator.validatePhaseFour(validToolLoopRequest()));
+    }
+
+    @Test
+    void acceptsUniqueFrozenConversationReferences()
+    {
+        SaveConversationRoundRequest request = validTextRequest(1, "answer").toBuilder()
+            .addReferences(ConversationReference.newBuilder()
+                .setSourceConversationId("conv_source")
+                .setSourceEndRoundNumber(4))
+            .build();
+
+        assertDoesNotThrow(() -> validator.validatePhaseFour(request));
+    }
+
+    @Test
+    void rejectsDuplicateAndSelfConversationReferences()
+    {
+        ConversationReference duplicate = ConversationReference.newBuilder()
+            .setSourceConversationId("conv_source")
+            .setSourceEndRoundNumber(4)
+            .build();
+        SaveConversationRoundRequest duplicateRequest = validTextRequest(1, "answer").toBuilder()
+            .addReferences(duplicate)
+            .addReferences(duplicate)
+            .build();
+        SaveConversationRoundRequest selfRequest = validTextRequest(1, "answer").toBuilder()
+            .addReferences(ConversationReference.newBuilder()
+                .setSourceConversationId("conv_test")
+                .setSourceEndRoundNumber(1))
+            .build();
+
+        assertThrows(RoundPersistenceException.class,
+            () -> validator.validatePhaseFour(duplicateRequest));
+        assertThrows(RoundPersistenceException.class,
+            () -> validator.validatePhaseFour(selfRequest));
     }
 
     @Test

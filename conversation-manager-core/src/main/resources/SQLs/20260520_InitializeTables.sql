@@ -10,14 +10,25 @@ CREATE TABLE IF NOT EXISTS "conversation"
     "conversation_id"     VARCHAR(64)  NOT NULL,
     "title"               VARCHAR(200) NOT NULL,
     "pinned"              BOOLEAN      NOT NULL DEFAULT FALSE,
-    "latest_round_number" BIGINT       NOT NULL DEFAULT 0,
-    "deleted"             BOOLEAN      NOT NULL DEFAULT FALSE,
+    "latest_round_number"     BIGINT       NOT NULL DEFAULT 0,
+    "conversation_group_id"   VARCHAR(64),
+    "last_round_updated_time" TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+    "deleted"                 BOOLEAN      NOT NULL DEFAULT FALSE,
     CONSTRAINT "uk_conversation_conversation_id" UNIQUE ("conversation_id"),
     CONSTRAINT "ck_conversation_latest_round_number" CHECK ("latest_round_number" >= 0)
 );
 
-CREATE INDEX IF NOT EXISTS "idx_conversation_creator_deleted_pinned_modified"
-    ON "conversation" ("creator_id", "deleted", "pinned" DESC, "modification_time" DESC);
+CREATE INDEX IF NOT EXISTS "idx_conversation_root_sidebar"
+    ON "conversation" ("creator_id", "pinned" DESC, "last_round_updated_time" DESC, "id" DESC)
+    WHERE "deleted" = FALSE AND "conversation_group_id" IS NULL;
+
+CREATE INDEX IF NOT EXISTS "idx_conversation_group_sidebar"
+    ON "conversation" ("creator_id", "conversation_group_id", "last_round_updated_time" DESC, "id" DESC)
+    WHERE "deleted" = FALSE AND "conversation_group_id" IS NOT NULL;
+
+CREATE INDEX IF NOT EXISTS "idx_conversation_title_search"
+    ON "conversation" ("creator_id", LOWER("title"))
+    WHERE "deleted" = FALSE;
 
 CREATE TABLE IF NOT EXISTS "conversation_message"
 (
@@ -469,26 +480,6 @@ CREATE TABLE IF NOT EXISTS "conversation_group"
 CREATE INDEX IF NOT EXISTS "idx_conversation_group_creator_sort"
     ON "conversation_group" ("creator_id", "sort_order", "id");
 
-CREATE TABLE IF NOT EXISTS "conversation_group_relation"
-(
-    "id"                    BIGSERIAL PRIMARY KEY,
-    "creator_id"            BIGINT      NOT NULL,
-    "creation_time"         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    "modifier_id"           BIGINT      NOT NULL,
-    "modification_time"     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    "conversation_id"       VARCHAR(64) NOT NULL,
-    "conversation_group_id" VARCHAR(64) NOT NULL,
-    "sort_order"            INTEGER     NOT NULL DEFAULT 0,
-    CONSTRAINT "uk_conversation_group_relation_group"
-        UNIQUE ("creator_id", "conversation_group_id", "conversation_id")
-);
-
-CREATE INDEX IF NOT EXISTS "idx_conversation_group_relation_group_sort"
-    ON "conversation_group_relation" ("conversation_group_id", "sort_order" DESC, "id" DESC);
-
-CREATE INDEX IF NOT EXISTS "idx_conversation_group_relation_conversation"
-    ON "conversation_group_relation" ("creator_id", "conversation_id");
-
 CREATE TABLE IF NOT EXISTS "conversation_sharing"
 (
     "id"                       BIGSERIAL PRIMARY KEY,
@@ -605,13 +596,6 @@ DROP TRIGGER IF EXISTS "trg_conversation_group_refresh_modification_time" ON "co
 CREATE TRIGGER "trg_conversation_group_refresh_modification_time"
     BEFORE UPDATE
     ON "conversation_group"
-    FOR EACH ROW
-EXECUTE FUNCTION "refresh_modification_time"();
-
-DROP TRIGGER IF EXISTS "trg_conversation_group_relation_refresh_modification_time" ON "conversation_group_relation";
-CREATE TRIGGER "trg_conversation_group_relation_refresh_modification_time"
-    BEFORE UPDATE
-    ON "conversation_group_relation"
     FOR EACH ROW
 EXECUTE FUNCTION "refresh_modification_time"();
 

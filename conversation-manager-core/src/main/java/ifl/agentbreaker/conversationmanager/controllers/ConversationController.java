@@ -43,9 +43,10 @@ public class ConversationController
      * @return the newly created owned Conversation summary
      */
     @PostMapping("/new")
-    public ServiceResponse<ConversationAbstract> createConversation()
+    public ServiceResponse<ConversationAbstract> createConversation(
+        @Valid @RequestBody(required = false) CreateConversationRequest request)
     {
-        return conversationService.createConversation();
+        return conversationService.createConversation(request);
     }
 
     /**

@@ -23,9 +23,17 @@ public interface ConversationMapper
 
     boolean existsByIdAndUser(@Param("conversationId") String conversationId, @Param("userId") long userId);
 
-    List<Conversation> listConversations(@Param("userId") long userId, @Param("keyword") String keyword, @Param("limit") int limit, @Param("offset") int offset);
+    List<Conversation> listConversations(@Param("userId") long userId,
+                                         @Param("keyword") String keyword,
+                                         @Param("conversationGroupId") String conversationGroupId,
+                                         @Param("includeGrouped") boolean includeGrouped,
+                                         @Param("limit") int limit,
+                                         @Param("offset") int offset);
 
-    long countConversations(@Param("userId") long userId, @Param("keyword") String keyword);
+    long countConversations(@Param("userId") long userId,
+                            @Param("keyword") String keyword,
+                            @Param("conversationGroupId") String conversationGroupId,
+                            @Param("includeGrouped") boolean includeGrouped);
 
     Conversation updateConversationTitle(@Param("conversationId") String conversationId, @Param("userId") long userId, @Param("title") String title);
 
@@ -35,9 +43,15 @@ public interface ConversationMapper
 
     int deleteConversationsByGroupId(@Param("groupId") String groupId, @Param("userId") long userId);
 
+    int clearConversationGroupByGroupId(@Param("groupId") String groupId, @Param("userId") long userId);
+
     List<String> listConversationIdsByGroupId(@Param("groupId") String groupId, @Param("userId") long userId);
 
     boolean allOwnedConversationsExist(@Param("userId") long userId, @Param("conversationIds") Collection<String> conversationIds);
+
+    boolean allOwnedConversationsBelongToGroup(@Param("userId") long userId,
+                                               @Param("conversationGroupId") String conversationGroupId,
+                                               @Param("conversationIds") Collection<String> conversationIds);
 
     boolean allOwnedUngroupedConversationsExist(@Param("userId") long userId, @Param("conversationIds") Collection<String> conversationIds);
 
@@ -46,6 +60,14 @@ public interface ConversationMapper
     int clearConversationPinnedByIds(@Param("userId") long userId, @Param("conversationIds") Collection<String> conversationIds);
 
     int clearConversationPinned(@Param("userId") long userId);
+
+    int moveConversations(@Param("userId") long userId,
+                          @Param("conversationIds") Collection<String> conversationIds,
+                          @Param("targetConversationGroupId") String targetConversationGroupId);
+
+    int removeConversationsFromGroup(@Param("userId") long userId,
+                                     @Param("conversationGroupId") String conversationGroupId,
+                                     @Param("conversationIds") Collection<String> conversationIds);
 
     int updateLatestRoundNumber(@Param("conversationId") String conversationId,
                                 @Param("userId") long userId,

@@ -65,6 +65,18 @@ public class ConversationRoundValidator
         require(request.getStatus() != RoundStatus.ROUND_STATUS_UNSPECIFIED,
             "A terminal round status is required.");
         requireTime(request.getStartTime(), request.getEndTime(), "round");
+        require(request.getReferencesCount() <= 10, "A Round may reference at most 10 Conversations.");
+        Set<String> referenceIds = new HashSet<>();
+        request.getReferencesList().forEach(reference -> {
+            require(StringUtils.hasText(reference.getSourceConversationId()),
+                "A referenced Conversation ID is required.");
+            require(!request.getConversationId().equals(reference.getSourceConversationId()),
+                "A Conversation cannot reference itself.");
+            require(referenceIds.add(reference.getSourceConversationId()),
+                "Referenced Conversation IDs must be unique.");
+            require(reference.getSourceEndRoundNumber() > 0,
+                "A referenced Conversation requires a positive Round boundary.");
+        });
 
         if (request.getStatus() != RoundStatus.ROUND_STATUS_COMPLETED)
         {

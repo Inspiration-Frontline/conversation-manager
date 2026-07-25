@@ -19,4 +19,14 @@ public class ConversationGroupAbstract
      * Description of the conversation group.
      */
     private String description;
+
+    /**
+     * User-defined order in the Group region.
+     */
+    private int sortOrder;
+
+    /**
+     * Number of active Conversations currently assigned to this Group.
+     */
+    private long conversationCount;
 }

@@ -11,6 +11,7 @@
         <result column="name" property="name"/>
         <result column="description" property="description"/>
         <result column="sort_order" property="sortOrder"/>
+        <result column="conversation_count" property="conversationCount"/>
     </resultMap>
 
     <sql id="ConversationGroupColumns">
@@ -32,6 +33,14 @@
         FROM "conversation_group"
         WHERE "group_id" = #{groupId}
           AND "creator_id" = #{userId}
+    </select>
+
+    <select id="lockConversationGroupByIdForUser" resultMap="ConversationGroupResultMap">
+        SELECT <include refid="ConversationGroupColumns"/>
+        FROM "conversation_group"
+        WHERE "group_id" = #{groupId}
+          AND "creator_id" = #{userId}
+        FOR UPDATE
     </select>
 
     <select id="existsByIdAndUser" resultType="boolean">
@@ -59,10 +68,24 @@
     </delete>
 
     <select id="listConversationGroups" resultMap="ConversationGroupResultMap">
-        SELECT <include refid="ConversationGroupColumns"/>
-        FROM "conversation_group"
-        WHERE "creator_id" = #{userId}
-        ORDER BY "sort_order" ASC, "id" ASC
+        SELECT conversation_group."id",
+               conversation_group."creator_id",
+               conversation_group."creation_time",
+               conversation_group."modifier_id",
+               conversation_group."modification_time",
+               conversation_group."group_id",
+               conversation_group."name",
+               conversation_group."description",
+               conversation_group."sort_order",
+               COUNT(conversation."id") AS "conversation_count"
+        FROM "conversation_group" conversation_group
+        LEFT JOIN "conversation" conversation
+          ON conversation."creator_id" = conversation_group."creator_id"
+         AND conversation."conversation_group_id" = conversation_group."group_id"
+         AND conversation."deleted" = FALSE
+        WHERE conversation_group."creator_id" = #{userId}
+        GROUP BY conversation_group."id"
+        ORDER BY conversation_group."sort_order" ASC, conversation_group."id" ASC
     </select>
 
     <update id="updateConversationGroupSortOrder">
@@ -73,9 +96,23 @@
           AND "creator_id" = #{userId}
     </update>
 
-    <select id="getMaxConversationGroupSortOrder" resultType="int">
-        SELECT COALESCE(MAX("sort_order"), 0)
+    <update id="incrementConversationGroupSortOrders">
+        UPDATE "conversation_group"
+        SET "sort_order" = "sort_order" + 1,
+            "modifier_id" = #{userId}
+        WHERE "creator_id" = #{userId}
+    </update>
+
+    <select id="listConversationGroupIdsForUpdate" resultType="string">
+        SELECT "group_id"
         FROM "conversation_group"
         WHERE "creator_id" = #{userId}
+        ORDER BY "sort_order" ASC, "id" ASC
+        FOR UPDATE
+    </select>
+
+    <select id="acquireUserGroupLock" resultType="long">
+        SELECT CAST(#{userId} AS BIGINT)
+        FROM (SELECT pg_advisory_xact_lock(913741000000000 + #{userId})) locked
     </select>
 </mapper>

@@ -3,6 +3,8 @@ package ifl.agentbreaker.conversationmanager.domain.entities.pg;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
 
+import java.time.Instant;
+
 @Data
 @EqualsAndHashCode(callSuper = true)
 public class Conversation extends EntityBase
@@ -21,6 +23,21 @@ public class Conversation extends EntityBase
      * Whether the conversation is pinned in the root conversation list.
      */
     private boolean pinned;
+
+    /**
+     * Optional Group membership. A null value means the Conversation is displayed at root level.
+     */
+    private String conversationGroupId;
+
+    /**
+     * Group display name populated by navigation queries.
+     */
+    private String conversationGroupName;
+
+    /**
+     * Time of the newest durably persisted Round, independent from metadata updates.
+     */
+    private Instant lastRoundUpdatedTime;
 
     /**
      * Highest round number ever assigned to this conversation.

@@ -10,26 +10,33 @@
         <result column="conversation_id" property="conversationId"/>
         <result column="title" property="title"/>
         <result column="pinned" property="pinned"/>
+        <result column="conversation_group_id" property="conversationGroupId"/>
+        <result column="conversation_group_name" property="conversationGroupName"/>
+        <result column="last_round_updated_time" property="lastRoundUpdatedTime"/>
         <result column="latest_round_number" property="latestRoundNumber"/>
         <result column="deleted" property="deleted"/>
     </resultMap>
 
     <sql id="ConversationColumns">
         "id", "creator_id", "creation_time", "modifier_id", "modification_time",
-        "conversation_id", "title", "pinned", "latest_round_number", "deleted"
+        "conversation_id", "title", "pinned", "conversation_group_id",
+        "last_round_updated_time", "latest_round_number", "deleted"
     </sql>
 
     <sql id="ConversationColumnsWithAlias">
         c."id", c."creator_id", c."creation_time", c."modifier_id", c."modification_time",
-        c."conversation_id", c."title", c."pinned", c."latest_round_number", c."deleted"
+        c."conversation_id", c."title", c."pinned", c."conversation_group_id",
+        c."last_round_updated_time", c."latest_round_number", c."deleted"
     </sql>
 
     <select id="insertConversation" resultMap="ConversationResultMap" affectData="true">
         INSERT INTO "conversation" (
-            "creator_id", "modifier_id", "conversation_id", "title", "pinned", "latest_round_number", "deleted"
+            "creator_id", "modifier_id", "conversation_id", "title", "pinned",
+            "conversation_group_id", "latest_round_number", "deleted"
         )
         VALUES (
-            #{creatorId}, #{modifierId}, #{conversationId}, #{title}, #{pinned}, #{latestRoundNumber}, #{deleted}
+            #{creatorId}, #{modifierId}, #{conversationId}, #{title}, #{pinned},
+            #{conversationGroupId}, #{latestRoundNumber}, #{deleted}
         )
         RETURNING <include refid="ConversationColumns"/>
     </select>
@@ -76,22 +83,28 @@
     </select>
 
     <select id="listConversations" resultMap="ConversationResultMap">
-        SELECT <include refid="ConversationColumnsWithAlias"/>
+        SELECT <include refid="ConversationColumnsWithAlias"/>,
+               conversation_group."name" AS "conversation_group_name"
         FROM "conversation" c
+        LEFT JOIN "conversation_group" conversation_group
+          ON conversation_group."creator_id" = c."creator_id"
+         AND conversation_group."group_id" = c."conversation_group_id"
         WHERE c."creator_id" = #{userId}
           AND c."deleted" = FALSE
-          AND NOT EXISTS (
-              SELECT 1
-              FROM "conversation_group_relation" r
-              WHERE r."creator_id" = c."creator_id"
-                AND r."conversation_id" = c."conversation_id"
-          )
+        <choose>
+          <when test="conversationGroupId != null and conversationGroupId != ''">
+            AND c."conversation_group_id" = #{conversationGroupId}
+          </when>
+          <when test="!includeGrouped">
+            AND c."conversation_group_id" IS NULL
+          </when>
+        </choose>
         <if test="keyword != null and keyword != ''">
           AND c."title" ILIKE CONCAT('%', #{keyword}, '%')
         </if>
         ORDER BY
-          c."pinned" DESC,
-          c."modification_time" DESC,
+          CASE WHEN c."conversation_group_id" IS NULL THEN c."pinned" ELSE FALSE END DESC,
+          c."last_round_updated_time" DESC,
           c."id" DESC
         LIMIT #{limit}
         OFFSET #{offset}
@@ -99,17 +112,19 @@
 
     <select id="countConversations" resultType="long">
         SELECT COUNT(1)
-        FROM "conversation"
-        WHERE "creator_id" = #{userId}
-          AND "deleted" = FALSE
-          AND NOT EXISTS (
-              SELECT 1
-              FROM "conversation_group_relation" r
-              WHERE r."creator_id" = "conversation"."creator_id"
-                AND r."conversation_id" = "conversation"."conversation_id"
-          )
+        FROM "conversation" c
+        WHERE c."creator_id" = #{userId}
+          AND c."deleted" = FALSE
+        <choose>
+          <when test="conversationGroupId != null and conversationGroupId != ''">
+            AND c."conversation_group_id" = #{conversationGroupId}
+          </when>
+          <when test="!includeGrouped">
+            AND c."conversation_group_id" IS NULL
+          </when>
+        </choose>
         <if test="keyword != null and keyword != ''">
-          AND "title" ILIKE CONCAT('%', #{keyword}, '%')
+          AND c."title" ILIKE CONCAT('%', #{keyword}, '%')
         </if>
     </select>
 
@@ -126,6 +141,7 @@
     <update id="deleteConversation">
         UPDATE "conversation"
         SET "deleted" = TRUE,
+            "conversation_group_id" = NULL,
             "modifier_id" = #{userId}
         WHERE "conversation_id" = #{conversationId}
           AND "creator_id" = #{userId}
@@ -135,6 +151,7 @@
     <update id="deleteConversations">
         UPDATE "conversation"
         SET "deleted" = TRUE,
+            "conversation_group_id" = NULL,
             "modifier_id" = #{userId}
         WHERE "creator_id" = #{userId}
           AND "deleted" = FALSE
@@ -147,32 +164,35 @@
     <update id="deleteConversationsByGroupId">
         UPDATE "conversation"
         SET "deleted" = TRUE,
+            "conversation_group_id" = NULL,
             "modifier_id" = #{userId}
         WHERE "creator_id" = #{userId}
           AND "deleted" = FALSE
-          AND "conversation_id" IN (
-              SELECT "conversation_id"
-              FROM "conversation_group_relation"
-              WHERE "creator_id" = #{userId}
-                AND "conversation_group_id" = #{groupId}
-          )
+          AND "conversation_group_id" = #{groupId}
+    </update>
+
+    <update id="clearConversationGroupByGroupId">
+        UPDATE "conversation"
+        SET "conversation_group_id" = NULL,
+            "modifier_id" = #{userId}
+        WHERE "creator_id" = #{userId}
+          AND "deleted" = FALSE
+          AND "conversation_group_id" = #{groupId}
     </update>
 
     <select id="listConversationIdsByGroupId" resultType="string">
-        SELECT conversation."conversation_id"
-        FROM "conversation" conversation
-        INNER JOIN "conversation_group_relation" relation
-            ON relation."conversation_id" = conversation."conversation_id"
-           AND relation."creator_id" = conversation."creator_id"
-        WHERE conversation."creator_id" = #{userId}
-          AND conversation."deleted" = FALSE
-          AND relation."conversation_group_id" = #{groupId}
-          AND relation."creator_id" = #{userId}
+        SELECT "conversation_id"
+        FROM "conversation"
+        WHERE "creator_id" = #{userId}
+          AND "deleted" = FALSE
+          AND "conversation_group_id" = #{groupId}
     </select>
 
     <update id="updateLatestRoundNumber">
         UPDATE "conversation"
-        SET "latest_round_number" = #{roundNumber}, "modifier_id" = #{userId}
+        SET "latest_round_number" = #{roundNumber},
+            "last_round_updated_time" = NOW(),
+            "modifier_id" = #{userId}
         WHERE "conversation_id" = #{conversationId}
           AND "creator_id" = #{userId}
           AND "deleted" = FALSE
@@ -213,12 +233,27 @@
                 WHERE c."creator_id" = #{userId}
                   AND c."deleted" = FALSE
                   AND c."conversation_id" = requested."conversation_id"
-                  AND NOT EXISTS (
-                      SELECT 1
-                      FROM "conversation_group_relation" r
-                      WHERE r."creator_id" = c."creator_id"
-                        AND r."conversation_id" = c."conversation_id"
-                  )
+                  AND c."conversation_group_id" IS NULL
+            )
+        )
+    </select>
+
+    <select id="allOwnedConversationsBelongToGroup" resultType="boolean">
+        SELECT NOT EXISTS (
+            SELECT 1
+            FROM (
+                VALUES
+                <foreach item="conversationId" collection="conversationIds" separator=",">
+                    (#{conversationId})
+                </foreach>
+            ) AS requested("conversation_id")
+            WHERE NOT EXISTS (
+                SELECT 1
+                FROM "conversation" c
+                WHERE c."creator_id" = #{userId}
+                  AND c."deleted" = FALSE
+                  AND c."conversation_group_id" = #{conversationGroupId}
+                  AND c."conversation_id" = requested."conversation_id"
             )
         )
     </select>
@@ -233,15 +268,7 @@
         <foreach item="conversationId" collection="conversationIds" open="(" separator="," close=")">
             #{conversationId}
         </foreach>
-          AND (
-              #{pinned} = FALSE
-              OR NOT EXISTS (
-                  SELECT 1
-                  FROM "conversation_group_relation" r
-                  WHERE r."creator_id" = "conversation"."creator_id"
-                    AND r."conversation_id" = "conversation"."conversation_id"
-              )
-          )
+          AND (#{pinned} = FALSE OR "conversation_group_id" IS NULL)
     </update>
 
     <update id="clearConversationPinnedByIds">
@@ -266,9 +293,38 @@
           AND "pinned" = TRUE
     </update>
 
+    <update id="moveConversations">
+        UPDATE "conversation"
+        SET "conversation_group_id" = #{targetConversationGroupId},
+        <if test="targetConversationGroupId != null">
+            "pinned" = FALSE,
+        </if>
+            "modifier_id" = #{userId}
+        WHERE "creator_id" = #{userId}
+          AND "deleted" = FALSE
+          AND "conversation_id" IN
+        <foreach item="conversationId" collection="conversationIds" open="(" separator="," close=")">
+            #{conversationId}
+        </foreach>
+    </update>
+
+    <update id="removeConversationsFromGroup">
+        UPDATE "conversation"
+        SET "conversation_group_id" = NULL,
+            "modifier_id" = #{userId}
+        WHERE "creator_id" = #{userId}
+          AND "deleted" = FALSE
+          AND "conversation_group_id" = #{conversationGroupId}
+          AND "conversation_id" IN
+        <foreach item="conversationId" collection="conversationIds" open="(" separator="," close=")">
+            #{conversationId}
+        </foreach>
+    </update>
+
     <update id="advanceLatestRoundNumber">
         UPDATE "conversation"
         SET "latest_round_number" = #{roundNumber},
+            "last_round_updated_time" = NOW(),
             "modifier_id" = #{userId},
             "title" = CASE
                 WHEN "latest_round_number" = 0 AND "title" = #{defaultTitle} THEN #{automaticTitle}

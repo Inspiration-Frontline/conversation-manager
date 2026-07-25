@@ -2,18 +2,17 @@ package ifl.agentbreaker.conversationmanager.services;
 
 import ifl.agentbreaker.authcenter.session.UserContextService;
 import ifl.agentbreaker.conversationmanager.dao.ConversationGroupMapper;
-import ifl.agentbreaker.conversationmanager.dao.ConversationGroupRelationMapper;
 import ifl.agentbreaker.conversationmanager.dao.ConversationMapper;
-import ifl.agentbreaker.conversationmanager.services.files.ConversationFileService;
 import ifl.agentbreaker.conversationmanager.domain.dtos.requests.AddConversationToGroupRequest;
 import ifl.agentbreaker.conversationmanager.domain.dtos.requests.CreateConversationGroupRequest;
 import ifl.agentbreaker.conversationmanager.domain.dtos.requests.DeleteConversationGroupRequest;
+import ifl.agentbreaker.conversationmanager.domain.dtos.requests.MoveConversationsRequest;
 import ifl.agentbreaker.conversationmanager.domain.dtos.requests.RemoveConversationFromGroupRequest;
-import ifl.agentbreaker.conversationmanager.domain.dtos.requests.ReorderConversationGroupRequest;
+import ifl.agentbreaker.conversationmanager.domain.dtos.requests.ReorderConversationGroupsRequest;
 import ifl.agentbreaker.conversationmanager.domain.dtos.requests.UpdateConversationGroupAbstractRequest;
 import ifl.agentbreaker.conversationmanager.domain.dtos.responses.ConversationGroupAbstract;
 import ifl.agentbreaker.conversationmanager.domain.entities.pg.ConversationGroup;
-import ifl.agentbreaker.conversationmanager.domain.entities.pg.ConversationGroupRelation;
+import ifl.agentbreaker.conversationmanager.services.files.ConversationFileService;
 import ifl.agentbreaker.conversationmanager.support.BusinessIdManager;
 import ifl.agentbreaker.conversationmanager.support.TextNormalizer;
 import jakarta.validation.Valid;
@@ -28,7 +27,9 @@ import org.springframework.validation.annotation.Validated;
 import stark.dataworks.boot.autoconfig.web.LogArgumentsAndResponse;
 import stark.dataworks.boot.web.ServiceResponse;
 
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 @Slf4j
 @Service
@@ -38,6 +39,7 @@ public class ConversationGroupService
 {
     private static final int ERROR_GROUP_NOT_FOUND = 2102;
     private static final int ERROR_INVALID_CONVERSATION = 2103;
+    private static final int ERROR_INVALID_GROUP_ORDER = 2104;
     private static final int MAX_GROUP_NAME_LENGTH = 100;
 
     @Autowired
@@ -49,23 +51,18 @@ public class ConversationGroupService
     @Autowired
     private ConversationGroupMapper conversationGroupMapper;
 
-    @Autowired
-    private ConversationGroupRelationMapper conversationGroupRelationMapper;
-
     /**
-     * Creates a user-owned Group with the next stable ordering position.
-     *
-     * <p>The position is derived from the current maximum for this owner so concurrent users do
-     * not affect one another's Group ordering.  Name and description normalization is centralized
-     * here before the entity is written, keeping API and persistence values consistent.</p>
+     * Creates a Group at the top of the current user's manual order.
      *
      * @param request validated Group name and optional description
-     * @return the persisted Group summary including its generated ID and sort order
+     * @return persisted Group summary with no Conversations
      */
     @Transactional(rollbackFor = Exception.class)
     public ServiceResponse<ConversationGroupAbstract> createConversationGroup(@Valid CreateConversationGroupRequest request)
     {
         long userId = UserContextService.getCurrentUserId();
+        conversationGroupMapper.acquireUserGroupLock(userId);
+        conversationGroupMapper.incrementConversationGroupSortOrders(userId);
 
         ConversationGroup group = new ConversationGroup();
         group.setCreatorId(userId);
@@ -73,83 +70,84 @@ public class ConversationGroupService
         group.setGroupId(BusinessIdManager.newConversationGroupId());
         group.setName(TextNormalizer.trimToMaxLength(request.getName(), MAX_GROUP_NAME_LENGTH));
         group.setDescription(TextNormalizer.trimToNull(request.getDescription()));
-        group.setSortOrder(conversationGroupMapper.getMaxConversationGroupSortOrder(userId) + 1);
+        group.setSortOrder(1);
+        group.setConversationCount(0);
         conversationGroupMapper.insertConversationGroup(group);
 
         return ServiceResponse.buildSuccessResponse(toConversationGroupAbstract(group));
     }
 
     /**
-     * Updates one owned Group's display metadata while preserving its relations and ordering.
+     * Updates one owned Group's display metadata without changing its order or membership.
      *
-     * @param request owned Group ID and optional replacement fields
-     * @return updated summary, or a not-found error when the caller does not own the Group
+     * @param request owned Group ID and replacement fields
+     * @return updated summary, or a not-found response
      */
     @Transactional(rollbackFor = Exception.class)
-    public ServiceResponse<ConversationGroupAbstract> updateConversationGroupAbstract(@Valid UpdateConversationGroupAbstractRequest request)
+    public ServiceResponse<ConversationGroupAbstract> updateConversationGroupAbstract(
+        @Valid UpdateConversationGroupAbstractRequest request)
     {
         long userId = UserContextService.getCurrentUserId();
-
-        ConversationGroup group = conversationGroupMapper.getConversationGroupByIdForUser(request.getGroupId(), userId);
+        ConversationGroup group = conversationGroupMapper.lockConversationGroupByIdForUser(request.getGroupId(), userId);
         if (group == null)
             return ServiceResponse.buildErrorResponse(ERROR_GROUP_NOT_FOUND, "Conversation group does not exist.");
 
         if (StringUtils.hasText(request.getName()))
             group.setName(TextNormalizer.trimToMaxLength(request.getName(), MAX_GROUP_NAME_LENGTH));
-
         if (request.getDescription() != null)
             group.setDescription(TextNormalizer.trimToNull(request.getDescription()));
 
         group.setModifierId(userId);
-        int updated = conversationGroupMapper.updateConversationGroupAbstract(group);
-
-        if (updated <= 0)
-            return ServiceResponse.buildErrorResponse(ERROR_GROUP_NOT_FOUND, "Conversation group does not exist.");
-
+        conversationGroupMapper.updateConversationGroupAbstract(group);
         return ServiceResponse.buildSuccessResponse(toConversationGroupAbstract(group));
     }
 
     /**
-     * Reorders all supplied owned Groups in one transaction and returns the resulting order.
+     * Persists one complete, duplicate-free ordering of all Groups owned by the caller.
      *
-     * @param request ordered Group summaries supplied by the drag-and-drop UI
-     * @return the complete owner-scoped Group list after updates
+     * @param request complete ordered Group ID set
+     * @return owner-scoped Group summaries in their new order
      */
     @Transactional(rollbackFor = Exception.class)
-    public ServiceResponse<List<ConversationGroupAbstract>> reorderConversationGroup(@Valid ReorderConversationGroupRequest request)
+    public ServiceResponse<List<ConversationGroupAbstract>> reorderConversationGroups(
+        @Valid ReorderConversationGroupsRequest request)
     {
         long userId = UserContextService.getCurrentUserId();
+        conversationGroupMapper.acquireUserGroupLock(userId);
 
-        if (!CollectionUtils.isEmpty(request.getConversationGroupAbstracts()))
+        List<String> requestedIds = BusinessIdManager.normalizeIds(request.getConversationGroupIds());
+        List<String> ownedIds = conversationGroupMapper.listConversationGroupIdsForUpdate(userId);
+        Set<String> requestedSet = new HashSet<>(requestedIds);
+        if (requestedIds.size() != request.getConversationGroupIds().size()
+            || requestedSet.size() != requestedIds.size()
+            || requestedSet.size() != ownedIds.size()
+            || !requestedSet.containsAll(ownedIds))
         {
-            int sortOrder = 1;
-            for (ConversationGroupAbstract groupAbstract : request.getConversationGroupAbstracts())
-            {
-                if (groupAbstract == null || !StringUtils.hasText(groupAbstract.getGroupId()))
-                    continue;
-
-                conversationGroupMapper.updateConversationGroupSortOrder(groupAbstract.getGroupId(), userId, sortOrder++);
-            }
+            return ServiceResponse.buildErrorResponse(
+                ERROR_INVALID_GROUP_ORDER,
+                "Conversation group order must contain every owned group exactly once.");
         }
+
+        int sortOrder = 1;
+        for (String groupId : requestedIds)
+            conversationGroupMapper.updateConversationGroupSortOrder(groupId, userId, sortOrder++);
 
         return getConversationGroupsOfUser();
     }
 
     /**
-     * Deletes a Group, its relation rows, and optionally its Conversations.
+     * Deletes an owned Group while either preserving or deleting its Conversations atomically.
      *
-     * <p>Conversation file references are released after the set-based Conversation delete so the
-     * file service performs one batch operation rather than one database call per Conversation.</p>
-     *
-     * @param request Group ID and the caller's delete-children choice
-     * @return {@code true} when all logical deletes commit
+     * @param request Group ID and explicit delete-children choice
+     * @return true after the mutation and file-reference cleanup commit
      */
     @Transactional(rollbackFor = Exception.class)
     public ServiceResponse<Boolean> deleteConversationGroup(@Valid DeleteConversationGroupRequest request)
     {
         long userId = UserContextService.getCurrentUserId();
-
-        if (!conversationGroupMapper.existsByIdAndUser(request.getGroupId(), userId))
+        conversationGroupMapper.acquireUserGroupLock(userId);
+        ConversationGroup group = conversationGroupMapper.lockConversationGroupByIdForUser(request.getGroupId(), userId);
+        if (group == null)
             return ServiceResponse.buildErrorResponse(ERROR_GROUP_NOT_FOUND, "Conversation group does not exist.");
 
         if (request.isDeleteConversations())
@@ -158,21 +156,21 @@ public class ConversationGroupService
             conversationMapper.deleteConversationsByGroupId(request.getGroupId(), userId);
             conversationFileService.releaseConversationReferences(conversationIds, userId);
         }
+        else
+            conversationMapper.clearConversationGroupByGroupId(request.getGroupId(), userId);
 
-        conversationGroupRelationMapper.deleteConversationGroupRelationsByGroupId(request.getGroupId(), userId);
         conversationGroupMapper.deleteConversationGroup(request.getGroupId(), userId);
         return ServiceResponse.buildSuccessResponse(true);
     }
 
     /**
-     * Lists Groups owned by the current user in persisted sort order.
+     * Lists all Groups with active Conversation counts in manual order.
      *
-     * @return owner-scoped Group summaries; an owner with no Groups receives an empty list
+     * @return owner-scoped Group summaries
      */
     public ServiceResponse<List<ConversationGroupAbstract>> getConversationGroupsOfUser()
     {
         long userId = UserContextService.getCurrentUserId();
-
         List<ConversationGroupAbstract> groups = conversationGroupMapper.listConversationGroups(userId)
             .stream()
             .map(this::toConversationGroupAbstract)
@@ -181,67 +179,69 @@ public class ConversationGroupService
     }
 
     /**
-     * Adds an owned Conversation batch to an owned Group and clears root pin state.
+     * Moves Conversations directly to another Group or back to the root list.
      *
-     * @param request target Group ID and Conversation IDs selected by the UI
-     * @return {@code true} after relation upserts complete
+     * @param request owned Conversation IDs and nullable target Group ID
+     * @return true when every requested Conversation is moved
      */
     @Transactional(rollbackFor = Exception.class)
-    public ServiceResponse<Boolean> addConversationsToGroup(@Valid AddConversationToGroupRequest request)
+    public ServiceResponse<Boolean> moveConversations(@Valid MoveConversationsRequest request)
     {
         long userId = UserContextService.getCurrentUserId();
+        conversationGroupMapper.acquireUserGroupLock(userId);
 
-        if (!conversationGroupMapper.existsByIdAndUser(request.getConversationGroupId(), userId))
+        String targetGroupId = TextNormalizer.trimToNull(request.getTargetConversationGroupId());
+        if (targetGroupId != null
+            && conversationGroupMapper.lockConversationGroupByIdForUser(targetGroupId, userId) == null)
             return ServiceResponse.buildErrorResponse(ERROR_GROUP_NOT_FOUND, "Conversation group does not exist.");
 
         List<String> conversationIds = BusinessIdManager.normalizeIds(request.getConversationIds());
-        if (CollectionUtils.isEmpty(conversationIds) || !conversationMapper.allOwnedConversationsExist(userId, conversationIds))
+        if (CollectionUtils.isEmpty(conversationIds)
+            || !conversationMapper.allOwnedConversationsExist(userId, conversationIds))
             return ServiceResponse.buildErrorResponse(ERROR_INVALID_CONVERSATION, "Some conversations do not exist.");
 
-        int sortOrder = conversationGroupRelationMapper.getMaxConversationGroupRelationSortOrder(request.getConversationGroupId()) + 1;
-        conversationMapper.clearConversationPinnedByIds(userId, conversationIds);
-        for (String conversationId : conversationIds)
-        {
-            ConversationGroupRelation relation = new ConversationGroupRelation();
-            relation.setCreatorId(userId);
-            relation.setModifierId(userId);
-            relation.setConversationId(conversationId);
-            relation.setConversationGroupId(request.getConversationGroupId());
-            relation.setSortOrder(sortOrder++);
-            conversationGroupRelationMapper.upsertConversationGroupRelation(relation);
-        }
-
+        conversationMapper.moveConversations(userId, conversationIds, targetGroupId);
         return ServiceResponse.buildSuccessResponse(true);
     }
 
     /**
-     * Removes an owned Conversation batch from an owned Group without deleting the Conversations.
+     * Compatibility entry point that now performs one direct move instead of creating relation rows.
      *
-     * @param request target Group ID and Conversation IDs to detach
-     * @return {@code true} after relation rows are deleted
+     * @param request target Group and owned Conversation IDs
+     * @return true after the move
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public ServiceResponse<Boolean> addConversationsToGroup(@Valid AddConversationToGroupRequest request)
+    {
+        MoveConversationsRequest moveRequest = new MoveConversationsRequest();
+        moveRequest.setConversationIds(request.getConversationIds());
+        moveRequest.setTargetConversationGroupId(request.getConversationGroupId());
+        return moveConversations(moveRequest);
+    }
+
+    /**
+     * Removes Conversations only when they currently belong to the supplied owned Group.
+     *
+     * @param request source Group and Conversation IDs
+     * @return true after the Conversations return to the root list
      */
     @Transactional(rollbackFor = Exception.class)
     public ServiceResponse<Boolean> removeConversationsFromGroup(@Valid RemoveConversationFromGroupRequest request)
     {
         long userId = UserContextService.getCurrentUserId();
-
-        if (!conversationGroupMapper.existsByIdAndUser(request.getConversationGroupId(), userId))
+        if (conversationGroupMapper.lockConversationGroupByIdForUser(request.getConversationGroupId(), userId) == null)
             return ServiceResponse.buildErrorResponse(ERROR_GROUP_NOT_FOUND, "Conversation group does not exist.");
 
         List<String> conversationIds = BusinessIdManager.normalizeIds(request.getConversationIds());
-        if (CollectionUtils.isEmpty(conversationIds))
-            return ServiceResponse.buildSuccessResponse(true);
+        if (CollectionUtils.isEmpty(conversationIds)
+            || !conversationMapper.allOwnedConversationsBelongToGroup(
+                userId, request.getConversationGroupId(), conversationIds))
+            return ServiceResponse.buildErrorResponse(ERROR_INVALID_CONVERSATION, "Some conversations are not in this group.");
 
-        conversationGroupRelationMapper.deleteConversationGroupRelations(request.getConversationGroupId(), userId, conversationIds);
+        conversationMapper.removeConversationsFromGroup(userId, request.getConversationGroupId(), conversationIds);
         return ServiceResponse.buildSuccessResponse(true);
     }
 
-    /**
-     * Maps the persistence entity to the DTO exposed by HTTP and RPC callers.
-     *
-     * @param group persisted Group containing audit and ordering fields
-     * @return public summary with no mutable persistence object leaked to the caller
-     */
     private ConversationGroupAbstract toConversationGroupAbstract(ConversationGroup group)
     {
         ConversationGroupAbstract groupAbstract = new ConversationGroupAbstract();

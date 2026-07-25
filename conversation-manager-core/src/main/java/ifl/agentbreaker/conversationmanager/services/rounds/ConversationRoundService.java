@@ -13,6 +13,7 @@ import ifl.agentbreaker.conversationmanager.dao.ConversationLlmResponseToolCallM
 import ifl.agentbreaker.conversationmanager.dao.ConversationLlmToolDefinitionMapper;
 import ifl.agentbreaker.conversationmanager.dao.ConversationMapper;
 import ifl.agentbreaker.conversationmanager.dao.ConversationRoundMapper;
+import ifl.agentbreaker.conversationmanager.dao.ConversationRoundReferenceMapper;
 import ifl.agentbreaker.conversationmanager.dao.ConversationTurnMapper;
 import ifl.agentbreaker.conversationmanager.dao.ConversationToolCallExecutionMapper;
 import ifl.agentbreaker.conversationmanager.domain.constants.ConversationRoundStatus;
@@ -33,6 +34,7 @@ import ifl.agentbreaker.conversationmanager.domain.entities.pg.ConversationLlmRe
 import ifl.agentbreaker.conversationmanager.domain.entities.pg.ConversationLlmResponseToolCall;
 import ifl.agentbreaker.conversationmanager.domain.entities.pg.ConversationLlmToolDefinition;
 import ifl.agentbreaker.conversationmanager.domain.entities.pg.ConversationRound;
+import ifl.agentbreaker.conversationmanager.domain.entities.pg.ConversationRoundReference;
 import ifl.agentbreaker.conversationmanager.domain.entities.pg.ConversationTurn;
 import ifl.agentbreaker.conversationmanager.domain.entities.pg.ConversationToolCallExecution;
 import ifl.agentbreaker.conversationmanager.domain.entities.pg.EntityBase;
@@ -40,9 +42,11 @@ import ifl.agentbreaker.conversationmanager.domain.entities.pg.FileResource;
 import ifl.agentbreaker.conversationmanager.support.ConversationTitleManager;
 import ifl.agentbreaker.conversationmanager.rpc.ConversationErrorCode;
 import ifl.agentbreaker.conversationmanager.rpc.ContentPart;
+import ifl.agentbreaker.conversationmanager.rpc.ConversationReference;
 import ifl.agentbreaker.conversationmanager.rpc.FileUrl;
 import ifl.agentbreaker.conversationmanager.rpc.FunctionCall;
 import ifl.agentbreaker.conversationmanager.rpc.MessageRole;
+import ifl.agentbreaker.conversationmanager.rpc.PreparedConversationReference;
 import ifl.agentbreaker.conversationmanager.rpc.RoundStatus;
 import ifl.agentbreaker.conversationmanager.rpc.LlmCall;
 import ifl.agentbreaker.conversationmanager.rpc.LlmConversationMessage;
@@ -66,6 +70,7 @@ import java.time.Instant;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.LinkedHashSet;
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -84,6 +89,9 @@ public class ConversationRoundService
 
     @Autowired
     private ConversationRoundMapper conversationRoundMapper;
+
+    @Autowired
+    private ConversationRoundReferenceMapper conversationRoundReferenceMapper;
 
     @Autowired
     private ConversationTurnMapper conversationTurnMapper;
@@ -168,6 +176,7 @@ public class ConversationRoundService
                 .listRoundFiles(conversationId)
                 .stream()
                 .collect(Collectors.groupingBy(RoundFileHistory::roundNumber));
+            Map<Long, List<ConversationRoundReference>> referencesByRound = listReferencesByRound(history.rounds());
             return ServiceResponse.buildSuccessResponse(new RoundHistoryView(
                 conversationId,
                 history.latestRoundNumber(),
@@ -179,6 +188,9 @@ public class ConversationRoundService
                         .map(file -> new RoundHistoryView.FileView(
                             file.fileId(), file.originalFilename(), file.mimeType(), file.fileSize(),
                             file.kind(), file.status()))
+                        .toList(),
+                    referencesByRound.getOrDefault(round.getId(), List.of()).stream()
+                        .map(this::toReferenceView)
                         .toList())).toList()));
         }
         catch (RoundPersistenceException e)
@@ -204,6 +216,7 @@ public class ConversationRoundService
             .collect(Collectors.groupingBy(RoundFileHistory::roundNumber));
         List<ConversationRound> visibleRounds = conversationRoundMapper
             .listCompletedRoundsAtOrBefore(conversationId, endRoundNumber);
+        Map<Long, List<ConversationRoundReference>> referencesByRound = listReferencesByRound(visibleRounds);
 
         long latestRoundNumber = visibleRounds.isEmpty()
             ? 0
@@ -220,7 +233,27 @@ public class ConversationRoundService
                     .map(file -> new RoundHistoryView.FileView(
                         file.fileId(), file.originalFilename(), file.mimeType(), file.fileSize(),
                         file.kind(), file.status()))
-                .toList())).toList());
+                .toList(),
+                referencesByRound.getOrDefault(round.getId(), List.of()).stream()
+                    .map(this::toReferenceView)
+                    .toList())).toList());
+    }
+
+    private Map<Long, List<ConversationRoundReference>> listReferencesByRound(List<ConversationRound> rounds)
+    {
+        if (rounds.isEmpty())
+            return Map.of();
+        List<Long> roundIds = rounds.stream().map(ConversationRound::getId).toList();
+        return conversationRoundReferenceMapper.listReferencesByRoundIds(roundIds).stream()
+            .collect(Collectors.groupingBy(ConversationRoundReference::getRoundId));
+    }
+
+    private RoundHistoryView.ReferenceView toReferenceView(ConversationRoundReference reference)
+    {
+        return new RoundHistoryView.ReferenceView(
+            reference.getSourceConversationId(),
+            reference.getSourceEndRoundNumber(),
+            reference.getSourceTitle());
     }
 
     /**
@@ -277,6 +310,77 @@ public class ConversationRoundService
             .setContent(conversationLlmCall.getResponseContent())
             .build());
         return new ConversationReplayResult(conversationId, List.copyOf(contextMessages));
+    }
+
+    /**
+     * Authorizes and projects frozen same-Group references without exposing Tool or intermediate
+     * Turn traces. The returned messages are derived evidence and never mutate source history.
+     */
+    public List<PreparedConversationReference> prepareReferences(
+        long userId, String destinationConversationId, List<ConversationReference> references)
+    {
+        if (userId <= 0 || !StringUtils.hasText(destinationConversationId)
+            || references.isEmpty() || references.size() > 10)
+            throw new RoundPersistenceException(
+                ConversationErrorCode.CONVERSATION_ERROR_CODE_INVALID_REQUEST_VALUE,
+                "The Conversation reference request is invalid.");
+
+        Conversation destination = conversationMapper.getConversationByIdAndUser(destinationConversationId, userId);
+        if (destination == null)
+            throw new RoundPersistenceException(ERROR_CONVERSATION_NOT_FOUND, "Conversation does not exist.");
+        if (!StringUtils.hasText(destination.getConversationGroupId()))
+            throw new RoundPersistenceException(
+                ConversationErrorCode.CONVERSATION_ERROR_CODE_INVALID_REQUEST_VALUE,
+                "Conversation references require a Group.");
+
+        Set<String> sourceIds = new LinkedHashSet<>();
+        List<PreparedConversationReference> prepared = new ArrayList<>();
+        for (ConversationReference reference : references)
+        {
+            String sourceId = reference.getSourceConversationId();
+            if (!StringUtils.hasText(sourceId)
+                || sourceId.equals(destinationConversationId)
+                || !sourceIds.add(sourceId)
+                || reference.getSourceEndRoundNumber() <= 0)
+                throw new RoundPersistenceException(
+                    ConversationErrorCode.CONVERSATION_ERROR_CODE_INVALID_REQUEST_VALUE,
+                    "Conversation references must be non-empty, unique, and use a positive boundary.");
+
+            Conversation source = conversationMapper.getConversationByIdAndUser(sourceId, userId);
+            if (source == null || !Objects.equals(
+                destination.getConversationGroupId(), source.getConversationGroupId()))
+                throw new RoundPersistenceException(
+                    ConversationErrorCode.CONVERSATION_ERROR_CODE_INVALID_REQUEST_VALUE,
+                    "Every referenced Conversation must belong to the current Group.");
+            if (reference.getSourceEndRoundNumber() > source.getLatestRoundNumber())
+                throw new RoundPersistenceException(
+                    ConversationErrorCode.CONVERSATION_ERROR_CODE_INVALID_REQUEST_VALUE,
+                    "A referenced Round boundary is newer than the source Conversation.");
+            ConversationRound boundary = conversationRoundMapper.getRound(
+                sourceId, reference.getSourceEndRoundNumber());
+            if (boundary == null || boundary.isDeleted())
+                throw new RoundPersistenceException(
+                    ConversationErrorCode.CONVERSATION_ERROR_CODE_ROUND_NOT_FOUND_VALUE,
+                    "A referenced Round boundary does not exist.");
+
+            PreparedConversationReference.Builder item = PreparedConversationReference.newBuilder()
+                .setReference(reference)
+                .setSourceTitle(source.getTitle());
+            for (ConversationRound round : conversationRoundMapper.listCompletedRoundsAtOrBefore(
+                sourceId, reference.getSourceEndRoundNumber()))
+            {
+                item.addContextMessages(LlmConversationMessage.newBuilder()
+                    .setRole(MessageRole.MESSAGE_ROLE_USER)
+                    .setContent(extractTextContent(round))
+                    .build());
+                item.addContextMessages(LlmConversationMessage.newBuilder()
+                    .setRole(MessageRole.MESSAGE_ROLE_ASSISTANT)
+                    .setContent(round.getFinalAnswerContent() == null ? "" : round.getFinalAnswerContent())
+                    .build());
+            }
+            prepared.add(item.build());
+        }
+        return List.copyOf(prepared);
     }
 
     /**
@@ -378,6 +482,7 @@ public class ConversationRoundService
             throw new IllegalStateException("Round insert returned no row.");
 
         List<FileResource> roundFiles = persistRoundFiles(request, savedRound.getId());
+        persistRoundReferences(request, conversation, savedRound.getId());
         persistTurnsAndChildren(request, savedRound.getId());
 
         // TODO: Replace repeated cross-Round FULL_SNAPSHOT rows with context_id plus the current
@@ -396,6 +501,43 @@ public class ConversationRoundService
             throw new IllegalStateException("Failed to advance conversation round high-water mark.");
 
         return request;
+    }
+
+    private void persistRoundReferences(
+        SaveConversationRoundRequest request, Conversation destination, long roundId)
+    {
+        if (request.getReferencesCount() == 0)
+            return;
+
+        List<ConversationRoundReference> rows = new ArrayList<>();
+        int referenceOrder = 0;
+        for (ConversationReference reference : request.getReferencesList())
+        {
+            Conversation source = conversationMapper.getConversationByIdAndUser(
+                reference.getSourceConversationId(), request.getUserId());
+            if (source == null || !Objects.equals(
+                destination.getConversationGroupId(), source.getConversationGroupId())
+                || !StringUtils.hasText(destination.getConversationGroupId()))
+                throw error(ConversationErrorCode.CONVERSATION_ERROR_CODE_INVALID_REQUEST,
+                    "Every referenced Conversation must belong to the destination Group.");
+            ConversationRound boundary = conversationRoundMapper.getRound(
+                source.getConversationId(), reference.getSourceEndRoundNumber());
+            if (boundary == null || boundary.isDeleted()
+                || reference.getSourceEndRoundNumber() > source.getLatestRoundNumber())
+                throw error(ConversationErrorCode.CONVERSATION_ERROR_CODE_ROUND_NOT_FOUND,
+                    "A referenced Round boundary does not exist.");
+
+            ConversationRoundReference row = new ConversationRoundReference();
+            applyAudit(row, request.getUserId());
+            row.setRoundId(roundId);
+            row.setSourceConversationId(source.getConversationId());
+            row.setSourceEndRoundNumber(reference.getSourceEndRoundNumber());
+            row.setSourceTitle(source.getTitle());
+            row.setReferenceOrder(referenceOrder++);
+            rows.add(row);
+        }
+        requireAffectedRows("Conversation reference", rows.size(),
+            conversationRoundReferenceMapper.insertReferences(rows));
     }
 
     /**
