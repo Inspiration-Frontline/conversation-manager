@@ -10,7 +10,7 @@ public class ConversationAbstract
     private String conversationId;
     private String title;
     private boolean pinned;
-    private String conversationGroupId;
+    private Long conversationGroupId;
     private String conversationGroupName;
     private Instant lastRoundUpdatedTime;
     private Instant creationTime;

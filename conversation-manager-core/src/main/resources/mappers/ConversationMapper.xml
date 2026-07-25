@@ -55,6 +55,17 @@
           AND "deleted" = FALSE
     </select>
 
+    <select id="listConversationsByIdsAndUser" resultMap="ConversationResultMap">
+        SELECT <include refid="ConversationColumns"/>
+        FROM "conversation"
+        WHERE "creator_id" = #{userId}
+          AND "deleted" = FALSE
+          AND "conversation_id" IN
+        <foreach item="conversationId" collection="conversationIds" open="(" separator="," close=")">
+            #{conversationId}
+        </foreach>
+    </select>
+
     <select id="getLatestRoundNumberByIdAndUser" resultType="java.lang.Long">
         SELECT "latest_round_number"
         FROM "conversation"
@@ -88,11 +99,11 @@
         FROM "conversation" c
         LEFT JOIN "conversation_group" conversation_group
           ON conversation_group."creator_id" = c."creator_id"
-         AND conversation_group."group_id" = c."conversation_group_id"
+         AND conversation_group."id" = c."conversation_group_id"
         WHERE c."creator_id" = #{userId}
           AND c."deleted" = FALSE
         <choose>
-          <when test="conversationGroupId != null and conversationGroupId != ''">
+          <when test="conversationGroupId != null">
             AND c."conversation_group_id" = #{conversationGroupId}
           </when>
           <when test="!includeGrouped">
@@ -116,7 +127,7 @@
         WHERE c."creator_id" = #{userId}
           AND c."deleted" = FALSE
         <choose>
-          <when test="conversationGroupId != null and conversationGroupId != ''">
+          <when test="conversationGroupId != null">
             AND c."conversation_group_id" = #{conversationGroupId}
           </when>
           <when test="!includeGrouped">

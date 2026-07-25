@@ -11,7 +11,7 @@ public class ConversationGroupInfo
     /**
      * ID of the conversation group.
      */
-    private String groupId;
+    private long groupId;
 
     /**
      * Name of the conversation group.

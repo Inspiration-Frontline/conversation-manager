@@ -23,9 +23,7 @@ import java.util.Collections;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.mockito.ArgumentMatchers.anyInt;
-import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -80,13 +78,30 @@ class ConversationGroupServiceTest
     void rejectsReorderThatDoesNotContainEveryOwnedGroupExactlyOnce()
     {
         ReorderConversationGroupsRequest request = new ReorderConversationGroupsRequest();
-        request.setConversationGroupIds(List.of("group_a", "group_a"));
-        when(conversationGroupMapper.listConversationGroupIdsForUpdate(USER_ID))
-            .thenReturn(List.of("group_a", "group_b"));
+        request.setConversationGroupIds(List.of(1L, 1L));
+        when(conversationGroupMapper.listConversationGroupsForUpdate(USER_ID))
+            .thenReturn(List.of(group(1), group(2)));
 
         conversationGroupService.reorderConversationGroups(request);
 
-        verify(conversationGroupMapper, never()).updateConversationGroupSortOrder(anyString(), eq(USER_ID), anyInt());
+        verify(conversationGroupMapper, never()).batchUpdateConversationGroupSortOrders(anyList());
+    }
+
+    @Test
+    void reordersAllGroupsWithOneBatchWrite()
+    {
+        ReorderConversationGroupsRequest request = new ReorderConversationGroupsRequest();
+        request.setConversationGroupIds(List.of(2L, 1L));
+        ConversationGroup first = group(1);
+        ConversationGroup second = group(2);
+        when(conversationGroupMapper.listConversationGroupsForUpdate(USER_ID))
+            .thenReturn(List.of(first, second));
+
+        conversationGroupService.reorderConversationGroups(request);
+
+        verify(conversationGroupMapper).batchUpdateConversationGroupSortOrders(List.of(first, second));
+        assertEquals(2, first.getSortOrder());
+        assertEquals(1, second.getSortOrder());
     }
 
     @Test
@@ -94,38 +109,38 @@ class ConversationGroupServiceTest
     {
         MoveConversationsRequest request = new MoveConversationsRequest();
         request.setConversationIds(List.of("conv_a", "conv_b"));
-        request.setTargetConversationGroupId("group_target");
-        when(conversationGroupMapper.lockConversationGroupByIdForUser("group_target", USER_ID))
-            .thenReturn(group("group_target"));
+        request.setTargetConversationGroupId(3L);
+        when(conversationGroupMapper.lockConversationGroupByIdForUser(3L, USER_ID))
+            .thenReturn(group(3));
         when(conversationMapper.allOwnedConversationsExist(USER_ID, request.getConversationIds())).thenReturn(true);
 
         conversationGroupService.moveConversations(request);
 
         verify(conversationGroupMapper).acquireUserGroupLock(USER_ID);
-        verify(conversationMapper).moveConversations(USER_ID, request.getConversationIds(), "group_target");
+        verify(conversationMapper).moveConversations(USER_ID, request.getConversationIds(), 3L);
     }
 
     @Test
     void deletingGroupPreservesConversationsByMovingThemToRoot()
     {
         DeleteConversationGroupRequest request = new DeleteConversationGroupRequest();
-        request.setGroupId("group_keep");
+        request.setGroupId(4L);
         request.setDeleteConversations(false);
-        when(conversationGroupMapper.lockConversationGroupByIdForUser("group_keep", USER_ID))
-            .thenReturn(group("group_keep"));
+        when(conversationGroupMapper.lockConversationGroupByIdForUser(4L, USER_ID))
+            .thenReturn(group(4));
 
         conversationGroupService.deleteConversationGroup(request);
 
         verify(conversationGroupMapper).acquireUserGroupLock(USER_ID);
-        verify(conversationMapper).clearConversationGroupByGroupId("group_keep", USER_ID);
-        verify(conversationMapper, never()).deleteConversationsByGroupId("group_keep", USER_ID);
-        verify(conversationGroupMapper).deleteConversationGroup("group_keep", USER_ID);
+        verify(conversationMapper).clearConversationGroupByGroupId(4L, USER_ID);
+        verify(conversationMapper, never()).deleteConversationsByGroupId(4L, USER_ID);
+        verify(conversationGroupMapper).deleteConversationGroup(4L, USER_ID);
     }
 
-    private ConversationGroup group(String groupId)
+    private ConversationGroup group(long groupId)
     {
         ConversationGroup group = new ConversationGroup();
-        group.setGroupId(groupId);
+        group.setId(groupId);
         group.setCreatorId(USER_ID);
         return group;
     }

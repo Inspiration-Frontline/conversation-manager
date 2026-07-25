@@ -17,7 +17,6 @@ import ifl.agentbreaker.conversationmanager.support.BusinessIdManager;
 import ifl.agentbreaker.conversationmanager.support.TextNormalizer;
 import jakarta.validation.Valid;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.BeanUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -29,7 +28,10 @@ import stark.dataworks.boot.web.ServiceResponse;
 
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 
 @Slf4j
 @Service
@@ -67,11 +69,10 @@ public class ConversationGroupService
         ConversationGroup group = new ConversationGroup();
         group.setCreatorId(userId);
         group.setModifierId(userId);
-        group.setGroupId(BusinessIdManager.newConversationGroupId());
         group.setName(TextNormalizer.trimToMaxLength(request.getName(), MAX_GROUP_NAME_LENGTH));
         group.setDescription(TextNormalizer.trimToNull(request.getDescription()));
         group.setSortOrder(1);
-        group.setConversationCount(0);
+
         conversationGroupMapper.insertConversationGroup(group);
 
         return ServiceResponse.buildSuccessResponse(toConversationGroupAbstract(group));
@@ -115,13 +116,15 @@ public class ConversationGroupService
         long userId = UserContextService.getCurrentUserId();
         conversationGroupMapper.acquireUserGroupLock(userId);
 
-        List<String> requestedIds = BusinessIdManager.normalizeIds(request.getConversationGroupIds());
-        List<String> ownedIds = conversationGroupMapper.listConversationGroupIdsForUpdate(userId);
-        Set<String> requestedSet = new HashSet<>(requestedIds);
-        if (requestedIds.size() != request.getConversationGroupIds().size()
-            || requestedSet.size() != requestedIds.size()
-            || requestedSet.size() != ownedIds.size()
-            || !requestedSet.containsAll(ownedIds))
+        List<Long> requestedIds = request.getConversationGroupIds();
+        List<ConversationGroup> ownedGroups = conversationGroupMapper.listConversationGroupsForUpdate(userId);
+        Map<Long, ConversationGroup> ownedGroupsById = ownedGroups.stream().collect(
+            Collectors.toMap(ConversationGroup::getId, Function.identity()));
+        Set<Long> requestedSet = new HashSet<>(requestedIds);
+
+        if (requestedSet.size() != requestedIds.size()
+            || requestedSet.size() != ownedGroupsById.size()
+            || !ownedGroupsById.keySet().containsAll(requestedSet))
         {
             return ServiceResponse.buildErrorResponse(
                 ERROR_INVALID_GROUP_ORDER,
@@ -129,8 +132,14 @@ public class ConversationGroupService
         }
 
         int sortOrder = 1;
-        for (String groupId : requestedIds)
-            conversationGroupMapper.updateConversationGroupSortOrder(groupId, userId, sortOrder++);
+        for (long groupId : requestedIds)
+        {
+            ConversationGroup group = ownedGroupsById.get(groupId);
+            group.setSortOrder(sortOrder++);
+            group.setModifierId(userId);
+        }
+
+        conversationGroupMapper.batchUpdateConversationGroupSortOrders(ownedGroups);
 
         return getConversationGroupsOfUser();
     }
@@ -171,10 +180,8 @@ public class ConversationGroupService
     public ServiceResponse<List<ConversationGroupAbstract>> getConversationGroupsOfUser()
     {
         long userId = UserContextService.getCurrentUserId();
-        List<ConversationGroupAbstract> groups = conversationGroupMapper.listConversationGroups(userId)
-            .stream()
-            .map(this::toConversationGroupAbstract)
-            .toList();
+        List<ConversationGroupAbstract> groups = conversationGroupMapper.listConversationGroups(userId);
+
         return ServiceResponse.buildSuccessResponse(groups);
     }
 
@@ -190,7 +197,7 @@ public class ConversationGroupService
         long userId = UserContextService.getCurrentUserId();
         conversationGroupMapper.acquireUserGroupLock(userId);
 
-        String targetGroupId = TextNormalizer.trimToNull(request.getTargetConversationGroupId());
+        Long targetGroupId = request.getTargetConversationGroupId();
         if (targetGroupId != null
             && conversationGroupMapper.lockConversationGroupByIdForUser(targetGroupId, userId) == null)
             return ServiceResponse.buildErrorResponse(ERROR_GROUP_NOT_FOUND, "Conversation group does not exist.");
@@ -245,7 +252,11 @@ public class ConversationGroupService
     private ConversationGroupAbstract toConversationGroupAbstract(ConversationGroup group)
     {
         ConversationGroupAbstract groupAbstract = new ConversationGroupAbstract();
-        BeanUtils.copyProperties(group, groupAbstract);
+        groupAbstract.setGroupId(group.getId());
+        groupAbstract.setName(group.getName());
+        groupAbstract.setDescription(group.getDescription());
+        groupAbstract.setSortOrder(group.getSortOrder());
+
         return groupAbstract;
     }
 }

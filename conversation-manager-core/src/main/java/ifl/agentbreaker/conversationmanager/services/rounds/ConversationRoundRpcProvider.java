@@ -34,7 +34,6 @@ import ifl.agentbreaker.conversationmanager.rpc.PrepareConversationFilesResponse
 import ifl.agentbreaker.conversationmanager.rpc.PrepareConversationFilesResult;
 import ifl.agentbreaker.conversationmanager.rpc.PrepareConversationReferencesRequest;
 import ifl.agentbreaker.conversationmanager.rpc.PrepareConversationReferencesResponse;
-import ifl.agentbreaker.conversationmanager.rpc.PrepareConversationReferencesResult;
 import ifl.agentbreaker.conversationmanager.rpc.PreparedConversationFile;
 import ifl.agentbreaker.conversationmanager.rpc.RoundStatus;
 import ifl.agentbreaker.conversationmanager.rpc.SaveConversationRoundRequest;
@@ -376,16 +375,14 @@ public class ConversationRoundRpcProvider implements ConversationRpcService
         {
             return PrepareConversationReferencesResponse.newBuilder()
                 .setBase(successBase())
-                .setData(PrepareConversationReferencesResult.newBuilder().addAllReferences(
-                    conversationRoundService.prepareReferences(
-                        request.getUserId(), request.getDestinationConversationId(), request.getReferencesList())))
+                .addAllData(conversationRoundService.prepareReferences(
+                    request.getUserId(), request.getDestinationConversationId(), request.getReferencesList()))
                 .build();
         }
         catch (RoundPersistenceException e)
         {
             return PrepareConversationReferencesResponse.newBuilder()
                 .setBase(errorBase(e.getCode(), e.getMessage()))
-                .setData(PrepareConversationReferencesResult.getDefaultInstance())
                 .build();
         }
     }

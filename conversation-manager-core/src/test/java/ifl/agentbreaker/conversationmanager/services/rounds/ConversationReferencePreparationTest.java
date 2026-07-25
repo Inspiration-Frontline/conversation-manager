@@ -1,12 +1,15 @@
 package ifl.agentbreaker.conversationmanager.services.rounds;
 
+import ifl.agentbreaker.conversationmanager.config.ConversationReferenceProperties;
 import ifl.agentbreaker.conversationmanager.dao.ConversationMapper;
 import ifl.agentbreaker.conversationmanager.dao.ConversationRoundMapper;
+import ifl.agentbreaker.conversationmanager.domain.dtos.ConversationReferenceBoundary;
 import ifl.agentbreaker.conversationmanager.domain.entities.pg.Conversation;
 import ifl.agentbreaker.conversationmanager.domain.entities.pg.ConversationRound;
 import ifl.agentbreaker.conversationmanager.rpc.ConversationReference;
 import ifl.agentbreaker.conversationmanager.rpc.MessageRole;
 import ifl.agentbreaker.conversationmanager.rpc.PreparedConversationReference;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
@@ -17,6 +20,8 @@ import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.mockito.ArgumentMatchers.anyCollection;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -28,20 +33,35 @@ class ConversationReferencePreparationTest
     @Mock
     private ConversationRoundMapper conversationRoundMapper;
 
+    @Mock
+    private ConversationReferenceProperties conversationReferenceProperties;
+
     @InjectMocks
     private ConversationRoundService conversationRoundService;
+
+    @BeforeEach
+    void configureReferenceLimit()
+    {
+        when(conversationReferenceProperties.getMaxCountPerRound()).thenReturn(10);
+    }
 
     @Test
     void returnsOnlyLabelledCompletedRoundRequestsAndAnswers()
     {
-        Conversation destination = conversation("conv_destination", "Destination", "group_one", 1);
-        Conversation source = conversation("conv_source", "Source notes", "group_one", 4);
+        Conversation destination = conversation("conv_destination", "Destination", 1, 1);
+        Conversation source = conversation("conv_source", "Source notes", 1, 4);
         ConversationRound boundary = round(4, "ignored failed request", null);
+        boundary.setConversationId("conv_source");
         ConversationRound completed = round(3, "Source question", "Source answer");
+        completed.setConversationId("conv_source");
         when(conversationMapper.getConversationByIdAndUser("conv_destination", 1)).thenReturn(destination);
-        when(conversationMapper.getConversationByIdAndUser("conv_source", 1)).thenReturn(source);
-        when(conversationRoundMapper.getRound("conv_source", 4)).thenReturn(boundary);
-        when(conversationRoundMapper.listCompletedRoundsAtOrBefore("conv_source", 4))
+        when(conversationMapper.listConversationsByIdsAndUser(anyCollection(), eq(1L)))
+            .thenReturn(List.of(source));
+        when(conversationRoundMapper.listRoundsAtBoundaries(List.of(
+            new ConversationReferenceBoundary("conv_source", 4))))
+            .thenReturn(List.of(boundary));
+        when(conversationRoundMapper.listCompletedRoundsAtOrBeforeBoundaries(List.of(
+            new ConversationReferenceBoundary("conv_source", 4))))
             .thenReturn(List.of(completed));
 
         List<PreparedConversationReference> prepared = conversationRoundService.prepareReferences(
@@ -61,9 +81,9 @@ class ConversationReferencePreparationTest
     void rejectsAConversationOutsideTheDestinationGroup()
     {
         when(conversationMapper.getConversationByIdAndUser("conv_destination", 1))
-            .thenReturn(conversation("conv_destination", "Destination", "group_one", 1));
-        when(conversationMapper.getConversationByIdAndUser("conv_source", 1))
-            .thenReturn(conversation("conv_source", "Source", "group_two", 1));
+            .thenReturn(conversation("conv_destination", "Destination", 1, 1));
+        when(conversationMapper.listConversationsByIdsAndUser(anyCollection(), eq(1L)))
+            .thenReturn(List.of(conversation("conv_source", "Source", 2, 1)));
 
         assertThrows(RoundPersistenceException.class, () -> conversationRoundService.prepareReferences(
             1, "conv_destination", List.of(ConversationReference.newBuilder()
@@ -72,7 +92,7 @@ class ConversationReferencePreparationTest
                 .build())));
     }
 
-    private Conversation conversation(String id, String title, String groupId, long latestRoundNumber)
+    private Conversation conversation(String id, String title, long groupId, long latestRoundNumber)
     {
         Conversation conversation = new Conversation();
         conversation.setConversationId(id);

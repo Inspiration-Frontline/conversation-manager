@@ -4,6 +4,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import ifl.agentbreaker.commons.api.dto.AgentIdentity;
+import ifl.agentbreaker.conversationmanager.config.ConversationReferenceProperties;
 import ifl.agentbreaker.conversationmanager.rpc.AssistantMessage;
 import ifl.agentbreaker.conversationmanager.rpc.ConversationErrorCode;
 import ifl.agentbreaker.conversationmanager.rpc.ConversationTurn;
@@ -44,6 +45,9 @@ public class ConversationRoundValidator
     @Autowired
     private ObjectMapper objectMapper;
 
+    @Autowired
+    private ConversationReferenceProperties conversationReferenceProperties;
+
     // TODO: Rename to validate() once the remaining Round/Turn phases share this contract.
     /**
      * Validates the complete Round persistence contract before any database mutation occurs.
@@ -65,7 +69,8 @@ public class ConversationRoundValidator
         require(request.getStatus() != RoundStatus.ROUND_STATUS_UNSPECIFIED,
             "A terminal round status is required.");
         requireTime(request.getStartTime(), request.getEndTime(), "round");
-        require(request.getReferencesCount() <= 10, "A Round may reference at most 10 Conversations.");
+        require(request.getReferencesCount() <= conversationReferenceProperties.getMaxCountPerRound(),
+            "The Round exceeds the configured Conversation reference limit.");
         Set<String> referenceIds = new HashSet<>();
         request.getReferencesList().forEach(reference -> {
             require(StringUtils.hasText(reference.getSourceConversationId()),

@@ -13,7 +13,7 @@ public class GetConversationsRequest
     /**
      * Optional Group whose Conversations should be returned.
      */
-    private String conversationGroupId;
+    private Long conversationGroupId;
 
     /**
      * Whether title search should include both grouped and root Conversations.

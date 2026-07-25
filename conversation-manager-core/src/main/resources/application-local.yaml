@@ -33,3 +33,5 @@ agent-breaker:
         reservation-seconds: ${AGENT_BREAKER_FILE_RESERVATION_SECONDS:14400}
         allowed-extensions: ${AGENT_BREAKER_FILE_ALLOWED_EXTENSIONS:docx,pdf,xlsx,pptx,txt,md,log,png,jpg,jpeg,webp,csv,json}
         allowed-mime-types: ${AGENT_BREAKER_FILE_ALLOWED_MIME_TYPES:application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/pdf,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.openxmlformats-officedocument.presentationml.presentation,text/plain,text/markdown,text/csv,application/json,image/png,image/jpeg,image/webp}
+    references:
+        max-count-per-round: ${AGENT_BREAKER_REFERENCE_MAX_COUNT_PER_ROUND:10}

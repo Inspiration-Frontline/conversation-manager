@@ -8,11 +8,6 @@ import lombok.EqualsAndHashCode;
 public class ConversationGroup extends EntityBase
 {
     /**
-     * ID of the conversation group, in string.
-     */
-    private String groupId;
-
-    /**
      * Name of the conversation group.
      */
     private String name;
@@ -27,8 +22,4 @@ public class ConversationGroup extends EntityBase
      */
     private int sortOrder;
 
-    /**
-     * Number of active Conversations assigned to this Group.
-     */
-    private long conversationCount;
 }

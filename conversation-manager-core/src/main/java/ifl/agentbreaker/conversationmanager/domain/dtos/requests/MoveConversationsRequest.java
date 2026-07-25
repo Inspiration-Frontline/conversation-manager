@@ -14,5 +14,5 @@ public class MoveConversationsRequest
     /**
      * Target Group ID, or null to move the Conversations back to the root list.
      */
-    private String targetConversationGroupId;
+    private Long targetConversationGroupId;
 }

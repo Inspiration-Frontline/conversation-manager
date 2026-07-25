@@ -7,7 +7,13 @@
         <result column="creation_time" property="creationTime"/>
         <result column="modifier_id" property="modifierId"/>
         <result column="modification_time" property="modificationTime"/>
-        <result column="group_id" property="groupId"/>
+        <result column="name" property="name"/>
+        <result column="description" property="description"/>
+        <result column="sort_order" property="sortOrder"/>
+    </resultMap>
+
+    <resultMap id="ConversationGroupAbstractResultMap" type="ifl.agentbreaker.conversationmanager.domain.dtos.responses.ConversationGroupAbstract">
+        <id column="group_id" property="groupId"/>
         <result column="name" property="name"/>
         <result column="description" property="description"/>
         <result column="sort_order" property="sortOrder"/>
@@ -16,29 +22,29 @@
 
     <sql id="ConversationGroupColumns">
         "id", "creator_id", "creation_time", "modifier_id", "modification_time",
-        "group_id", "name", "description", "sort_order"
+        "name", "description", "sort_order"
     </sql>
 
     <insert id="insertConversationGroup" useGeneratedKeys="true" keyProperty="id" keyColumn="id">
         INSERT INTO "conversation_group" (
-            "creator_id", "modifier_id", "group_id", "name", "description", "sort_order"
+            "creator_id", "modifier_id", "name", "description", "sort_order"
         )
         VALUES (
-            #{creatorId}, #{modifierId}, #{groupId}, #{name}, #{description}, #{sortOrder}
+            #{creatorId}, #{modifierId}, #{name}, #{description}, #{sortOrder}
         )
     </insert>
 
     <select id="getConversationGroupByIdForUser" resultMap="ConversationGroupResultMap">
         SELECT <include refid="ConversationGroupColumns"/>
         FROM "conversation_group"
-        WHERE "group_id" = #{groupId}
+        WHERE "id" = #{groupId}
           AND "creator_id" = #{userId}
     </select>
 
     <select id="lockConversationGroupByIdForUser" resultMap="ConversationGroupResultMap">
         SELECT <include refid="ConversationGroupColumns"/>
         FROM "conversation_group"
-        WHERE "group_id" = #{groupId}
+        WHERE "id" = #{groupId}
           AND "creator_id" = #{userId}
         FOR UPDATE
     </select>
@@ -47,7 +53,7 @@
         SELECT EXISTS (
             SELECT 1
             FROM "conversation_group"
-            WHERE "group_id" = #{groupId}
+            WHERE "id" = #{groupId}
               AND "creator_id" = #{userId}
         )
     </select>
@@ -57,23 +63,18 @@
         SET "name" = #{name},
             "description" = #{description},
             "modifier_id" = #{modifierId}
-        WHERE "group_id" = #{groupId}
+        WHERE "id" = #{id}
           AND "creator_id" = #{creatorId}
     </update>
 
     <delete id="deleteConversationGroup">
         DELETE FROM "conversation_group"
-        WHERE "group_id" = #{groupId}
+        WHERE "id" = #{groupId}
           AND "creator_id" = #{userId}
     </delete>
 
-    <select id="listConversationGroups" resultMap="ConversationGroupResultMap">
-        SELECT conversation_group."id",
-               conversation_group."creator_id",
-               conversation_group."creation_time",
-               conversation_group."modifier_id",
-               conversation_group."modification_time",
-               conversation_group."group_id",
+    <select id="listConversationGroups" resultMap="ConversationGroupAbstractResultMap">
+        SELECT conversation_group."id" AS "group_id",
                conversation_group."name",
                conversation_group."description",
                conversation_group."sort_order",
@@ -81,19 +82,25 @@
         FROM "conversation_group" conversation_group
         LEFT JOIN "conversation" conversation
           ON conversation."creator_id" = conversation_group."creator_id"
-         AND conversation."conversation_group_id" = conversation_group."group_id"
+         AND conversation."conversation_group_id" = conversation_group."id"
          AND conversation."deleted" = FALSE
         WHERE conversation_group."creator_id" = #{userId}
         GROUP BY conversation_group."id"
         ORDER BY conversation_group."sort_order" ASC, conversation_group."id" ASC
     </select>
 
-    <update id="updateConversationGroupSortOrder">
-        UPDATE "conversation_group"
-        SET "sort_order" = #{sortOrder},
-            "modifier_id" = #{userId}
-        WHERE "group_id" = #{groupId}
-          AND "creator_id" = #{userId}
+    <update id="batchUpdateConversationGroupSortOrders">
+        UPDATE "conversation_group" conversation_group
+        SET "sort_order" = requested."sort_order",
+            "modifier_id" = requested."modifier_id"
+        FROM (
+            VALUES
+            <foreach item="group" collection="groups" separator=",">
+                (#{group.id}, #{group.sortOrder}, #{group.modifierId})
+            </foreach>
+        ) AS requested("id", "sort_order", "modifier_id")
+        WHERE conversation_group."id" = requested."id"
+          AND conversation_group."creator_id" = requested."modifier_id"
     </update>
 
     <update id="incrementConversationGroupSortOrders">
@@ -103,8 +110,8 @@
         WHERE "creator_id" = #{userId}
     </update>
 
-    <select id="listConversationGroupIdsForUpdate" resultType="string">
-        SELECT "group_id"
+    <select id="listConversationGroupsForUpdate" resultMap="ConversationGroupResultMap">
+        SELECT <include refid="ConversationGroupColumns"/>
         FROM "conversation_group"
         WHERE "creator_id" = #{userId}
         ORDER BY "sort_order" ASC, "id" ASC

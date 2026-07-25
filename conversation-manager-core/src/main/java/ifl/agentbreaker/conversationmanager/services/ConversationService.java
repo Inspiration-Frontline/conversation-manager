@@ -129,26 +129,21 @@ public class ConversationService implements IConversationRpcService
     public ServiceResponse<ConversationAbstract> createConversation(CreateConversationRequest request)
     {
         long userId = UserContextService.getCurrentUserId();
-        String groupId = request == null ? null : TextNormalizer.trimToNull(request.getConversationGroupId());
-        ConversationGroup group = null;
-        if (StringUtils.hasText(groupId))
-        {
-            group = conversationGroupMapper.getConversationGroupByIdForUser(groupId, userId);
-            if (group == null)
-                return ServiceResponse.buildErrorResponse(ERROR_INVALID_CONVERSATION, "Conversation Group does not exist.");
-        }
-
         Conversation conversation = new Conversation();
         conversation.setCreatorId(userId);
         conversation.setModifierId(userId);
         conversation.setConversationId(BusinessIdManager.newConversationId());
         conversation.setTitle(ConversationTitleManager.DEFAULT_TITLE);
         conversation.setPinned(false);
-        conversation.setConversationGroupId(groupId);
-        conversation.setConversationGroupName(group == null ? null : group.getName());
         conversation.setDeleted(false);
 
+        Long groupId = request == null ? null : request.getConversationGroupId();
+        if (!setGroupId(conversation, groupId, userId))
+            return ServiceResponse.buildErrorResponse(
+                ERROR_INVALID_CONVERSATION, "Conversation Group does not exist.");
+
         Conversation createdConversation = conversationMapper.insertConversation(conversation);
+
         return ServiceResponse.buildSuccessResponse(toConversationAbstract(createdConversation == null ? conversation : createdConversation));
     }
 
@@ -347,7 +342,7 @@ public class ConversationService implements IConversationRpcService
         int offset = (pageIndex - 1) * pageSize;
         String keyword = TextNormalizer.trimToEmpty(request.getKeyword());
 
-        String conversationGroupId = TextNormalizer.trimToNull(request.getConversationGroupId());
+        Long conversationGroupId = request.getConversationGroupId();
         boolean includeGrouped = request.isIncludeGrouped() && conversationGroupId == null;
         long total = conversationMapper.countConversations(userId, keyword, conversationGroupId, includeGrouped);
         List<Conversation> conversations = conversationMapper.listConversations(
@@ -632,6 +627,29 @@ public class ConversationService implements IConversationRpcService
             log.warn("Failed to parse conversation message JSON.", e);
             return Collections.emptyList();
         }
+    }
+
+    /**
+     * Resolves optional Group membership only after the new Conversation shell has been assembled.
+     *
+     * @param conversation new Conversation awaiting persistence
+     * @param groupId optional numeric Group ID
+     * @param userId authenticated owner ID
+     * @return whether the requested Group is absent or owned by the user
+     */
+    private boolean setGroupId(Conversation conversation, Long groupId, long userId)
+    {
+        if (groupId == null)
+            return true;
+
+        ConversationGroup group = conversationGroupMapper.getConversationGroupByIdForUser(groupId, userId);
+        if (group == null)
+            return false;
+
+        conversation.setConversationGroupId(group.getId());
+        conversation.setConversationGroupName(group.getName());
+
+        return true;
     }
 
     /**

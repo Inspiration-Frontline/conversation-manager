@@ -3,6 +3,7 @@ package ifl.agentbreaker.conversationmanager.services.rounds;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import ifl.agentbreaker.conversationmanager.config.ConversationReferenceProperties;
 import ifl.agentbreaker.conversationmanager.dao.ConversationRoundFileMapper;
 import ifl.agentbreaker.conversationmanager.dao.FileCleanupTaskMapper;
 import ifl.agentbreaker.conversationmanager.dao.FileResourceMapper;
@@ -23,6 +24,7 @@ import ifl.agentbreaker.conversationmanager.domain.constants.LlmMessageRole;
 import ifl.agentbreaker.conversationmanager.domain.constants.LlmMessageStorageMode;
 import ifl.agentbreaker.conversationmanager.domain.constants.ToolCallExecutionStatus;
 import ifl.agentbreaker.conversationmanager.domain.constants.ToolSourceType;
+import ifl.agentbreaker.conversationmanager.domain.dtos.ConversationReferenceBoundary;
 import ifl.agentbreaker.conversationmanager.domain.dtos.responses.ConversationReplayResult;
 import ifl.agentbreaker.conversationmanager.domain.dtos.responses.ConversationRoundHistoryResult;
 import ifl.agentbreaker.conversationmanager.domain.dtos.responses.RoundHistoryView;
@@ -125,6 +127,9 @@ public class ConversationRoundService
 
     @Autowired
     private ConversationRoundValidator conversationRoundValidator;
+
+    @Autowired
+    private ConversationReferenceProperties conversationReferenceProperties;
 
     @Autowired
     private ConversationRoundPayloadHasher conversationRoundPayloadHasher;
@@ -320,7 +325,8 @@ public class ConversationRoundService
         long userId, String destinationConversationId, List<ConversationReference> references)
     {
         if (userId <= 0 || !StringUtils.hasText(destinationConversationId)
-            || references.isEmpty() || references.size() > 10)
+            || references.isEmpty()
+            || references.size() > conversationReferenceProperties.getMaxCountPerRound())
             throw new RoundPersistenceException(
                 ConversationErrorCode.CONVERSATION_ERROR_CODE_INVALID_REQUEST_VALUE,
                 "The Conversation reference request is invalid.");
@@ -328,13 +334,13 @@ public class ConversationRoundService
         Conversation destination = conversationMapper.getConversationByIdAndUser(destinationConversationId, userId);
         if (destination == null)
             throw new RoundPersistenceException(ERROR_CONVERSATION_NOT_FOUND, "Conversation does not exist.");
-        if (!StringUtils.hasText(destination.getConversationGroupId()))
+        if (destination.getConversationGroupId() == null)
             throw new RoundPersistenceException(
                 ConversationErrorCode.CONVERSATION_ERROR_CODE_INVALID_REQUEST_VALUE,
                 "Conversation references require a Group.");
 
         Set<String> sourceIds = new LinkedHashSet<>();
-        List<PreparedConversationReference> prepared = new ArrayList<>();
+        List<ConversationReferenceBoundary> boundaries = new ArrayList<>();
         for (ConversationReference reference : references)
         {
             String sourceId = reference.getSourceConversationId();
@@ -346,28 +352,56 @@ public class ConversationRoundService
                     ConversationErrorCode.CONVERSATION_ERROR_CODE_INVALID_REQUEST_VALUE,
                     "Conversation references must be non-empty, unique, and use a positive boundary.");
 
-            Conversation source = conversationMapper.getConversationByIdAndUser(sourceId, userId);
+            boundaries.add(toBoundary(reference));
+        }
+
+        Map<String, Conversation> sourcesById = conversationMapper
+            .listConversationsByIdsAndUser(sourceIds, userId)
+            .stream()
+            .collect(Collectors.toMap(Conversation::getConversationId, source -> source));
+        Map<RoundBoundaryKey, ConversationRound> roundsByBoundary = conversationRoundMapper
+            .listRoundsAtBoundaries(boundaries)
+            .stream()
+            .collect(Collectors.toMap(
+                round -> new RoundBoundaryKey(round.getConversationId(), round.getRoundNumber()),
+                round -> round));
+
+        for (ConversationReferenceBoundary boundary : boundaries)
+        {
+            Conversation source = sourcesById.get(boundary.sourceConversationId());
             if (source == null || !Objects.equals(
                 destination.getConversationGroupId(), source.getConversationGroupId()))
                 throw new RoundPersistenceException(
                     ConversationErrorCode.CONVERSATION_ERROR_CODE_INVALID_REQUEST_VALUE,
                     "Every referenced Conversation must belong to the current Group.");
-            if (reference.getSourceEndRoundNumber() > source.getLatestRoundNumber())
+            if (boundary.sourceEndRoundNumber() > source.getLatestRoundNumber())
                 throw new RoundPersistenceException(
                     ConversationErrorCode.CONVERSATION_ERROR_CODE_INVALID_REQUEST_VALUE,
                     "A referenced Round boundary is newer than the source Conversation.");
-            ConversationRound boundary = conversationRoundMapper.getRound(
-                sourceId, reference.getSourceEndRoundNumber());
-            if (boundary == null || boundary.isDeleted())
+
+            ConversationRound boundaryRound = roundsByBoundary.get(new RoundBoundaryKey(
+                boundary.sourceConversationId(), boundary.sourceEndRoundNumber()));
+            if (boundaryRound == null || boundaryRound.isDeleted())
                 throw new RoundPersistenceException(
                     ConversationErrorCode.CONVERSATION_ERROR_CODE_ROUND_NOT_FOUND_VALUE,
                     "A referenced Round boundary does not exist.");
+        }
 
+        Map<String, List<ConversationRound>> completedRoundsByConversation = conversationRoundMapper
+            .listCompletedRoundsAtOrBeforeBoundaries(boundaries)
+            .stream()
+            .collect(Collectors.groupingBy(ConversationRound::getConversationId));
+
+        List<PreparedConversationReference> prepared = new ArrayList<>();
+        for (ConversationReference reference : references)
+        {
+            Conversation source = sourcesById.get(reference.getSourceConversationId());
             PreparedConversationReference.Builder item = PreparedConversationReference.newBuilder()
                 .setReference(reference)
                 .setSourceTitle(source.getTitle());
-            for (ConversationRound round : conversationRoundMapper.listCompletedRoundsAtOrBefore(
-                sourceId, reference.getSourceEndRoundNumber()))
+
+            for (ConversationRound round : completedRoundsByConversation.getOrDefault(
+                reference.getSourceConversationId(), List.of()))
             {
                 item.addContextMessages(LlmConversationMessage.newBuilder()
                     .setRole(MessageRole.MESSAGE_ROLE_USER)
@@ -378,8 +412,10 @@ public class ConversationRoundService
                     .setContent(round.getFinalAnswerContent() == null ? "" : round.getFinalAnswerContent())
                     .build());
             }
+
             prepared.add(item.build());
         }
+
         return List.copyOf(prepared);
     }
 
@@ -509,19 +545,37 @@ public class ConversationRoundService
         if (request.getReferencesCount() == 0)
             return;
 
+        List<ConversationReferenceBoundary> boundaries = request.getReferencesList()
+            .stream()
+            .map(this::toBoundary)
+            .toList();
+        Set<String> sourceIds = boundaries.stream()
+            .map(ConversationReferenceBoundary::sourceConversationId)
+            .collect(Collectors.toCollection(LinkedHashSet::new));
+        Map<String, Conversation> sourcesById = conversationMapper
+            .listConversationsByIdsAndUser(sourceIds, request.getUserId())
+            .stream()
+            .collect(Collectors.toMap(Conversation::getConversationId, source -> source));
+        Map<RoundBoundaryKey, ConversationRound> roundsByBoundary = conversationRoundMapper
+            .listRoundsAtBoundaries(boundaries)
+            .stream()
+            .collect(Collectors.toMap(
+                boundary -> new RoundBoundaryKey(boundary.getConversationId(), boundary.getRoundNumber()),
+                boundary -> boundary));
+
         List<ConversationRoundReference> rows = new ArrayList<>();
         int referenceOrder = 0;
         for (ConversationReference reference : request.getReferencesList())
         {
-            Conversation source = conversationMapper.getConversationByIdAndUser(
-                reference.getSourceConversationId(), request.getUserId());
+            Conversation source = sourcesById.get(reference.getSourceConversationId());
             if (source == null || !Objects.equals(
                 destination.getConversationGroupId(), source.getConversationGroupId())
-                || !StringUtils.hasText(destination.getConversationGroupId()))
+                || destination.getConversationGroupId() == null)
                 throw error(ConversationErrorCode.CONVERSATION_ERROR_CODE_INVALID_REQUEST,
                     "Every referenced Conversation must belong to the destination Group.");
-            ConversationRound boundary = conversationRoundMapper.getRound(
-                source.getConversationId(), reference.getSourceEndRoundNumber());
+
+            ConversationRound boundary = roundsByBoundary.get(new RoundBoundaryKey(
+                source.getConversationId(), reference.getSourceEndRoundNumber()));
             if (boundary == null || boundary.isDeleted()
                 || reference.getSourceEndRoundNumber() > source.getLatestRoundNumber())
                 throw error(ConversationErrorCode.CONVERSATION_ERROR_CODE_ROUND_NOT_FOUND,
@@ -536,6 +590,7 @@ public class ConversationRoundService
             row.setReferenceOrder(referenceOrder++);
             rows.add(row);
         }
+
         requireAffectedRows("Conversation reference", rows.size(),
             conversationRoundReferenceMapper.insertReferences(rows));
     }
@@ -1137,6 +1192,18 @@ public class ConversationRoundService
     }
 
     /**
+     * Builds the immutable projection used by the set-based boundary queries.
+     *
+     * @param reference public source and boundary selection
+     * @return query projection with the same frozen values
+     */
+    private ConversationReferenceBoundary toBoundary(ConversationReference reference)
+    {
+        return new ConversationReferenceBoundary(
+            reference.getSourceConversationId(), reference.getSourceEndRoundNumber());
+    }
+
+    /**
      * Applies the authenticated owner to both audit columns so child rows cannot be attributed to
      * the service account or to an untrusted ID embedded in a nested message.
      *
@@ -1202,6 +1269,10 @@ public class ConversationRoundService
     }
 
     private record ResponseToolCallKey(long llmCallId, String toolCallId)
+    {
+    }
+
+    private record RoundBoundaryKey(String conversationId, long roundNumber)
     {
     }
 }

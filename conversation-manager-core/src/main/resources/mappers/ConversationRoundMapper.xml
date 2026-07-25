@@ -34,6 +34,14 @@
         "deletion_time", "deleted_by"
     </sql>
 
+    <sql id="RoundColumnsWithAlias">
+        r."id", r."creator_id", r."creation_time", r."modifier_id", r."modification_time",
+        r."conversation_id", r."round_number", r."user_request_content", r."user_request_content_parts",
+        r."final_answer_content", r."final_answer_content_parts", r."final_source_turn_number", r."status",
+        r."error_message", r."start_time", r."end_time", r."payload_hash_version", r."payload_hash", r."deleted",
+        r."deletion_time", r."deleted_by"
+    </sql>
+
     <select id="insertRound" resultMap="RoundResultMap" affectData="true">
         INSERT INTO "conversation_round" (
             "creator_id", "modifier_id", "conversation_id", "round_number", "user_request_content",
@@ -74,6 +82,36 @@
           AND r."status" = 'COMPLETED'
           AND r."deleted" = FALSE
         ORDER BY r."round_number" ASC
+    </select>
+
+    <select id="listRoundsAtBoundaries" resultMap="RoundResultMap">
+        SELECT <include refid="RoundColumnsWithAlias"/>
+        FROM "conversation_round" r
+        INNER JOIN (
+            VALUES
+            <foreach item="boundary" collection="boundaries" separator=",">
+                (#{boundary.sourceConversationId}, #{boundary.sourceEndRoundNumber})
+            </foreach>
+        ) AS requested("conversation_id", "round_number")
+          ON requested."conversation_id" = r."conversation_id"
+         AND requested."round_number" = r."round_number"
+    </select>
+
+    <select id="listCompletedRoundsAtOrBeforeBoundaries" resultMap="RoundResultMap">
+        SELECT <include refid="RoundColumnsWithAlias"/>,
+               (SELECT COUNT(*) FROM "conversation_turn" turn WHERE turn."round_id" = r."id") AS "turn_count"
+        FROM "conversation_round" r
+        INNER JOIN (
+            VALUES
+            <foreach item="boundary" collection="boundaries" separator=",">
+                (#{boundary.sourceConversationId}, #{boundary.sourceEndRoundNumber})
+            </foreach>
+        ) AS requested("conversation_id", "round_number")
+          ON requested."conversation_id" = r."conversation_id"
+         AND r."round_number" &lt;= requested."round_number"
+        WHERE r."status" = 'COMPLETED'
+          AND r."deleted" = FALSE
+        ORDER BY r."conversation_id" ASC, r."round_number" ASC
     </select>
 
     <select id="getLatestCompletedRoundAtOrBefore" resultMap="RoundResultMap">

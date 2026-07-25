@@ -1,9 +1,11 @@
 package ifl.agentbreaker.conversationmanager.dao;
 
+import ifl.agentbreaker.conversationmanager.domain.dtos.ConversationReferenceBoundary;
 import ifl.agentbreaker.conversationmanager.domain.entities.pg.ConversationRound;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 
+import java.util.Collection;
 import java.util.List;
 
 @Mapper
@@ -18,6 +20,12 @@ public interface ConversationRoundMapper
 
     List<ConversationRound> listCompletedRoundsAtOrBefore(@Param("conversationId") String conversationId,
                                                            @Param("endRoundNumber") long endRoundNumber);
+
+    List<ConversationRound> listRoundsAtBoundaries(
+        @Param("boundaries") Collection<ConversationReferenceBoundary> boundaries);
+
+    List<ConversationRound> listCompletedRoundsAtOrBeforeBoundaries(
+        @Param("boundaries") Collection<ConversationReferenceBoundary> boundaries);
 
     ConversationRound getLatestCompletedRoundAtOrBefore(@Param("conversationId") String conversationId,
                                                          @Param("endRoundNumber") long endRoundNumber);

@@ -27,7 +27,7 @@ public class Conversation extends EntityBase
     /**
      * Optional Group membership. A null value means the Conversation is displayed at root level.
      */
-    private String conversationGroupId;
+    private Long conversationGroupId;
 
     /**
      * Group display name populated by navigation queries.

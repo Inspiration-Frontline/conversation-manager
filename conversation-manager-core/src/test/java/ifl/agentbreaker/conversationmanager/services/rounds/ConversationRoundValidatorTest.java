@@ -2,6 +2,7 @@ package ifl.agentbreaker.conversationmanager.services.rounds;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import ifl.agentbreaker.commons.api.dto.AgentIdentity;
+import ifl.agentbreaker.conversationmanager.config.ConversationReferenceProperties;
 import ifl.agentbreaker.conversationmanager.rpc.AssistantAnswer;
 import ifl.agentbreaker.conversationmanager.rpc.AssistantMessage;
 import ifl.agentbreaker.conversationmanager.rpc.ConversationErrorCode;
@@ -44,7 +45,11 @@ class ConversationRoundValidatorTest
     @BeforeEach
     void setUp()
     {
+        ConversationReferenceProperties referenceProperties = new ConversationReferenceProperties();
+        referenceProperties.setMaxCountPerRound(10);
+
         ReflectionTestUtils.setField(validator, "objectMapper", new ObjectMapper());
+        ReflectionTestUtils.setField(validator, "conversationReferenceProperties", referenceProperties);
     }
 
     @Test
