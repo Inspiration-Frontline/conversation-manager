@@ -324,13 +324,37 @@ public class ConversationRoundService
     public List<PreparedConversationReference> prepareReferences(
         long userId, String destinationConversationId, List<ConversationReference> references)
     {
+        validatePrepareReferencesRequest(userId, destinationConversationId, references);
+
+        Conversation destination = getReferenceDestination(userId, destinationConversationId);
+        List<ConversationReferenceBoundary> boundaries = buildReferenceBoundaries(
+            destinationConversationId, references);
+        Set<String> sourceIds = boundaries.stream()
+            .map(ConversationReferenceBoundary::sourceConversationId)
+            .collect(Collectors.toCollection(LinkedHashSet::new));
+
+        Map<String, Conversation> sourcesById = loadReferenceSources(userId, sourceIds);
+        Map<RoundBoundaryKey, ConversationRound> roundsByBoundary = loadReferenceBoundaryRounds(boundaries);
+
+        validateReferenceBoundaries(destination, boundaries, sourcesById, roundsByBoundary);
+
+        Map<String, List<ConversationRound>> completedRoundsByConversation = loadCompletedReferenceRounds(boundaries);
+        return buildPreparedReferences(references, sourcesById, completedRoundsByConversation);
+    }
+
+    private void validatePrepareReferencesRequest(
+        long userId, String destinationConversationId, List<ConversationReference> references)
+    {
         if (userId <= 0 || !StringUtils.hasText(destinationConversationId)
             || references.isEmpty()
             || references.size() > conversationReferenceProperties.getMaxCountPerRound())
             throw new RoundPersistenceException(
                 ConversationErrorCode.CONVERSATION_ERROR_CODE_INVALID_REQUEST_VALUE,
                 "The Conversation reference request is invalid.");
+    }
 
+    private Conversation getReferenceDestination(long userId, String destinationConversationId)
+    {
         Conversation destination = conversationMapper.getConversationByIdAndUser(destinationConversationId, userId);
         if (destination == null)
             throw new RoundPersistenceException(ERROR_CONVERSATION_NOT_FOUND, "Conversation does not exist.");
@@ -339,6 +363,12 @@ public class ConversationRoundService
                 ConversationErrorCode.CONVERSATION_ERROR_CODE_INVALID_REQUEST_VALUE,
                 "Conversation references require a Group.");
 
+        return destination;
+    }
+
+    private List<ConversationReferenceBoundary> buildReferenceBoundaries(
+        String destinationConversationId, List<ConversationReference> references)
+    {
         Set<String> sourceIds = new LinkedHashSet<>();
         List<ConversationReferenceBoundary> boundaries = new ArrayList<>();
         for (ConversationReference reference : references)
@@ -355,17 +385,34 @@ public class ConversationRoundService
             boundaries.add(toBoundary(reference));
         }
 
-        Map<String, Conversation> sourcesById = conversationMapper
+        return List.copyOf(boundaries);
+    }
+
+    private Map<String, Conversation> loadReferenceSources(long userId, Set<String> sourceIds)
+    {
+        return conversationMapper
             .listConversationsByIdsAndUser(sourceIds, userId)
             .stream()
             .collect(Collectors.toMap(Conversation::getConversationId, source -> source));
-        Map<RoundBoundaryKey, ConversationRound> roundsByBoundary = conversationRoundMapper
+    }
+
+    private Map<RoundBoundaryKey, ConversationRound> loadReferenceBoundaryRounds(
+        List<ConversationReferenceBoundary> boundaries)
+    {
+        return conversationRoundMapper
             .listRoundsAtBoundaries(boundaries)
             .stream()
             .collect(Collectors.toMap(
                 round -> new RoundBoundaryKey(round.getConversationId(), round.getRoundNumber()),
                 round -> round));
+    }
 
+    private void validateReferenceBoundaries(
+        Conversation destination,
+        List<ConversationReferenceBoundary> boundaries,
+        Map<String, Conversation> sourcesById,
+        Map<RoundBoundaryKey, ConversationRound> roundsByBoundary)
+    {
         for (ConversationReferenceBoundary boundary : boundaries)
         {
             Conversation source = sourcesById.get(boundary.sourceConversationId());
@@ -386,12 +433,22 @@ public class ConversationRoundService
                     ConversationErrorCode.CONVERSATION_ERROR_CODE_ROUND_NOT_FOUND_VALUE,
                     "A referenced Round boundary does not exist.");
         }
+    }
 
-        Map<String, List<ConversationRound>> completedRoundsByConversation = conversationRoundMapper
+    private Map<String, List<ConversationRound>> loadCompletedReferenceRounds(
+        List<ConversationReferenceBoundary> boundaries)
+    {
+        return conversationRoundMapper
             .listCompletedRoundsAtOrBeforeBoundaries(boundaries)
             .stream()
             .collect(Collectors.groupingBy(ConversationRound::getConversationId));
+    }
 
+    private List<PreparedConversationReference> buildPreparedReferences(
+        List<ConversationReference> references,
+        Map<String, Conversation> sourcesById,
+        Map<String, List<ConversationRound>> completedRoundsByConversation)
+    {
         List<PreparedConversationReference> prepared = new ArrayList<>();
         for (ConversationReference reference : references)
         {
