@@ -98,13 +98,17 @@ public class ConversationController
         return conversationRoundService.getHttpHistory(UserContextService.getCurrentUserId(), conversationId);
     }
 
-    /** Freezes ordered source titles and high-water boundaries without loading message bodies. */
+    /**
+     * Freezes ordered source titles and high-water boundaries without loading message bodies.
+     *
+     * @param request destination scope and ordered source Conversation identifiers
+     * @return ordered title and boundary snapshots, or a client-safe validation error
+     */
     @PostMapping("/references/resolve")
     public ServiceResponse<List<ResolvedConversationReference>> resolveConversationReferences(
         @Valid @RequestBody ResolveConversationReferencesRequest request)
     {
-        return conversationRoundService.resolveConversationReferences(
-            UserContextService.getCurrentUserId(), request);
+        return conversationRoundService.resolveConversationReferences(request);
     }
 
     /**

@@ -3,6 +3,7 @@ package ifl.agentbreaker.conversationmanager.services.rounds;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import ifl.agentbreaker.authcenter.session.UserContextService;
 import ifl.agentbreaker.conversationmanager.config.ConversationReferenceProperties;
 import ifl.agentbreaker.conversationmanager.dao.ConversationRoundFileMapper;
 import ifl.agentbreaker.conversationmanager.dao.FileCleanupTaskMapper;
@@ -216,10 +217,14 @@ public class ConversationRoundService
      * Freezes the current high-water boundary and title for every selected source in one request.
      * The browser uses this lightweight projection before streaming, while Runner preparation
      * still revalidates the same ownership, Group, and boundary invariants at execution time.
+     *
+     * @param request destination scope and ordered source Conversation identifiers
+     * @return ordered title and boundary snapshots, or a client-safe validation error
      */
     public ServiceResponse<List<ResolvedConversationReference>> resolveConversationReferences(
-        long userId, ResolveConversationReferencesRequest request)
+        ResolveConversationReferencesRequest request)
     {
+        long userId = UserContextService.getCurrentUserId();
         try
         {
             return ServiceResponse.buildSuccessResponse(resolveReferenceBoundaries(userId, request));
@@ -258,13 +263,15 @@ public class ConversationRoundService
             || request.getSourceConversationIds().size() > conversationReferenceProperties.getMaxCountPerRound())
             throw invalidReferenceRequest("The Conversation reference request is invalid.");
 
+        long requestedGroupId = request.getConversationGroupId();
+        if (requestedGroupId < 0)
+            throw invalidReferenceRequest("Conversation Group ID must be positive.");
+
         boolean hasDestination = StringUtils.hasText(request.getDestinationConversationId());
-        boolean hasGroup = request.getConversationGroupId() != null;
+        boolean hasGroup = requestedGroupId > 0;
         if (hasDestination == hasGroup)
             throw invalidReferenceRequest(
                 "Exactly one destination Conversation or Conversation Group is required.");
-        if (hasGroup && request.getConversationGroupId() <= 0)
-            throw invalidReferenceRequest("Conversation Group ID must be positive.");
 
         List<String> sourceIds = request.getSourceConversationIds();
         Set<String> uniqueSourceIds = new LinkedHashSet<>();
