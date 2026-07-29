@@ -37,5 +37,5 @@ public interface FileCleanupTaskMapper
                    @Param("leaseToken") String leaseToken,
                    @Param("leaseSeconds") int leaseSeconds);
 
-    int cancelByFileResourceId(@Param("fileResourceId") long fileResourceId);
+    int cancelByFileResourceIds(@Param("fileResourceIds") Collection<Long> fileResourceIds);
 }

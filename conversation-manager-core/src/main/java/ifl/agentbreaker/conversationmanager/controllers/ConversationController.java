@@ -9,6 +9,7 @@ import ifl.agentbreaker.conversationmanager.api.dto.requests.UpdateTitleRequest;
 import ifl.agentbreaker.conversationmanager.domain.dtos.requests.*;
 import ifl.agentbreaker.conversationmanager.domain.dtos.responses.ConversationSharingResult;
 import ifl.agentbreaker.conversationmanager.domain.dtos.responses.ConversationShareSummary;
+import ifl.agentbreaker.conversationmanager.domain.dtos.responses.ResolvedConversationReference;
 import ifl.agentbreaker.conversationmanager.domain.dtos.responses.SharedConversationView;
 import ifl.agentbreaker.conversationmanager.domain.dtos.responses.RoundHistoryView;
 import ifl.agentbreaker.conversationmanager.services.ConversationService;
@@ -95,6 +96,15 @@ public class ConversationController
     public ServiceResponse<RoundHistoryView> getConversationRounds(@PathVariable String conversationId)
     {
         return conversationRoundService.getHttpHistory(UserContextService.getCurrentUserId(), conversationId);
+    }
+
+    /** Freezes ordered source titles and high-water boundaries without loading message bodies. */
+    @PostMapping("/references/resolve")
+    public ServiceResponse<List<ResolvedConversationReference>> resolveConversationReferences(
+        @Valid @RequestBody ResolveConversationReferencesRequest request)
+    {
+        return conversationRoundService.resolveConversationReferences(
+            UserContextService.getCurrentUserId(), request);
     }
 
     /**

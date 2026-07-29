@@ -4,10 +4,9 @@ import java.time.Instant;
 
 /** Authenticated read-only snapshot returned for a valid share link. */
 public record SharedConversationView(
-    String parentConversationId,
     String sharedConversationId,
     String title,
     Instant expiresAt,
-    RoundHistoryView history)
+    SharedRoundHistoryView history)
 {
 }

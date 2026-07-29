@@ -114,6 +114,17 @@
         ORDER BY r."conversation_id" ASC, r."round_number" ASC
     </select>
 
+    <select id="listConversationIdsWithCompletedRounds" resultType="java.lang.String">
+        SELECT DISTINCT "conversation_id"
+        FROM "conversation_round"
+        WHERE "conversation_id" IN
+        <foreach item="conversationId" collection="conversationIds" open="(" separator="," close=")">
+            #{conversationId}
+        </foreach>
+          AND "status" = 'COMPLETED'
+          AND "deleted" = FALSE
+    </select>
+
     <select id="getLatestCompletedRoundAtOrBefore" resultMap="RoundResultMap">
         SELECT <include refid="RoundColumns"/>
         FROM "conversation_round"

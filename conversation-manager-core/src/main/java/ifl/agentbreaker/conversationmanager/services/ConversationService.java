@@ -15,6 +15,7 @@ import ifl.agentbreaker.conversationmanager.dao.ConversationMapper;
 import ifl.agentbreaker.conversationmanager.dao.ConversationGroupMapper;
 import ifl.agentbreaker.conversationmanager.dao.ConversationMessageMapper;
 import ifl.agentbreaker.conversationmanager.dao.ConversationRoundMapper;
+import ifl.agentbreaker.conversationmanager.dao.ConversationRoundReferenceMapper;
 import ifl.agentbreaker.conversationmanager.dao.ConversationSharingMapper;
 import ifl.agentbreaker.conversationmanager.services.files.ConversationFileService;
 import ifl.agentbreaker.conversationmanager.domain.constants.ExportFormat;
@@ -107,6 +108,9 @@ public class ConversationService implements IConversationRpcService
 
     @Autowired
     private ConversationRoundMapper conversationRoundMapper;
+
+    @Autowired
+    private ConversationRoundReferenceMapper conversationRoundReferenceMapper;
 
     @Autowired
     private ConversationSharingMapper conversationSharingMapper;
@@ -232,7 +236,7 @@ public class ConversationService implements IConversationRpcService
             return ServiceResponse.buildErrorResponse(ERROR_CONVERSATION_NOT_FOUND, "Conversation does not exist.");
 
         return ServiceResponse.buildSuccessResponse(new SharedConversationView(
-            source.getConversationId(), sharing.getSharedConversationId(), source.getTitle(), sharing.getExpiresAt(),
+            sharing.getSharedConversationId(), source.getTitle(), sharing.getExpiresAt(),
             conversationRoundService.getSharedHttpHistory(source.getConversationId(), sharing.getEndRoundNumber())));
     }
 
@@ -308,6 +312,12 @@ public class ConversationService implements IConversationRpcService
         Conversation source = conversationMapper.getConversationById(sharing.getParentConversationId());
         if (source == null || source.isDeleted())
             return ServiceResponse.buildErrorResponse(ERROR_CONVERSATION_NOT_FOUND, "Conversation does not exist.");
+
+        if (conversationRoundReferenceMapper.hasReferencesInCompletedRoundsAtOrBefore(
+            source.getConversationId(), sharing.getEndRoundNumber()))
+            return ServiceResponse.buildErrorResponse(
+                ERROR_INVALID_CONVERSATION,
+                "Shared conversations containing references cannot be forked.");
 
         Conversation forked = new Conversation();
         forked.setCreatorId(userId);

@@ -12,6 +12,7 @@ import ifl.agentbreaker.conversationmanager.dao.ConversationLlmRequestMessageMap
 import ifl.agentbreaker.conversationmanager.dao.ConversationLlmRequestMessageToolCallMapper;
 import ifl.agentbreaker.conversationmanager.dao.ConversationLlmResponseToolCallMapper;
 import ifl.agentbreaker.conversationmanager.dao.ConversationLlmToolDefinitionMapper;
+import ifl.agentbreaker.conversationmanager.dao.ConversationGroupMapper;
 import ifl.agentbreaker.conversationmanager.dao.ConversationMapper;
 import ifl.agentbreaker.conversationmanager.dao.ConversationRoundMapper;
 import ifl.agentbreaker.conversationmanager.dao.ConversationRoundReferenceMapper;
@@ -25,10 +26,13 @@ import ifl.agentbreaker.conversationmanager.domain.constants.LlmMessageStorageMo
 import ifl.agentbreaker.conversationmanager.domain.constants.ToolCallExecutionStatus;
 import ifl.agentbreaker.conversationmanager.domain.constants.ToolSourceType;
 import ifl.agentbreaker.conversationmanager.domain.dtos.ConversationReferenceBoundary;
+import ifl.agentbreaker.conversationmanager.domain.dtos.requests.ResolveConversationReferencesRequest;
 import ifl.agentbreaker.conversationmanager.domain.dtos.responses.ConversationReplayResult;
 import ifl.agentbreaker.conversationmanager.domain.dtos.responses.ConversationRoundHistoryResult;
+import ifl.agentbreaker.conversationmanager.domain.dtos.responses.ResolvedConversationReference;
 import ifl.agentbreaker.conversationmanager.domain.dtos.responses.RoundHistoryView;
 import ifl.agentbreaker.conversationmanager.domain.dtos.responses.RoundFileHistory;
+import ifl.agentbreaker.conversationmanager.domain.dtos.responses.SharedRoundHistoryView;
 import ifl.agentbreaker.conversationmanager.domain.entities.pg.Conversation;
 import ifl.agentbreaker.conversationmanager.domain.entities.pg.ConversationLlmCall;
 import ifl.agentbreaker.conversationmanager.domain.entities.pg.ConversationLlmRequestMessage;
@@ -70,6 +74,7 @@ import stark.dataworks.boot.web.ServiceResponse;
 import java.util.ArrayList;
 import java.time.Instant;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -88,6 +93,9 @@ public class ConversationRoundService
 {
     @Autowired
     private ConversationMapper conversationMapper;
+
+    @Autowired
+    private ConversationGroupMapper conversationGroupMapper;
 
     @Autowired
     private ConversationRoundMapper conversationRoundMapper;
@@ -205,6 +213,115 @@ public class ConversationRoundService
     }
 
     /**
+     * Freezes the current high-water boundary and title for every selected source in one request.
+     * The browser uses this lightweight projection before streaming, while Runner preparation
+     * still revalidates the same ownership, Group, and boundary invariants at execution time.
+     */
+    public ServiceResponse<List<ResolvedConversationReference>> resolveConversationReferences(
+        long userId, ResolveConversationReferencesRequest request)
+    {
+        try
+        {
+            return ServiceResponse.buildSuccessResponse(resolveReferenceBoundaries(userId, request));
+        }
+        catch (RoundPersistenceException e)
+        {
+            return ServiceResponse.buildErrorResponse(e.getCode(), e.getMessage());
+        }
+    }
+
+    private List<ResolvedConversationReference> resolveReferenceBoundaries(
+        long userId, ResolveConversationReferencesRequest request)
+    {
+        List<String> orderedSourceIds = validateReferenceResolutionRequest(userId, request);
+        long groupId = resolveReferenceGroupId(userId, request, orderedSourceIds);
+        Set<String> sourceIds = new LinkedHashSet<>(orderedSourceIds);
+        Map<String, Conversation> sourcesById = loadReferenceSources(userId, sourceIds);
+        validateResolvedSources(groupId, sourceIds, sourcesById);
+
+        Set<String> sourcesWithCompletedRounds = new HashSet<>(
+            conversationRoundMapper.listConversationIdsWithCompletedRounds(sourceIds));
+        if (sourcesWithCompletedRounds.size() != sourceIds.size())
+            throw invalidReferenceRequest(
+                "Every referenced Conversation must contain an active completed Round.");
+
+        return orderedSourceIds.stream()
+            .map(sourceId -> toResolvedReference(sourcesById.get(sourceId)))
+            .toList();
+    }
+
+    private List<String> validateReferenceResolutionRequest(
+        long userId, ResolveConversationReferencesRequest request)
+    {
+        if (userId <= 0 || request == null || request.getSourceConversationIds() == null
+            || request.getSourceConversationIds().isEmpty()
+            || request.getSourceConversationIds().size() > conversationReferenceProperties.getMaxCountPerRound())
+            throw invalidReferenceRequest("The Conversation reference request is invalid.");
+
+        boolean hasDestination = StringUtils.hasText(request.getDestinationConversationId());
+        boolean hasGroup = request.getConversationGroupId() != null;
+        if (hasDestination == hasGroup)
+            throw invalidReferenceRequest(
+                "Exactly one destination Conversation or Conversation Group is required.");
+        if (hasGroup && request.getConversationGroupId() <= 0)
+            throw invalidReferenceRequest("Conversation Group ID must be positive.");
+
+        List<String> sourceIds = request.getSourceConversationIds();
+        Set<String> uniqueSourceIds = new LinkedHashSet<>();
+        for (String sourceId : sourceIds)
+        {
+            if (!StringUtils.hasText(sourceId) || !uniqueSourceIds.add(sourceId))
+                throw invalidReferenceRequest(
+                    "Referenced Conversations must be non-empty and unique.");
+        }
+        return List.copyOf(sourceIds);
+    }
+
+    private long resolveReferenceGroupId(
+        long userId, ResolveConversationReferencesRequest request, List<String> sourceIds)
+    {
+        if (StringUtils.hasText(request.getDestinationConversationId()))
+        {
+            Conversation destination = getReferenceDestination(userId, request.getDestinationConversationId());
+            if (sourceIds.contains(destination.getConversationId()))
+                throw invalidReferenceRequest("A Conversation cannot reference itself.");
+            return destination.getConversationGroupId();
+        }
+
+        long groupId = request.getConversationGroupId();
+        if (!conversationGroupMapper.existsByIdAndUser(groupId, userId))
+            throw invalidReferenceRequest("Conversation Group does not exist.");
+        return groupId;
+    }
+
+    private void validateResolvedSources(
+        long groupId, Set<String> sourceIds, Map<String, Conversation> sourcesById)
+    {
+        if (sourcesById.size() != sourceIds.size())
+            throw invalidReferenceRequest(
+                "Every referenced Conversation must belong to the current user and Group.");
+
+        for (Conversation source : sourcesById.values())
+        {
+            if (!Objects.equals(groupId, source.getConversationGroupId()))
+                throw invalidReferenceRequest(
+                    "Every referenced Conversation must belong to the current user and Group.");
+        }
+    }
+
+    private ResolvedConversationReference toResolvedReference(Conversation source)
+    {
+        return new ResolvedConversationReference(
+            source.getConversationId(), source.getTitle(), source.getLatestRoundNumber());
+    }
+
+    private RoundPersistenceException invalidReferenceRequest(String message)
+    {
+        return new RoundPersistenceException(
+            ConversationErrorCode.CONVERSATION_ERROR_CODE_INVALID_REQUEST_VALUE, message);
+    }
+
+    /**
      * Builds the read-only snapshot projection for a valid share. Ownership is intentionally not
      * checked here; the caller must have already validated the share record and its lifecycle.
      * Only active completed Rounds at or below the frozen boundary are exposed.
@@ -213,7 +330,7 @@ public class ConversationRoundService
      * @param endRoundNumber inclusive snapshot boundary
      * @return completed Round history visible through the share
      */
-    public RoundHistoryView getSharedHttpHistory(String conversationId, long endRoundNumber)
+    public SharedRoundHistoryView getSharedHttpHistory(String conversationId, long endRoundNumber)
     {
         Map<Long, List<RoundFileHistory>> filesByRound = conversationRoundFileMapper
             .listCompletedRoundFilesAtOrBefore(conversationId, endRoundNumber)
@@ -225,22 +342,21 @@ public class ConversationRoundService
 
         long latestRoundNumber = visibleRounds.isEmpty()
             ? 0
-            : visibleRounds.get(visibleRounds.size() - 1).getRoundNumber();
+            : visibleRounds.getLast().getRoundNumber();
 
-        return new RoundHistoryView(
-            conversationId,
+        return new SharedRoundHistoryView(
             latestRoundNumber,
-            visibleRounds.stream().map(round -> new RoundHistoryView.RoundView(
+            visibleRounds.stream().map(round -> new SharedRoundHistoryView.RoundView(
                 round.getRoundNumber(), extractTextContent(round), round.getFinalAnswerContent(),
                 round.getStatus().name(), round.getErrorMessage(), round.getTurnCount(),
                 round.getStartTime().toEpochMilli(), round.getEndTime().toEpochMilli(),
                 filesByRound.getOrDefault(round.getRoundNumber(), List.of()).stream()
-                    .map(file -> new RoundHistoryView.FileView(
+                    .map(file -> new SharedRoundHistoryView.FileView(
                         file.fileId(), file.originalFilename(), file.mimeType(), file.fileSize(),
                         file.kind(), file.status()))
                 .toList(),
                 referencesByRound.getOrDefault(round.getId(), List.of()).stream()
-                    .map(this::toReferenceView)
+                    .map(this::toSharedReferenceView)
                     .toList())).toList());
     }
 
@@ -259,6 +375,13 @@ public class ConversationRoundService
             reference.getSourceConversationId(),
             reference.getSourceEndRoundNumber(),
             reference.getSourceTitle());
+    }
+
+    private SharedRoundHistoryView.ReferenceView toSharedReferenceView(
+        ConversationRoundReference reference)
+    {
+        return new SharedRoundHistoryView.ReferenceView(
+            reference.getSourceEndRoundNumber(), reference.getSourceTitle());
     }
 
     /**
@@ -339,6 +462,7 @@ public class ConversationRoundService
         validateReferenceBoundaries(destination, boundaries, sourcesById, roundsByBoundary);
 
         Map<String, List<ConversationRound>> completedRoundsByConversation = loadCompletedReferenceRounds(boundaries);
+        validateCompletedReferenceRounds(boundaries, completedRoundsByConversation);
         return buildPreparedReferences(references, sourcesById, completedRoundsByConversation);
     }
 
@@ -442,6 +566,19 @@ public class ConversationRoundService
             .listCompletedRoundsAtOrBeforeBoundaries(boundaries)
             .stream()
             .collect(Collectors.groupingBy(ConversationRound::getConversationId));
+    }
+
+    private void validateCompletedReferenceRounds(
+        List<ConversationReferenceBoundary> boundaries,
+        Map<String, List<ConversationRound>> completedRoundsByConversation)
+    {
+        for (ConversationReferenceBoundary boundary : boundaries)
+        {
+            if (completedRoundsByConversation.getOrDefault(
+                boundary.sourceConversationId(), List.of()).isEmpty())
+                throw invalidReferenceRequest(
+                    "Every referenced Conversation must contain an active completed Round.");
+        }
     }
 
     private List<PreparedConversationReference> buildPreparedReferences(
@@ -697,8 +834,7 @@ public class ConversationRoundService
             "Round file",
             fileResourceIds.size(),
             conversationRoundFileMapper.insertRoundFiles(roundId, request.getUserId(), fileResourceIds));
-        for (Long fileResourceId : fileResourceIds)
-            fileCleanupTaskMapper.cancelByFileResourceId(fileResourceId);
+        fileCleanupTaskMapper.cancelByFileResourceIds(fileResourceIds);
         return fileResources;
     }
 

@@ -89,6 +89,30 @@ class ConversationReferencePreparationTest
             1, "conv_destination", List.of(ConversationReference.newBuilder()
                 .setSourceConversationId("conv_source")
                 .setSourceEndRoundNumber(1)
+            .build())));
+    }
+
+    @Test
+    void rejectsASourceWithoutAnActiveCompletedRound()
+    {
+        Conversation destination = conversation("conv_destination", "Destination", 1, 1);
+        Conversation source = conversation("conv_source", "Source", 1, 2);
+        ConversationRound boundary = round(2, "failed", null);
+        boundary.setConversationId("conv_source");
+        when(conversationMapper.getConversationByIdAndUser("conv_destination", 1)).thenReturn(destination);
+        when(conversationMapper.listConversationsByIdsAndUser(anyCollection(), eq(1L)))
+            .thenReturn(List.of(source));
+        when(conversationRoundMapper.listRoundsAtBoundaries(List.of(
+            new ConversationReferenceBoundary("conv_source", 2))))
+            .thenReturn(List.of(boundary));
+        when(conversationRoundMapper.listCompletedRoundsAtOrBeforeBoundaries(List.of(
+            new ConversationReferenceBoundary("conv_source", 2))))
+            .thenReturn(List.of());
+
+        assertThrows(RoundPersistenceException.class, () -> conversationRoundService.prepareReferences(
+            1, "conv_destination", List.of(ConversationReference.newBuilder()
+                .setSourceConversationId("conv_source")
+                .setSourceEndRoundNumber(2)
                 .build())));
     }
 

@@ -104,9 +104,13 @@
         WHERE "id" = #{id} AND "status" = 'RUNNING' AND "lease_token" = #{leaseToken}
     </update>
 
-    <update id="cancelByFileResourceId">
+    <update id="cancelByFileResourceIds">
         UPDATE "file_cleanup_task"
         SET "status" = 'CANCELLED', "lease_token" = NULL, "lease_until" = NULL
-        WHERE "file_resource_id" = #{fileResourceId} AND "status" IN ('PENDING', 'FAILED', 'CANCELLED')
+        WHERE "file_resource_id" IN
+        <foreach collection="fileResourceIds" item="fileResourceId" open="(" separator="," close=")">
+            #{fileResourceId}
+        </foreach>
+          AND "status" IN ('PENDING', 'FAILED', 'CANCELLED')
     </update>
 </mapper>

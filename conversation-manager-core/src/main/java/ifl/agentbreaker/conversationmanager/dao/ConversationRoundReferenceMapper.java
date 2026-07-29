@@ -14,4 +14,8 @@ public interface ConversationRoundReferenceMapper
     List<ConversationRoundReference> listReferencesByRoundId(long roundId);
 
     List<ConversationRoundReference> listReferencesByRoundIds(@Param("roundIds") List<Long> roundIds);
+
+    boolean hasReferencesInCompletedRoundsAtOrBefore(
+        @Param("conversationId") String conversationId,
+        @Param("endRoundNumber") long endRoundNumber);
 }

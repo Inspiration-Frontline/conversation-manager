@@ -27,6 +27,9 @@ public interface ConversationRoundMapper
     List<ConversationRound> listCompletedRoundsAtOrBeforeBoundaries(
         @Param("boundaries") Collection<ConversationReferenceBoundary> boundaries);
 
+    List<String> listConversationIdsWithCompletedRounds(
+        @Param("conversationIds") Collection<String> conversationIds);
+
     ConversationRound getLatestCompletedRoundAtOrBefore(@Param("conversationId") String conversationId,
                                                          @Param("endRoundNumber") long endRoundNumber);
 

@@ -14,6 +14,12 @@
         <result column="reference_order" property="referenceOrder"/>
     </resultMap>
 
+    <sql id="ReferenceColumns">
+        "id", "creator_id", "creation_time", "modifier_id", "modification_time",
+        "round_id", "source_conversation_id", "source_end_round_number", "source_title",
+        "reference_order"
+    </sql>
+
     <insert id="insertReferences">
         INSERT INTO "conversation_round_reference" (
             "creator_id", "modifier_id", "round_id", "source_conversation_id",
@@ -27,17 +33,32 @@
     </insert>
 
     <select id="listReferencesByRoundId" resultMap="ReferenceResultMap">
-        SELECT * FROM "conversation_round_reference"
+        SELECT <include refid="ReferenceColumns"/>
+        FROM "conversation_round_reference"
         WHERE "round_id" = #{roundId}
         ORDER BY "reference_order" ASC
     </select>
 
     <select id="listReferencesByRoundIds" resultMap="ReferenceResultMap">
-        SELECT * FROM "conversation_round_reference"
+        SELECT <include refid="ReferenceColumns"/>
+        FROM "conversation_round_reference"
         WHERE "round_id" IN
         <foreach collection="roundIds" item="roundId" open="(" separator="," close=")">
             #{roundId}
         </foreach>
         ORDER BY "round_id" ASC, "reference_order" ASC
+    </select>
+
+    <select id="hasReferencesInCompletedRoundsAtOrBefore" resultType="boolean">
+        SELECT EXISTS (
+            SELECT 1
+            FROM "conversation_round_reference" reference
+            INNER JOIN "conversation_round" round
+              ON round."id" = reference."round_id"
+            WHERE round."conversation_id" = #{conversationId}
+              AND round."round_number" &lt;= #{endRoundNumber}
+              AND round."status" = 'COMPLETED'
+              AND round."deleted" = FALSE
+        )
     </select>
 </mapper>
