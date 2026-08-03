@@ -42,6 +42,8 @@ import java.util.Set;
 @Component
 public class ConversationRoundValidator
 {
+    private static final String W3C_TRACE_ID_PATTERN = "[0-9a-f]{32}";
+
     @Autowired
     private ObjectMapper objectMapper;
 
@@ -61,6 +63,8 @@ public class ConversationRoundValidator
         require(request.getUserId() > 0, "user_id must be positive.");
         require(StringUtils.hasText(request.getConversationId()), "conversation_id is required.");
         require(request.getRoundNumber() > 0, "round_number must be positive.");
+        require(request.getTraceId().matches(W3C_TRACE_ID_PATTERN),
+            "trace_id must be a lowercase 32-character W3C trace identifier.");
         require(request.hasUserRequest(), "A user request is required.");
         validateContentPayload(
             request.getUserRequest().getContent(),
@@ -153,7 +157,7 @@ public class ConversationRoundValidator
             requireTime(turn.getStartTime(), turn.getEndTime(), "turn");
             require(turn.getStartTime() >= request.getStartTime() && turn.getEndTime() <= request.getEndTime(),
                 "Turn timing must be contained by round timing.");
-            validateLlmCall(turn.getLlmCall(), turn, index);
+            validateLlmCall(turn.getLlmCall(), turn, index, request.getTraceId());
             if (previousTurn != null)
                 validateContinuationDelta(previousTurn, turn.getLlmCall().getRequest());
             if (!isLast)
@@ -228,9 +232,11 @@ public class ConversationRoundValidator
      * @param turn parent Turn defining the time boundary
      * @param turnIndex zero-based Turn index selecting FULL_SNAPSHOT versus APPEND_DELTA
      */
-    private void validateLlmCall(LlmCall call, ConversationTurn turn, int turnIndex)
+    private void validateLlmCall(LlmCall call, ConversationTurn turn, int turnIndex, String roundTraceId)
     {
         require(call != null && call.hasRequest() && call.hasResponse(), "The turn requires one LLM call.");
+        require(call.getTraceId().equals(roundTraceId),
+            "Every LLM call trace_id must match the containing Round trace_id.");
         requireTime(call.getStartTime(), call.getEndTime(), "LLM call");
         require(call.getStartTime() >= turn.getStartTime() && call.getEndTime() <= turn.getEndTime(),
             "LLM call timing must be contained by turn timing.");

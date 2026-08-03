@@ -24,6 +24,11 @@ public class ConversationRound extends EntityBase
     private long roundNumber;
 
     /**
+     * Lowercase W3C trace identifier for the complete Agent execution.
+     */
+    private String traceId;
+
+    /**
      * Text representation of the user request.
      */
     private String userRequestContent;

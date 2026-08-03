@@ -908,6 +908,7 @@ public class ConversationRoundService
         applyAudit(conversationRound, request.getUserId());
         conversationRound.setConversationId(request.getConversationId());
         conversationRound.setRoundNumber(request.getRoundNumber());
+        conversationRound.setTraceId(request.getTraceId());
         // The database contract deliberately stores scalar text and structured parts exclusively.
         // Attachment messages still expose their text through extractTextContent(...) for titles
         // and HTTP history, but the persisted row keeps that text inside the JSON parts column.

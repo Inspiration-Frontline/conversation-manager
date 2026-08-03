@@ -327,8 +327,12 @@ public class ConversationService implements IConversationRpcService
         forked.setPinned(false);
         forked.setDeleted(false);
         Conversation createdConversation = conversationMapper.insertConversation(forked);
-        conversationRoundMapper.forkConversationHistory(
+        int copiedRounds = conversationRoundMapper.forkConversationHistory(
             source.getConversationId(), forked.getConversationId(), userId, sharing.getEndRoundNumber());
+        int correlatedRounds = conversationRoundMapper.copyForkedRoundTraceIds(
+            source.getConversationId(), forked.getConversationId(), sharing.getEndRoundNumber());
+        if (correlatedRounds != copiedRounds)
+            throw new IllegalStateException("Forked Round trace correlation row count does not match copied history.");
         conversationMapper.updateLatestRoundNumber(
             forked.getConversationId(), userId, sharing.getEndRoundNumber());
         return ServiceResponse.buildSuccessResponse(toConversationAbstract(createdConversation == null ? forked : createdConversation));

@@ -9,6 +9,7 @@
         <result column="modification_time" property="modificationTime"/>
         <result column="conversation_id" property="conversationId"/>
         <result column="round_number" property="roundNumber"/>
+        <result column="trace_id" property="traceId"/>
         <result column="user_request_content" property="userRequestContent"/>
         <result column="user_request_content_parts" property="userRequestContentParts"/>
         <result column="final_answer_content" property="finalAnswerContent"/>
@@ -28,7 +29,7 @@
 
     <sql id="RoundColumns">
         "id", "creator_id", "creation_time", "modifier_id", "modification_time",
-        "conversation_id", "round_number", "user_request_content", "user_request_content_parts",
+        "conversation_id", "round_number", "trace_id", "user_request_content", "user_request_content_parts",
         "final_answer_content", "final_answer_content_parts", "final_source_turn_number", "status",
         "error_message", "start_time", "end_time", "payload_hash_version", "payload_hash", "deleted",
         "deletion_time", "deleted_by"
@@ -36,7 +37,7 @@
 
     <sql id="RoundColumnsWithAlias">
         r."id", r."creator_id", r."creation_time", r."modifier_id", r."modification_time",
-        r."conversation_id", r."round_number", r."user_request_content", r."user_request_content_parts",
+        r."conversation_id", r."round_number", r."trace_id", r."user_request_content", r."user_request_content_parts",
         r."final_answer_content", r."final_answer_content_parts", r."final_source_turn_number", r."status",
         r."error_message", r."start_time", r."end_time", r."payload_hash_version", r."payload_hash", r."deleted",
         r."deletion_time", r."deleted_by"
@@ -44,12 +45,12 @@
 
     <select id="insertRound" resultMap="RoundResultMap" affectData="true">
         INSERT INTO "conversation_round" (
-            "creator_id", "modifier_id", "conversation_id", "round_number", "user_request_content",
+            "creator_id", "modifier_id", "conversation_id", "round_number", "trace_id", "user_request_content",
             "user_request_content_parts", "final_answer_content", "final_answer_content_parts",
             "final_source_turn_number", "status", "error_message", "start_time", "end_time",
             "payload_hash_version", "payload_hash", "deleted"
         ) VALUES (
-            #{creatorId}, #{modifierId}, #{conversationId}, #{roundNumber}, #{userRequestContent},
+            #{creatorId}, #{modifierId}, #{conversationId}, #{roundNumber}, #{traceId}, #{userRequestContent},
             CAST(#{userRequestContentParts} AS JSONB), #{finalAnswerContent},
             CAST(#{finalAnswerContentParts} AS JSONB), #{finalSourceTurnNumber}, #{status}, #{errorMessage},
             #{startTime}, #{endTime}, #{payloadHashVersion}, #{payloadHash}, #{deleted}
@@ -140,5 +141,17 @@
         SELECT fork_conversation_history(
             #{sourceConversationId}, #{targetConversationId}, #{userId}, #{endRoundNumber})
     </select>
+
+    <update id="copyForkedRoundTraceIds">
+        UPDATE "conversation_round" target_round
+        SET "trace_id" = source_round."trace_id"
+        FROM "conversation_round" source_round
+        WHERE source_round."conversation_id" = #{sourceConversationId}
+          AND target_round."conversation_id" = #{targetConversationId}
+          AND source_round."round_number" = target_round."round_number"
+          AND source_round."round_number" &lt;= #{endRoundNumber}
+          AND source_round."status" = 'COMPLETED'
+          AND source_round."deleted" = FALSE
+    </update>
 
 </mapper>

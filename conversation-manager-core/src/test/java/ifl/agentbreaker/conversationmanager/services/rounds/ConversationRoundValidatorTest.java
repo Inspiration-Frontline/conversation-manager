@@ -36,6 +36,8 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 
 class ConversationRoundValidatorTest
 {
+    private static final String TRACE_ID = "0123456789abcdef0123456789abcdef";
+
     private static final long START = 1_700_000_000_000L;
     private static final String DEFINITION_HASH = "0".repeat(64);
 
@@ -252,6 +254,7 @@ class ConversationRoundValidatorTest
             .setStatus(RoundStatus.ROUND_STATUS_COMPLETED)
             .setStartTime(START)
             .setEndTime(START + 35)
+            .setTraceId(TRACE_ID)
             .build();
     }
 
@@ -277,6 +280,7 @@ class ConversationRoundValidatorTest
             .setStatus(RoundStatus.ROUND_STATUS_COMPLETED)
             .setStartTime(START)
             .setEndTime(START + 10)
+            .setTraceId(TRACE_ID)
             .build();
     }
 
@@ -297,7 +301,7 @@ class ConversationRoundValidatorTest
             .setRequest(request)
             .setResponse(response)
             .setRequestId(requestId)
-            .setTraceId("trace")
+            .setTraceId(TRACE_ID)
             .setStartTime(start)
             .setEndTime(end)
             .build();

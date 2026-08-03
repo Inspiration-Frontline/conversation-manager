@@ -25,6 +25,28 @@ dubbo:
 
 logging:
     pattern:
-        console: "%clr(%d{yyyy-MM-dd HH:mm:ss.SSS}){faint} %clr(${LOG_LEVEL_PATTERN:-%5p}) %clr(${PID:- }){magenta} %clr(---){faint} %clr([%thread]){faint} %clr(%-40.40logger{39}){cyan} %L %clr(:){faint} %m%n"
+        console: "%clr(%d{yyyy-MM-dd HH:mm:ss.SSS}){faint} %clr(${LOG_LEVEL_PATTERN:-%5p}) %clr([trace_id=%X{traceId:-} span_id=%X{spanId:-}]){magenta} %clr([%thread]){faint} %clr(%-40.40logger{39}){cyan} %L %clr(:){faint} %m%n"
     level:
         root: INFO
+
+management:
+    tracing:
+        enabled: ${OTEL_ENABLED:true}
+        export:
+            enabled: ${OTEL_ENABLED:true}
+            otlp:
+                enabled: ${OTEL_ENABLED:true}
+        propagation:
+            consume: W3C
+            produce: W3C
+        sampling:
+            probability: ${OTEL_TRACES_SAMPLER_ARG:1.0}
+    opentelemetry:
+        tracing:
+            export:
+                otlp:
+                    endpoint: ${OTEL_EXPORTER_OTLP_ENDPOINT:http://127.0.0.1:4318/v1/traces}
+    otlp:
+        metrics:
+            export:
+                enabled: false

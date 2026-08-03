@@ -38,4 +38,8 @@ public interface ConversationRoundMapper
                                 @Param("userId") long userId,
                                 @Param("endRoundNumber") long endRoundNumber);
 
+    int copyForkedRoundTraceIds(@Param("sourceConversationId") String sourceConversationId,
+                                @Param("targetConversationId") String targetConversationId,
+                                @Param("endRoundNumber") long endRoundNumber);
+
 }
