@@ -39,8 +39,6 @@ import ifl.agentbreaker.conversationmanager.rpc.RoundStatus;
 import ifl.agentbreaker.conversationmanager.rpc.SaveConversationRoundRequest;
 import ifl.agentbreaker.conversationmanager.rpc.SaveConversationRoundResponse;
 import ifl.agentbreaker.conversationmanager.services.files.ConversationFileService;
-import ifl.agentbreaker.conversationmanager.support.TracingOperations;
-import io.micrometer.tracing.Span;
 import org.apache.dubbo.config.annotation.DubboService;
 import org.springframework.beans.factory.annotation.Autowired;
 
@@ -71,7 +69,7 @@ public class ConversationRoundRpcProvider implements ConversationRpcService
     private ConversationMapper conversationMapper;
 
     @Autowired
-    private TracingOperations tracingOperations;
+    private ConversationRoundTracing conversationRoundTracing;
 
     /**
      * Keeps the shared Round RPC surface explicit: Conversation creation belongs to the HTTP
@@ -116,17 +114,7 @@ public class ConversationRoundRpcProvider implements ConversationRpcService
     @Override
     public SaveConversationRoundResponse saveConversationRound(SaveConversationRoundRequest request)
     {
-        return tracingOperations.trace("round.persist.manager", span -> {
-            tagSaveRequest(span, request);
-            SaveConversationRoundResponse response = persistConversationRound(request);
-            tagBase(span, response.getBase());
-            if (response.getBase().getSuccess())
-            {
-                span.tag("conversation.persisted_round_number", Long.toString(response.getData().getRoundNumber()));
-                span.tag("conversation.persisted_status", response.getData().getStatus().name());
-            }
-            return response;
-        });
+        return conversationRoundTracing.traceSaveConversationRound(request, () -> persistConversationRound(request));
     }
 
     private SaveConversationRoundResponse persistConversationRound(SaveConversationRoundRequest request)
@@ -172,18 +160,8 @@ public class ConversationRoundRpcProvider implements ConversationRpcService
     @Override
     public GetConversationRoundHistoryResponse getConversationRoundHistory(GetConversationRoundHistoryRequest request)
     {
-        return tracingOperations.trace("preflight.history.manager", span -> {
-            span.tag("conversation.id", request.getConversationId());
-            GetConversationRoundHistoryResponse response = loadConversationRoundHistory(request);
-            tagBase(span, response.getBase());
-            if (response.getBase().getSuccess())
-            {
-                span.tag("conversation.latest_round_number",
-                    Long.toString(response.getData().getLatestRoundNumber()));
-                span.tag("conversation.round_count", Integer.toString(response.getData().getRoundsCount()));
-            }
-            return response;
-        });
+        return conversationRoundTracing.traceConversationRoundHistory(
+            request, () -> loadConversationRoundHistory(request));
     }
 
     private GetConversationRoundHistoryResponse loadConversationRoundHistory(GetConversationRoundHistoryRequest request)
@@ -262,17 +240,7 @@ public class ConversationRoundRpcProvider implements ConversationRpcService
     @Override
     public GetConversationReplayResponse getConversationReplay(GetConversationReplayRequest request)
     {
-        return tracingOperations.trace("context.replay.manager", span -> {
-            span.tag("conversation.id", request.getConversationId());
-            span.tag("conversation.end_round_number", Long.toString(request.getEndRoundNumber()));
-            span.tag("conversation.replay_detail", request.getDetailLevel().name());
-            GetConversationReplayResponse response = loadConversationReplay(request);
-            tagBase(span, response.getBase());
-            if (response.getBase().getSuccess())
-                span.tag("context.message_count",
-                    Integer.toString(response.getData().getContextMessagesCount()));
-            return response;
-        });
+        return conversationRoundTracing.traceConversationReplay(request, () -> loadConversationReplay(request));
     }
 
     private GetConversationReplayResponse loadConversationReplay(GetConversationReplayRequest request)
@@ -354,17 +322,8 @@ public class ConversationRoundRpcProvider implements ConversationRpcService
     @Override
     public PrepareConversationFilesResponse prepareConversationFiles(PrepareConversationFilesRequest request)
     {
-        return tracingOperations.trace("file.prepare.manager", span -> {
-            span.tag("conversation.id", request.getConversationId());
-            span.tag("file.count", Integer.toString(request.getFileIdsCount()));
-            span.tag("file.request_id", request.getRequestId());
-            PrepareConversationFilesResponse response = prepareConversationFilesInternal(request);
-            tagBase(span, response.getBase());
-            span.tag("file.ready_count", Integer.toString(response.getData().getFilesCount()));
-            span.tag("file.all_ready", Boolean.toString(response.getData().getAllReady()));
-            span.tag("file.any_failed", Boolean.toString(response.getData().getAnyFailed()));
-            return response;
-        });
+        return conversationRoundTracing.traceConversationFiles(
+            request, () -> prepareConversationFilesInternal(request));
     }
 
     private PrepareConversationFilesResponse prepareConversationFilesInternal(PrepareConversationFilesRequest request)
@@ -437,14 +396,8 @@ public class ConversationRoundRpcProvider implements ConversationRpcService
     public PrepareConversationReferencesResponse prepareConversationReferences(
         PrepareConversationReferencesRequest request)
     {
-        return tracingOperations.trace("reference.prepare.manager", span -> {
-            span.tag("conversation.id", request.getDestinationConversationId());
-            span.tag("reference.count", Integer.toString(request.getReferencesCount()));
-            PrepareConversationReferencesResponse response = prepareConversationReferencesInternal(request);
-            tagBase(span, response.getBase());
-            span.tag("reference.prepared_count", Integer.toString(response.getDataCount()));
-            return response;
-        });
+        return conversationRoundTracing.traceConversationReferences(
+            request, () -> prepareConversationReferencesInternal(request));
     }
 
     private PrepareConversationReferencesResponse prepareConversationReferencesInternal(
@@ -498,31 +451,6 @@ public class ConversationRoundRpcProvider implements ConversationRpcService
         if (request.hasFinalAnswer())
             conversationRound.setFinalAnswer(request.getFinalAnswer());
         return conversationRound.build();
-    }
-
-    /** Attaches the complete Round shape without recording prompt or answer content. */
-    private void tagSaveRequest(Span span, SaveConversationRoundRequest request)
-    {
-        int toolExecutionCount = request.getTurnsList().stream()
-            .mapToInt(turn -> turn.getToolCallExecutionsCount())
-            .sum();
-        span.tag("conversation.id", request.getConversationId());
-        span.tag("conversation.round_number", Long.toString(request.getRoundNumber()));
-        span.tag("conversation.round_status", request.getStatus().name());
-        span.tag("conversation.turn_count", Integer.toString(request.getTurnsCount()));
-        span.tag("conversation.tool_execution_count", Integer.toString(toolExecutionCount));
-        span.tag("conversation.reference_count", Integer.toString(request.getReferencesCount()));
-        span.tag("conversation.request_chars", Integer.toString(request.getUserRequest().getContent().length()));
-        span.tag("conversation.answer_chars",
-            Integer.toString(request.hasFinalAnswer() ? request.getFinalAnswer().getContent().length() : 0));
-        span.tag("conversation.trace_id", request.getTraceId());
-    }
-
-    /** Attaches the stable two-field response-envelope outcome to an RPC child span. */
-    private void tagBase(Span span, ResponseBase base)
-    {
-        span.tag("rpc.success", Boolean.toString(base.getSuccess()));
-        span.tag("rpc.code", Integer.toString(base.getCode()));
     }
 
     /**

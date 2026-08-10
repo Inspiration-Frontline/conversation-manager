@@ -1,0 +1,6 @@
+management:
+    opentelemetry:
+        tracing:
+            export:
+                otlp:
+                    endpoint: http://opentelemetry-collector:4318/v1/traces

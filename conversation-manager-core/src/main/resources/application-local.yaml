@@ -11,6 +11,13 @@ spring:
         hikari:
             connection-init-sql: SET TIME ZONE 'UTC'
 
+management:
+    opentelemetry:
+        tracing:
+            export:
+                otlp:
+                    endpoint: http://127.0.0.1:4318/v1/traces
+
 agent-breaker:
     oss:
         access-key-id: ${ALIBABA_CLOUD_ACCESS_KEY_ID:}

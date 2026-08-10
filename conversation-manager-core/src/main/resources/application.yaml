@@ -31,21 +31,15 @@ logging:
 
 management:
     tracing:
-        enabled: ${OTEL_ENABLED:true}
         export:
-            enabled: ${OTEL_ENABLED:true}
+            enabled: true
             otlp:
-                enabled: ${OTEL_ENABLED:true}
+                enabled: true
         propagation:
             consume: W3C
             produce: W3C
         sampling:
-            probability: ${OTEL_TRACES_SAMPLER_ARG:1.0}
-    opentelemetry:
-        tracing:
-            export:
-                otlp:
-                    endpoint: ${OTEL_EXPORTER_OTLP_ENDPOINT:http://127.0.0.1:4318/v1/traces}
+            probability: 1.0
     otlp:
         metrics:
             export:
