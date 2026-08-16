@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="ifl.agentbreaker.conversationmanager.dao.ConversationRoundMutationMapper">
+    <resultMap id="MutationResultMap" type="ifl.agentbreaker.conversationmanager.domain.entities.pg.ConversationRoundMutation">
+        <id column="id" property="id"/>
+        <result column="round_id" property="roundId"/>
+        <result column="mutation_id" property="mutationId"/>
+        <result column="payload_hash" property="payloadHash"/>
+        <result column="committed_revision" property="committedRevision"/>
+    </resultMap>
+
+    <select id="getMutation" resultMap="MutationResultMap">
+        SELECT "id", "round_id", "mutation_id", "payload_hash", "committed_revision"
+        FROM "conversation_round_mutation"
+        WHERE "round_id" = #{roundId} AND "mutation_id" = #{mutationId}
+    </select>
+
+    <insert id="insertMutation">
+        INSERT INTO "conversation_round_mutation" (
+            "round_id", "mutation_id", "payload_hash", "committed_revision"
+        ) VALUES (#{roundId}, #{mutationId}, #{payloadHash}, #{committedRevision})
+    </insert>
+</mapper>

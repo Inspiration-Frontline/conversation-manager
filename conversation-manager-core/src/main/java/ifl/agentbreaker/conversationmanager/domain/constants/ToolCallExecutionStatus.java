@@ -5,4 +5,6 @@ public enum ToolCallExecutionStatus
     COMPLETED,
     FAILED,
     CANCELLED,
+    UNKNOWN,
+    REJECTED,
 }

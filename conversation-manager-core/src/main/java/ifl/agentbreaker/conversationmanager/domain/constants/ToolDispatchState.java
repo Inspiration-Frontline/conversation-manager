@@ -1,9 +1,12 @@
 package ifl.agentbreaker.conversationmanager.domain.constants;
 
-public enum ConversationRoundStatus
+public enum ToolDispatchState
 {
+    READY,
+    DISPATCHING,
     COMPLETED,
     FAILED,
     CANCELLED,
-    IN_PROGRESS,
+    UNKNOWN,
+    REJECTED,
 }

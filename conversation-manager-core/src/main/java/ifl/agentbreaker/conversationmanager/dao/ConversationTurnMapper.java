@@ -12,4 +12,6 @@ public interface ConversationTurnMapper
     List<ConversationTurn> insertTurns(@Param("items") List<ConversationTurn> turns);
 
     ConversationTurn getCompletedTurn(@Param("roundId") long roundId, @Param("turnNumber") long turnNumber);
+
+    long countTurns(@Param("roundId") long roundId);
 }

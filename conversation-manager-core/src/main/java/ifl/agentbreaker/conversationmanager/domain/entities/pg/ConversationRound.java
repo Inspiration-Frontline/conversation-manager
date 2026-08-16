@@ -102,4 +102,14 @@ public class ConversationRound extends EntityBase
      * Number of persisted Turns, populated by history projections.
      */
     private long turnCount;
+
+    private long revision;
+
+    private Long agentId;
+
+    private String agentName;
+
+    private Integer agentVersion;
+
+    private String mcpServerBindings;
 }

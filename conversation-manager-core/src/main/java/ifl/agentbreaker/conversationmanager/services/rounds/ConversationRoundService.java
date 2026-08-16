@@ -197,7 +197,7 @@ public class ConversationRoundService
                 history.rounds().stream().map(round -> new RoundHistoryView.RoundView(
                     round.getRoundNumber(), extractTextContent(round), round.getFinalAnswerContent(),
                     round.getStatus().name(), round.getErrorMessage(), round.getTurnCount(),
-                    round.getStartTime().toEpochMilli(), round.getEndTime().toEpochMilli(),
+                    round.getStartTime().toEpochMilli(), getRoundEndTime(round),
                     filesByRound.getOrDefault(round.getRoundNumber(), List.of()).stream()
                         .map(file -> new RoundHistoryView.FileView(
                             file.fileId(), file.originalFilename(), file.mimeType(), file.fileSize(),
@@ -211,6 +211,11 @@ public class ConversationRoundService
         {
             return ServiceResponse.buildErrorResponse(e.getCode(), e.getMessage());
         }
+    }
+
+    private long getRoundEndTime(ConversationRound round)
+    {
+        return round.getEndTime() == null ? round.getStartTime().toEpochMilli() : round.getEndTime().toEpochMilli();
     }
 
     /**
@@ -740,7 +745,7 @@ public class ConversationRoundService
         return request;
     }
 
-    private void persistRoundReferences(
+    void persistRoundReferences(
         SaveConversationRoundRequest request, Conversation destination, long roundId)
     {
         if (request.getReferencesCount() == 0)
@@ -804,7 +809,7 @@ public class ConversationRoundService
      * @param roundId newly inserted parent Round ID
      * @return owned file resources used for title fallback and state checks
      */
-    private List<FileResource> persistRoundFiles(SaveConversationRoundRequest request, long roundId)
+    List<FileResource> persistRoundFiles(SaveConversationRoundRequest request, long roundId)
     {
         Set<String> fileIds = new LinkedHashSet<>();
         int filePartCount = 0;
@@ -852,7 +857,7 @@ public class ConversationRoundService
      * @param request complete Runner capture
      * @param roundId parent Round database ID
      */
-    private void persistTurnsAndChildren(SaveConversationRoundRequest request, long roundId)
+    void persistTurnsAndChildren(SaveConversationRoundRequest request, long roundId)
     {
         if (request.getTurnsList().isEmpty())
             return;
@@ -1382,6 +1387,8 @@ public class ConversationRoundService
             case TOOL_CALL_EXECUTION_STATUS_COMPLETED -> ToolCallExecutionStatus.COMPLETED;
             case TOOL_CALL_EXECUTION_STATUS_FAILED -> ToolCallExecutionStatus.FAILED;
             case TOOL_CALL_EXECUTION_STATUS_CANCELLED -> ToolCallExecutionStatus.CANCELLED;
+            case TOOL_CALL_EXECUTION_STATUS_UNKNOWN -> ToolCallExecutionStatus.UNKNOWN;
+            case TOOL_CALL_EXECUTION_STATUS_REJECTED -> ToolCallExecutionStatus.REJECTED;
             default -> throw new IllegalArgumentException("Unsupported Tool execution status.");
         });
         execution.setResultContent(source.getResultContent().isEmpty() ? null : source.getResultContent());

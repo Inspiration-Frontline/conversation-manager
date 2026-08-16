@@ -8,6 +8,8 @@ import ifl.agentbreaker.conversationmanager.domain.entities.pg.FileResource;
 import ifl.agentbreaker.conversationmanager.config.ConversationFileProperties;
 import ifl.agentbreaker.conversationmanager.dao.ConversationMapper;
 import ifl.agentbreaker.conversationmanager.rpc.AssistantAnswer;
+import ifl.agentbreaker.conversationmanager.rpc.AppendConversationRoundProgressRequest;
+import ifl.agentbreaker.conversationmanager.rpc.AppendConversationRoundProgressResponse;
 import ifl.agentbreaker.conversationmanager.rpc.ConversationAbstract;
 import ifl.agentbreaker.conversationmanager.rpc.ConversationErrorCode;
 import ifl.agentbreaker.conversationmanager.rpc.ConversationReplay;
@@ -17,6 +19,9 @@ import ifl.agentbreaker.conversationmanager.rpc.ConversationRpcService;
 import ifl.agentbreaker.conversationmanager.rpc.ConversationTurnHistory;
 import ifl.agentbreaker.conversationmanager.rpc.CreateConversationRequest;
 import ifl.agentbreaker.conversationmanager.rpc.CreateConversationResponse;
+import ifl.agentbreaker.conversationmanager.rpc.CreateConversationRoundCheckpointRequest;
+import ifl.agentbreaker.conversationmanager.rpc.CreateConversationRoundCheckpointResponse;
+import ifl.agentbreaker.conversationmanager.rpc.ConversationRoundMutationResult;
 import ifl.agentbreaker.conversationmanager.rpc.ConversationFileKind;
 import ifl.agentbreaker.conversationmanager.rpc.ConversationFileStatus;
 import ifl.agentbreaker.conversationmanager.rpc.DeleteRoundsRequest;
@@ -36,8 +41,11 @@ import ifl.agentbreaker.conversationmanager.rpc.PrepareConversationReferencesReq
 import ifl.agentbreaker.conversationmanager.rpc.PrepareConversationReferencesResponse;
 import ifl.agentbreaker.conversationmanager.rpc.PreparedConversationFile;
 import ifl.agentbreaker.conversationmanager.rpc.RoundStatus;
+import ifl.agentbreaker.conversationmanager.rpc.FinalizeConversationRoundRequest;
+import ifl.agentbreaker.conversationmanager.rpc.FinalizeConversationRoundResponse;
 import ifl.agentbreaker.conversationmanager.rpc.SaveConversationRoundRequest;
 import ifl.agentbreaker.conversationmanager.rpc.SaveConversationRoundResponse;
+import ifl.agentbreaker.conversationmanager.rpc.ConversationRound.Builder;
 import ifl.agentbreaker.conversationmanager.services.files.ConversationFileService;
 import org.apache.dubbo.config.annotation.DubboService;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -46,6 +54,8 @@ import java.util.concurrent.CompletableFuture;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+
+import static ifl.agentbreaker.conversationmanager.rpc.ConversationRound.getDefaultInstance;
 
 /**
  * Dubbo boundary owned by Conversation Manager for Runner's history, replay, persistence, and
@@ -70,6 +80,9 @@ public class ConversationRoundRpcProvider implements ConversationRpcService
 
     @Autowired
     private ConversationRoundTracing conversationRoundTracing;
+
+    @Autowired
+    private ConversationRoundProgressService conversationRoundProgressService;
 
     /**
      * Keeps the shared Round RPC surface explicit: Conversation creation belongs to the HTTP
@@ -131,7 +144,7 @@ public class ConversationRoundRpcProvider implements ConversationRpcService
         {
             return SaveConversationRoundResponse.newBuilder()
                 .setBase(errorBase(e.getCode(), e.getMessage()))
-                .setData(ifl.agentbreaker.conversationmanager.rpc.ConversationRound.getDefaultInstance())
+                .setData(getDefaultInstance())
                 .build();
         }
     }
@@ -148,6 +161,89 @@ public class ConversationRoundRpcProvider implements ConversationRpcService
         SaveConversationRoundRequest request)
     {
         return CompletableFuture.completedFuture(saveConversationRound(request));
+    }
+
+    @Override
+    public CreateConversationRoundCheckpointResponse createConversationRoundCheckpoint(
+        CreateConversationRoundCheckpointRequest request)
+    {
+        try
+        {
+            ConversationRoundProgressService.MutationOutcome outcome = conversationRoundProgressService.create(request);
+            return CreateConversationRoundCheckpointResponse.newBuilder()
+                .setBase(successBase()).setData(toMutationResult(request.getConversationId(),
+                    request.getRoundNumber(), outcome)).build();
+        }
+        catch (RoundPersistenceException e)
+        {
+            return CreateConversationRoundCheckpointResponse.newBuilder().setBase(errorBase(e.getCode(), e.getMessage()))
+                .setData(ConversationRoundMutationResult.getDefaultInstance()).build();
+        }
+    }
+
+    @Override
+    public CompletableFuture<CreateConversationRoundCheckpointResponse> createConversationRoundCheckpointAsync(
+        CreateConversationRoundCheckpointRequest request)
+    {
+        return CompletableFuture.completedFuture(createConversationRoundCheckpoint(request));
+    }
+
+    @Override
+    public AppendConversationRoundProgressResponse appendConversationRoundProgress(
+        AppendConversationRoundProgressRequest request)
+    {
+        try
+        {
+            ConversationRoundProgressService.MutationOutcome outcome = conversationRoundProgressService.append(request);
+            return AppendConversationRoundProgressResponse.newBuilder()
+                .setBase(successBase()).setData(toMutationResult(request.getConversationId(),
+                    request.getRoundNumber(), outcome)).build();
+        }
+        catch (RoundPersistenceException e)
+        {
+            return AppendConversationRoundProgressResponse.newBuilder().setBase(errorBase(e.getCode(), e.getMessage()))
+                .setData(ConversationRoundMutationResult.getDefaultInstance()).build();
+        }
+    }
+
+    @Override
+    public CompletableFuture<AppendConversationRoundProgressResponse> appendConversationRoundProgressAsync(
+        AppendConversationRoundProgressRequest request)
+    {
+        return CompletableFuture.completedFuture(appendConversationRoundProgress(request));
+    }
+
+    @Override
+    public FinalizeConversationRoundResponse finalizeConversationRound(FinalizeConversationRoundRequest request)
+    {
+        try
+        {
+            ConversationRoundProgressService.MutationOutcome outcome =
+                conversationRoundProgressService.finalizeRound(request);
+            return FinalizeConversationRoundResponse.newBuilder()
+                .setBase(successBase()).setData(toMutationResult(request.getConversationId(),
+                    request.getRoundNumber(), outcome)).build();
+        }
+        catch (RoundPersistenceException e)
+        {
+            return FinalizeConversationRoundResponse.newBuilder().setBase(errorBase(e.getCode(), e.getMessage()))
+                .setData(ConversationRoundMutationResult.getDefaultInstance()).build();
+        }
+    }
+
+    @Override
+    public CompletableFuture<FinalizeConversationRoundResponse> finalizeConversationRoundAsync(
+        FinalizeConversationRoundRequest request)
+    {
+        return CompletableFuture.completedFuture(finalizeConversationRound(request));
+    }
+
+    private ConversationRoundMutationResult toMutationResult(String conversationId, long roundNumber,
+        ConversationRoundProgressService.MutationOutcome outcome)
+    {
+        return ConversationRoundMutationResult.newBuilder().setConversationId(conversationId)
+            .setRoundNumber(roundNumber).setCommittedRevision(outcome.revision())
+            .setIdempotentReplay(outcome.idempotentReplay()).setStatus(outcome.status()).build();
     }
 
     /**
@@ -437,7 +533,7 @@ public class ConversationRoundRpcProvider implements ConversationRpcService
     private ifl.agentbreaker.conversationmanager.rpc.ConversationRound toProtoRound(
         SaveConversationRoundRequest request)
     {
-        ifl.agentbreaker.conversationmanager.rpc.ConversationRound.Builder conversationRound =
+        Builder conversationRound =
             ifl.agentbreaker.conversationmanager.rpc.ConversationRound.newBuilder()
             .setConversationId(request.getConversationId())
             .setRoundNumber(request.getRoundNumber())
@@ -567,11 +663,12 @@ public class ConversationRoundRpcProvider implements ConversationRpcService
                 case COMPLETED -> RoundStatus.ROUND_STATUS_COMPLETED;
                 case FAILED -> RoundStatus.ROUND_STATUS_FAILED;
                 case CANCELLED -> RoundStatus.ROUND_STATUS_CANCELLED;
+                case IN_PROGRESS -> RoundStatus.ROUND_STATUS_IN_PROGRESS;
             })
         .setTurnCount(round.getTurnCount())
             .setErrorMessage(round.getErrorMessage())
             .setStartTime(round.getStartTime().toEpochMilli())
-            .setEndTime(round.getEndTime().toEpochMilli());
+            .setEndTime(round.getEndTime() == null ? 0 : round.getEndTime().toEpochMilli());
         if (round.getFinalAnswerContent() != null)
             summary.setFinalAnswer(AssistantAnswer.newBuilder()
                 .setContent(round.getFinalAnswerContent())
