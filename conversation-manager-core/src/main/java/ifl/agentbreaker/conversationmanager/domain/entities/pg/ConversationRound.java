@@ -1,10 +1,12 @@
 package ifl.agentbreaker.conversationmanager.domain.entities.pg;
 
 import ifl.agentbreaker.conversationmanager.domain.constants.ConversationRoundStatus;
+import ifl.agentbreaker.conversationmanager.domain.valueobjects.McpServerBinding;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
 
 import java.time.Instant;
+import java.util.List;
 
 /**
  * Complete persisted result of one user request through its final answer or terminal failure.
@@ -118,8 +120,8 @@ public class ConversationRound extends EntityBase
     private int agentVersion;
 
     /**
-     * JSONB array of immutable MCP binding snapshots, for example
-     * {@code [{"server_id":"deepwiki","required":false}]}.
+     * Immutable MCP binding snapshots. The dedicated MyBatis type handler persists this list as
+     * a JSONB array without exposing JSON text to domain code.
      */
-    private String mcpServerBindings;
+    private List<McpServerBinding> mcpServerBindings;
 }

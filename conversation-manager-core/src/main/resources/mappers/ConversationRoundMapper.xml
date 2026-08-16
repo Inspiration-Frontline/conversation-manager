@@ -29,7 +29,8 @@
         <result column="agent_id" property="agentId"/>
         <result column="agent_name" property="agentName"/>
         <result column="agent_version" property="agentVersion"/>
-        <result column="mcp_server_bindings" property="mcpServerBindings"/>
+        <result column="mcp_server_bindings" property="mcpServerBindings"
+                typeHandler="ifl.agentbreaker.conversationmanager.dao.typehandlers.McpServerBindingsTypeHandler"/>
     </resultMap>
 
     <sql id="RoundColumns">
@@ -75,7 +76,8 @@
             #{creatorId}, #{modifierId}, #{conversationId}, #{roundNumber}, #{traceId},
             #{userRequestContent}, CAST(#{userRequestContentParts} AS JSONB), #{status}, #{errorMessage},
             #{startTime}, NULL, #{payloadHashVersion}, #{payloadHash}, FALSE, 0,
-            #{agentId}, #{agentName}, #{agentVersion}, CAST(#{mcpServerBindings} AS JSONB)
+            #{agentId}, #{agentName}, #{agentVersion}, #{mcpServerBindings,
+            typeHandler=ifl.agentbreaker.conversationmanager.dao.typehandlers.McpServerBindingsTypeHandler}
         )
         RETURNING *, 0 AS "turn_count"
     </select>

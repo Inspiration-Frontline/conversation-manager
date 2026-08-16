@@ -6,12 +6,14 @@ import ifl.agentbreaker.conversationmanager.rpc.CreateConversationRoundCheckpoin
 import ifl.agentbreaker.conversationmanager.rpc.McpServerBindingSnapshot;
 import ifl.agentbreaker.conversationmanager.rpc.UserRequest;
 import ifl.agentbreaker.conversationmanager.support.JsonSerializer;
+import ifl.agentbreaker.conversationmanager.domain.valueobjects.McpServerBinding;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.test.util.ReflectionTestUtils;
 
+import java.util.List;
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class ConversationRoundProgressMapperTest
 {
@@ -42,9 +44,10 @@ class ConversationRoundProgressMapperTest
                 .setServerId("fixture").setRequired(true).build())
             .build();
 
-        String json = mapper.toCheckpoint(request, "hash").getMcpServerBindings();
+        List<McpServerBinding> bindings = mapper.toCheckpoint(request, "hash").getMcpServerBindings();
 
-        assertEquals("[{\"server_id\":\"fixture\",\"required\":true}]", json);
-        assertTrue(!json.contains("unknownFields"));
+        assertEquals(1, bindings.size());
+        assertEquals("fixture", bindings.getFirst().serverId());
+        assertEquals(true, bindings.getFirst().required());
     }
 }

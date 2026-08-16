@@ -4,6 +4,7 @@ import ifl.agentbreaker.conversationmanager.domain.constants.ConversationRoundSt
 import ifl.agentbreaker.conversationmanager.domain.constants.ToolDispatchState;
 import ifl.agentbreaker.conversationmanager.domain.entities.pg.ConversationRound;
 import ifl.agentbreaker.conversationmanager.domain.entities.pg.ConversationToolDispatch;
+import ifl.agentbreaker.conversationmanager.domain.valueobjects.McpServerBinding;
 import ifl.agentbreaker.conversationmanager.rpc.CreateConversationRoundCheckpointRequest;
 import ifl.agentbreaker.conversationmanager.rpc.ContentPart;
 import ifl.agentbreaker.conversationmanager.rpc.McpServerBindingSnapshot;
@@ -46,7 +47,7 @@ class ConversationRoundProgressMapper
         round.setAgentId(request.getAgentIdentity().getAgentId());
         round.setAgentName(request.getAgentIdentity().getName());
         round.setAgentVersion(request.getAgentIdentity().getVersion());
-        round.setMcpServerBindings(serializeMcpBindings(request.getMcpServerBindingsList()));
+        round.setMcpServerBindings(toMcpServerBindings(request.getMcpServerBindingsList()));
         return round;
     }
 
@@ -108,16 +109,11 @@ class ConversationRoundProgressMapper
         return jsonSerializer.serialize(values, "Round content parts");
     }
 
-    String serializeMcpBindings(List<McpServerBindingSnapshot> bindings)
+    List<McpServerBinding> toMcpServerBindings(List<McpServerBindingSnapshot> bindings)
     {
-        List<Map<String, Object>> values = new ArrayList<>();
+        List<McpServerBinding> values = new ArrayList<>();
         for (McpServerBindingSnapshot binding : bindings)
-        {
-            Map<String, Object> value = new LinkedHashMap<>();
-            value.put("server_id", binding.getServerId());
-            value.put("required", binding.getRequired());
-            values.add(value);
-        }
-        return jsonSerializer.serialize(values, "MCP server bindings");
+            values.add(new McpServerBinding(binding.getServerId(), binding.getRequired()));
+        return List.copyOf(values);
     }
 }
