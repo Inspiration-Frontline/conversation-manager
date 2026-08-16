@@ -3,12 +3,12 @@
 <mapper namespace="ifl.agentbreaker.conversationmanager.dao.ConversationToolDispatchMapper">
     <insert id="upsertDispatchEvidence">
         INSERT INTO "conversation_tool_dispatch" (
-            "round_id", "attempt_id", "turn_number", "tool_call_id", "tool_name", "tool_key",
+            "creator_id", "modifier_id", "round_id", "attempt_id", "turn_number", "tool_call_id", "tool_name", "tool_key",
             "server_id", "arguments_json", "state", "dispatch_time", "result_time", "trace_id",
             "span_id", "transport_evidence", "recovery_reason"
         ) VALUES
         <foreach collection="items" item="item" separator=",">
-            (#{item.roundId}, #{item.attemptId}, #{item.turnNumber}, #{item.toolCallId}, #{item.toolName},
+            (#{item.creatorId}, #{item.modifierId}, #{item.roundId}, #{item.attemptId}, #{item.turnNumber}, #{item.toolCallId}, #{item.toolName},
              #{item.toolKey}, #{item.serverId}, CAST(#{item.argumentsJson} AS JSONB), #{item.state},
              #{item.dispatchTime}, #{item.resultTime}, #{item.traceId}, #{item.spanId},
              #{item.transportEvidence}, #{item.recoveryReason})

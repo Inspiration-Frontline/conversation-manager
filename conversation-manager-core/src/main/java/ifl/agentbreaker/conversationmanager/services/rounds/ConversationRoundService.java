@@ -1,8 +1,6 @@
 package ifl.agentbreaker.conversationmanager.services.rounds;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import ifl.agentbreaker.authcenter.session.UserContextService;
 import ifl.agentbreaker.conversationmanager.config.ConversationReferenceProperties;
 import ifl.agentbreaker.conversationmanager.dao.ConversationRoundFileMapper;
@@ -47,6 +45,7 @@ import ifl.agentbreaker.conversationmanager.domain.entities.pg.ConversationToolC
 import ifl.agentbreaker.conversationmanager.domain.entities.pg.EntityBase;
 import ifl.agentbreaker.conversationmanager.domain.entities.pg.FileResource;
 import ifl.agentbreaker.conversationmanager.support.ConversationTitleManager;
+import ifl.agentbreaker.conversationmanager.support.JsonSerializer;
 import ifl.agentbreaker.conversationmanager.rpc.ConversationErrorCode;
 import ifl.agentbreaker.conversationmanager.rpc.ContentPart;
 import ifl.agentbreaker.conversationmanager.rpc.ConversationReference;
@@ -144,7 +143,7 @@ public class ConversationRoundService
     private ConversationRoundPayloadHasher conversationRoundPayloadHasher;
 
     @Autowired
-    private ObjectMapper objectMapper;
+    private JsonSerializer jsonSerializer;
 
     @Autowired
     private ConversationMutationLock conversationMutationLock;
@@ -1251,14 +1250,7 @@ public class ConversationRoundService
             }
             values.add(value);
         }
-        try
-        {
-            return objectMapper.writeValueAsString(values);
-        }
-        catch (JsonProcessingException e)
-        {
-            throw new IllegalArgumentException("Content parts could not be serialized.", e);
-        }
+        return jsonSerializer.serialize(values, "Content parts");
     }
 
     /**
@@ -1275,7 +1267,7 @@ public class ConversationRoundService
             return List.of();
         try
         {
-            JsonNode root = objectMapper.readTree(json);
+            JsonNode root = jsonSerializer.readTree(json, "Persisted content parts");
             List<ContentPart> contentParts = new ArrayList<>();
             for (JsonNode item : root)
             {
@@ -1294,7 +1286,7 @@ public class ConversationRoundService
             }
             return contentParts;
         }
-        catch (JsonProcessingException e)
+        catch (IllegalArgumentException e)
         {
             throw new IllegalStateException("Persisted content parts are invalid.", e);
         }

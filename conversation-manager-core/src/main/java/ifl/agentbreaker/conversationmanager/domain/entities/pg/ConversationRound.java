@@ -105,11 +105,21 @@ public class ConversationRound extends EntityBase
 
     private long revision;
 
-    private Long agentId;
+    /**
+     * Configured Agent ID; {@code 0} identifies historical Rounds created before identity capture.
+     */
+    private long agentId;
 
     private String agentName;
 
-    private Integer agentVersion;
+    /**
+     * Configured Agent version; {@code 0} identifies historical Rounds created before identity capture.
+     */
+    private int agentVersion;
 
+    /**
+     * JSONB array of immutable MCP binding snapshots, for example
+     * {@code [{"server_id":"deepwiki","required":false}]}.
+     */
     private String mcpServerBindings;
 }

@@ -1,7 +1,5 @@
 package ifl.agentbreaker.conversationmanager.services.rounds;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import ifl.agentbreaker.conversationmanager.domain.constants.ConversationRoundStatus;
 import ifl.agentbreaker.conversationmanager.domain.constants.ToolDispatchState;
 import ifl.agentbreaker.conversationmanager.domain.entities.pg.ConversationRound;
@@ -12,6 +10,7 @@ import ifl.agentbreaker.conversationmanager.rpc.McpServerBindingSnapshot;
 import ifl.agentbreaker.conversationmanager.rpc.RoundStatus;
 import ifl.agentbreaker.conversationmanager.rpc.SaveConversationRoundRequest;
 import ifl.agentbreaker.conversationmanager.rpc.ToolDispatchEvidence;
+import ifl.agentbreaker.conversationmanager.support.JsonSerializer;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
@@ -24,7 +23,8 @@ import java.util.Map;
 @Component
 class ConversationRoundProgressMapper
 {
-    @Autowired private ObjectMapper objectMapper;
+    @Autowired
+    private JsonSerializer jsonSerializer;
 
     ConversationRound toCheckpoint(CreateConversationRoundCheckpointRequest request, String hash)
     {
@@ -50,7 +50,7 @@ class ConversationRoundProgressMapper
         return round;
     }
 
-    SaveConversationRoundRequest toCompatibilityRequest(CreateConversationRoundCheckpointRequest request)
+    SaveConversationRoundRequest toLegacyRoundSaveRequest(CreateConversationRoundCheckpointRequest request)
     {
         return SaveConversationRoundRequest.newBuilder()
             .setUserId(request.getUserId()).setConversationId(request.getConversationId())
@@ -59,12 +59,14 @@ class ConversationRoundProgressMapper
             .setStartTime(request.getStartTime()).setTraceId(request.getTraceId()).build();
     }
 
-    List<ConversationToolDispatch> toDispatches(long roundId, List<ToolDispatchEvidence> evidence)
+    List<ConversationToolDispatch> toDispatches(long userId, long roundId, List<ToolDispatchEvidence> evidence)
     {
         List<ConversationToolDispatch> rows = new ArrayList<>();
         for (ToolDispatchEvidence item : evidence)
         {
             ConversationToolDispatch row = new ConversationToolDispatch();
+            row.setCreatorId(userId);
+            row.setModifierId(userId);
             row.setRoundId(roundId);
             row.setAttemptId(item.getAttemptId());
             row.setTurnNumber(item.getTurnNumber());
@@ -103,7 +105,7 @@ class ConversationRoundProgressMapper
             }
             values.add(value);
         }
-        return writeJson(values);
+        return jsonSerializer.serialize(values, "Round content parts");
     }
 
     String serializeMcpBindings(List<McpServerBindingSnapshot> bindings)
@@ -116,18 +118,6 @@ class ConversationRoundProgressMapper
             value.put("required", binding.getRequired());
             values.add(value);
         }
-        return writeJson(values);
-    }
-
-    private String writeJson(Object value)
-    {
-        try
-        {
-            return objectMapper.writeValueAsString(value);
-        }
-        catch (JsonProcessingException e)
-        {
-            throw new IllegalArgumentException("Unable to serialize incremental Round content.", e);
-        }
+        return jsonSerializer.serialize(values, "MCP server bindings");
     }
 }

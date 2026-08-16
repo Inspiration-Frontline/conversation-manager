@@ -31,6 +31,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
@@ -76,7 +77,7 @@ class ConversationRoundProgressServiceTest
         when(conversationMapper.lockConversationByIdAndUser("conv_phase12", 7L)).thenReturn(new Conversation());
         when(roundMapper.getRound("conv_phase12", 1L)).thenReturn(round);
         when(mutationMapper.getMutation(42L, "mutation-1")).thenAnswer(invocation -> recorded.get());
-        when(progressMapper.toDispatches(42L, request.getDispatchEvidenceList())).thenReturn(List.of(dispatch));
+        when(progressMapper.toDispatches(7L, 42L, request.getDispatchEvidenceList())).thenReturn(List.of(dispatch));
         when(dispatchMapper.upsertDispatchEvidence(List.of(dispatch))).thenReturn(1);
         when(roundMapper.advanceRevision(42L, 1L, 7L)).thenReturn(1);
         when(mutationMapper.insertMutation(any())).thenAnswer(invocation ->
@@ -109,9 +110,9 @@ class ConversationRoundProgressServiceTest
             () -> progressService.append(request));
 
         assertEquals("expected_revision does not match the committed Round revision.", error.getMessage());
-        verify(progressMapper, never()).toDispatches(any(Long.class), any());
+        verify(progressMapper, never()).toDispatches(anyLong(), anyLong(), any());
         verify(dispatchMapper, never()).upsertDispatchEvidence(any());
-        verify(roundMapper, never()).advanceRevision(any(Long.class), any(Long.class), any(Long.class));
+        verify(roundMapper, never()).advanceRevision(anyLong(), anyLong(), anyLong());
     }
 
     private AppendConversationRoundProgressRequest dispatchRequest(long expectedRevision, String mutationId)

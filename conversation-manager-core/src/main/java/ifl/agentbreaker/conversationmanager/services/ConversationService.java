@@ -1,7 +1,6 @@
 package ifl.agentbreaker.conversationmanager.services;
 
 import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import ifl.agentbreaker.authcenter.session.UserContextService;
 import ifl.agentbreaker.conversationmanager.api.IConversationRpcService;
 import ifl.agentbreaker.conversationmanager.api.dto.ContentPart;
@@ -35,6 +34,7 @@ import ifl.agentbreaker.conversationmanager.domain.entities.pg.ConversationMessa
 import ifl.agentbreaker.conversationmanager.domain.entities.pg.ConversationSharing;
 import ifl.agentbreaker.conversationmanager.support.BusinessIdManager;
 import ifl.agentbreaker.conversationmanager.support.ConversationTitleManager;
+import ifl.agentbreaker.conversationmanager.support.JsonSerializer;
 import ifl.agentbreaker.conversationmanager.support.TextNormalizer;
 import ifl.agentbreaker.conversationmanager.services.rounds.ConversationRoundService;
 import jakarta.servlet.http.HttpServletResponse;
@@ -95,7 +95,7 @@ public class ConversationService implements IConversationRpcService
 
     @Autowired
     @Qualifier("conversationManagerObjectMapper")
-    private ObjectMapper objectMapper;
+    private JsonSerializer jsonSerializer;
 
     @Autowired
     private ConversationMapper conversationMapper;
@@ -634,7 +634,7 @@ public class ConversationService implements IConversationRpcService
 
         try
         {
-            return objectMapper.readValue(json, typeReference);
+            return jsonSerializer.deserialize(json, typeReference, "Conversation message JSON");
         }
         catch (Exception e)
         {
@@ -692,7 +692,8 @@ public class ConversationService implements IConversationRpcService
         String baseFilename = history.getConversationId() + "." + exportFormat.name().toLowerCase(Locale.ROOT);
         return switch (exportFormat)
         {
-            case JSON -> new ExportPayload(baseFilename, MediaType.APPLICATION_JSON_VALUE, objectMapper.writeValueAsString(history));
+            case JSON -> new ExportPayload(baseFilename, MediaType.APPLICATION_JSON_VALUE,
+                jsonSerializer.serialize(history, "Conversation export"));
             case HTML -> new ExportPayload(baseFilename, MediaType.TEXT_HTML_VALUE, toHtml(history));
             case MARKDOWN -> new ExportPayload(baseFilename, "text/markdown;charset=UTF-8", toMarkdown(history));
             case TXT -> new ExportPayload(baseFilename, MediaType.TEXT_PLAIN_VALUE, toPlainText(history));

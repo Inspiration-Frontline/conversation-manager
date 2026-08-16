@@ -33,23 +33,51 @@ import java.util.List;
 @Service
 public class ConversationRoundProgressService
 {
-    @Autowired private ConversationMapper conversationMapper;
-    @Autowired private ConversationRoundMapper roundMapper;
-    @Autowired private ConversationRoundMutationMapper mutationMapper;
-    @Autowired private ConversationToolDispatchMapper dispatchMapper;
-    @Autowired private ConversationTurnMapper turnMapper;
-    @Autowired private ConversationRoundService roundService;
-    @Autowired private ConversationMutationLock mutationLock;
-    @Autowired private TransactionTemplate transactionTemplate;
-    @Autowired private ConversationRoundProgressValidator validator;
-    @Autowired private ConversationRoundProgressMapper progressMapper;
+    @Autowired
+    private ConversationMapper conversationMapper;
 
+    @Autowired
+    private ConversationRoundMapper roundMapper;
+
+    @Autowired
+    private ConversationRoundMutationMapper mutationMapper;
+
+    @Autowired
+    private ConversationToolDispatchMapper dispatchMapper;
+
+    @Autowired
+    private ConversationTurnMapper turnMapper;
+
+    @Autowired
+    private ConversationRoundService roundService;
+
+    @Autowired
+    private ConversationMutationLock mutationLock;
+
+    @Autowired
+    private TransactionTemplate transactionTemplate;
+
+    @Autowired
+    private ConversationRoundProgressValidator validator;
+
+    @Autowired
+    private ConversationRoundProgressMapper progressMapper;
+
+    /**
+     * Marks delivery attempts left in progress by an interrupted Runner as UNKNOWN at application startup.
+     */
     @PostConstruct
     public void recoverInterruptedDispatches()
     {
         dispatchMapper.recoverStaleDispatches(Instant.now(), "Runner or provider restarted during remote dispatch.");
     }
 
+    /**
+     * Creates the immutable Round checkpoint before the first model call.
+     *
+     * @param request authenticated checkpoint mutation with the frozen user request and MCP bindings
+     * @return committed revision and whether the request replayed a previously committed mutation
+     */
     public MutationOutcome create(CreateConversationRoundCheckpointRequest request)
     {
         validator.validateCreate(request);
@@ -63,6 +91,12 @@ public class ConversationRoundProgressService
         }
     }
 
+    /**
+     * Appends ordered Turn or MCP dispatch evidence while enforcing the caller's expected revision.
+     *
+     * @param request authenticated append mutation
+     * @return committed revision and whether the request replayed a previously committed mutation
+     */
     public MutationOutcome append(AppendConversationRoundProgressRequest request)
     {
         validator.validateAppend(request);
@@ -76,6 +110,12 @@ public class ConversationRoundProgressService
         }
     }
 
+    /**
+     * Commits the terminal state and optional final answer of an in-progress Round.
+     *
+     * @param request authenticated finalization mutation
+     * @return committed revision and whether the request replayed a previously committed mutation
+     */
     public MutationOutcome finalizeRound(FinalizeConversationRoundRequest request)
     {
         validator.validateFinalize(request);
@@ -101,13 +141,13 @@ public class ConversationRoundProgressService
         ConversationRound round = roundMapper.insertCheckpoint(progressMapper.toCheckpoint(request, hash));
         if (round == null)
             throw new IllegalStateException("Checkpoint insert returned no row.");
-        SaveConversationRoundRequest compatibility = progressMapper.toCompatibilityRequest(request);
-        roundService.persistRoundFiles(compatibility, round.getId());
-        roundService.persistRoundReferences(compatibility, conversation, round.getId());
+        SaveConversationRoundRequest legacyRoundSaveRequest = progressMapper.toLegacyRoundSaveRequest(request);
+        roundService.persistRoundFiles(legacyRoundSaveRequest, round.getId());
+        roundService.persistRoundReferences(legacyRoundSaveRequest, conversation, round.getId());
         if (conversationMapper.advanceLatestRoundNumber(request.getConversationId(), request.getUserId(),
             request.getRoundNumber(), request.getUserRequest().getContent(), "New Conversation") != 1)
             throw new IllegalStateException("Failed to advance Conversation high-water mark.");
-        recordMutation(round.getId(), request.getMutationId(), hash, 0);
+        recordMutation(round.getId(), request.getUserId(), request.getMutationId(), hash, 0);
         return new MutationOutcome(0, RoundStatus.ROUND_STATUS_IN_PROGRESS, false);
     }
 
@@ -125,13 +165,13 @@ public class ConversationRoundProgressService
             roundService.persistTurnsAndChildren(SaveConversationRoundRequest.newBuilder()
                 .setUserId(request.getUserId()).addAllTurns(request.getTurnsList()).build(), round.getId());
         List<ConversationToolDispatch> dispatches = progressMapper.toDispatches(
-            round.getId(), request.getDispatchEvidenceList());
+            request.getUserId(), round.getId(), request.getDispatchEvidenceList());
         if (!dispatches.isEmpty() && dispatchMapper.upsertDispatchEvidence(dispatches) != dispatches.size())
             throw validator.invalid("Dispatch evidence attempted to overwrite terminal evidence.");
         if (roundMapper.advanceRevision(round.getId(), request.getExpectedRevision(), request.getUserId()) != 1)
             throw validator.stale();
         long committedRevision = request.getExpectedRevision() + 1;
-        recordMutation(round.getId(), request.getMutationId(), hash, committedRevision);
+        recordMutation(round.getId(), request.getUserId(), request.getMutationId(), hash, committedRevision);
         return new MutationOutcome(committedRevision, RoundStatus.ROUND_STATUS_IN_PROGRESS, false);
     }
 
@@ -153,7 +193,7 @@ public class ConversationRoundProgressService
             request.getErrorMessage(), Instant.ofEpochMilli(request.getEndTime())) != 1)
             throw validator.stale();
         long committedRevision = request.getExpectedRevision() + 1;
-        recordMutation(round.getId(), request.getMutationId(), hash, committedRevision);
+        recordMutation(round.getId(), request.getUserId(), request.getMutationId(), hash, committedRevision);
         return new MutationOutcome(committedRevision, request.getStatus(), false);
     }
 
@@ -200,9 +240,11 @@ public class ConversationRoundProgressService
         return new MutationOutcome(mutation.getCommittedRevision(), status, true);
     }
 
-    private void recordMutation(long roundId, String mutationId, String hash, long revision)
+    private void recordMutation(long roundId, long userId, String mutationId, String hash, long revision)
     {
         ConversationRoundMutation mutation = new ConversationRoundMutation();
+        mutation.setCreatorId(userId);
+        mutation.setModifierId(userId);
         mutation.setRoundId(roundId);
         mutation.setMutationId(mutationId);
         mutation.setPayloadHash(hash);
@@ -228,6 +270,14 @@ public class ConversationRoundProgressService
         return RoundStatus.valueOf("ROUND_STATUS_" + status.name());
     }
 
+    /**
+     * Result of one mutation request.
+     *
+     * @param revision revision committed by the original mutation
+     * @param status persisted Round status after that mutation
+     * @param idempotentReplay {@code true} when the same {@code mutation_id} and identical SHA-256
+     * payload were already committed; {@code false} when this request applied a new database change
+     */
     public record MutationOutcome(long revision, RoundStatus status, boolean idempotentReplay)
     {
     }
