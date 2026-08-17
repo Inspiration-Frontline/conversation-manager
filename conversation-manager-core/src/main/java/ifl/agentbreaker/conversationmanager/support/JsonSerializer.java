@@ -88,6 +88,28 @@ public class JsonSerializer
     }
 
     /**
+     * Deserializes an infrastructure-owned JSONB value whose target has no erased generic type.
+     *
+     * @param json persisted JSON
+     * @param targetClass concrete non-generic target class
+     * @param subject concise description of the deserialized value
+     * @param <T> target value type
+     * @return decoded value
+     * @throws IllegalArgumentException when JSON is malformed or incompatible with the target
+     */
+    public static <T> T deserializeShared(String json, Class<T> targetClass, String subject)
+    {
+        try
+        {
+            return getSharedObjectMapper().readValue(json, targetClass);
+        }
+        catch (JsonProcessingException e)
+        {
+            throw new IllegalArgumentException(subject + " could not be deserialized.", e);
+        }
+    }
+
+    /**
      * Serializes a value with the application's configured Jackson modules.
      *
      * @param value value to serialize

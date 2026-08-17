@@ -10,21 +10,8 @@ public class McpServerBindingsTypeHandler extends JsonbTypeHandler<List<McpServe
 {
     private static final TypeReference<List<McpServerBinding>> TYPE = new TypeReference<>() { };
 
-    @Override
-    protected TypeReference<List<McpServerBinding>> getTypeReference()
+    public McpServerBindingsTypeHandler()
     {
-        return TYPE;
-    }
-
-    @Override
-    protected String getSubject()
-    {
-        return "MCP server bindings";
-    }
-
-    @Override
-    protected List<McpServerBinding> getEmptyValue()
-    {
-        return List.of();
+        super(TYPE, "MCP server bindings", List.of());
     }
 }

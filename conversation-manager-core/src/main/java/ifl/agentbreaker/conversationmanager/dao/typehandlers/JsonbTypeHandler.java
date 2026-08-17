@@ -19,6 +19,42 @@ import java.sql.SQLException;
  */
 public abstract class JsonbTypeHandler<T> extends BaseTypeHandler<T>
 {
+    private final Class<T> targetClass;
+    private final TypeReference<T> targetTypeReference;
+    private final String subject;
+    private final T emptyValue;
+
+    /**
+     * Creates a handler for a non-generic value whose complete Jackson type is represented by a
+     * Java class literal.
+     *
+     * @param targetClass concrete target class
+     * @param subject short business label used in persistence errors
+     * @param emptyValue semantic value returned for a null or blank database column
+     */
+    protected JsonbTypeHandler(Class<T> targetClass, String subject, T emptyValue)
+    {
+        this.targetClass = targetClass;
+        this.targetTypeReference = null;
+        this.subject = subject;
+        this.emptyValue = emptyValue;
+    }
+
+    /**
+     * Creates a handler for a generic value whose element types would otherwise be erased.
+     *
+     * @param targetTypeReference complete generic target type
+     * @param subject short business label used in persistence errors
+     * @param emptyValue semantic value returned for a null or blank database column
+     */
+    protected JsonbTypeHandler(TypeReference<T> targetTypeReference, String subject, T emptyValue)
+    {
+        this.targetClass = null;
+        this.targetTypeReference = targetTypeReference;
+        this.subject = subject;
+        this.emptyValue = emptyValue;
+    }
+
     @Override
     public void setNonNullParameter(
         PreparedStatement statement,
@@ -30,11 +66,11 @@ public abstract class JsonbTypeHandler<T> extends BaseTypeHandler<T>
         jsonb.setType("jsonb");
         try
         {
-            jsonb.setValue(JsonSerializer.serializeShared(parameter, getSubject()));
+            jsonb.setValue(JsonSerializer.serializeShared(parameter, subject));
         }
         catch (IllegalArgumentException e)
         {
-            throw new SQLException(getSubject() + " could not be serialized.", e);
+            throw new SQLException(subject + " could not be serialized.", e);
         }
         statement.setObject(parameterIndex, jsonb);
     }
@@ -57,38 +93,19 @@ public abstract class JsonbTypeHandler<T> extends BaseTypeHandler<T>
         return deserialize(statement.getString(columnIndex));
     }
 
-    /**
-     * Returns the concrete Jackson type required to reconstruct the domain value.
-     *
-     * @return target JSONB type descriptor
-     */
-    protected abstract TypeReference<T> getTypeReference();
-
-    /**
-     * Returns the short business label used in contextual persistence errors.
-     *
-     * @return human-readable JSONB value name
-     */
-    protected abstract String getSubject();
-
-    /**
-     * Defines the semantic value used when the nullable database column contains no JSON.
-     *
-     * @return default nullable-column value
-     */
-    protected abstract T getEmptyValue();
-
     private T deserialize(String json) throws SQLException
     {
         if (json == null || json.isBlank())
-            return getEmptyValue();
+            return emptyValue;
         try
         {
-            return JsonSerializer.deserializeShared(json, getTypeReference(), getSubject());
+            if (targetClass != null)
+                return JsonSerializer.deserializeShared(json, targetClass, subject);
+            return JsonSerializer.deserializeShared(json, targetTypeReference, subject);
         }
         catch (IllegalArgumentException e)
         {
-            throw new SQLException(getSubject() + " could not be deserialized.", e);
+            throw new SQLException(subject + " could not be deserialized.", e);
         }
     }
 }

@@ -259,6 +259,15 @@ public class ConversationRoundService
             .toList();
     }
 
+    /**
+     * Validates the shape and mutually exclusive destination fields of a reference-resolution
+     * request while preserving the caller's source ordering.
+     *
+     * @param userId authenticated caller identity that must be positive
+     * @param request destination selector and ordered source Conversation IDs
+     * @return immutable ordered source IDs after blank and duplicate validation
+     * @throws RoundPersistenceException when the request shape or reference count is invalid
+     */
     private List<String> validateReferenceResolutionRequest(
         long userId, ResolveConversationReferencesRequest request)
     {
@@ -542,6 +551,16 @@ public class ConversationRoundService
                 round -> round));
     }
 
+    /**
+     * Verifies that each reference belongs to the destination Group and points to an existing,
+     * non-deleted Round no newer than its source Conversation high-water mark.
+     *
+     * @param destination owned destination Conversation defining the required Group
+     * @param boundaries ordered source Conversation and Round boundary pairs
+     * @param sourcesById owned source Conversations keyed by public Conversation ID
+     * @param roundsByBoundary persisted boundary Rounds keyed by Conversation and Round number
+     * @throws RoundPersistenceException when Group membership or a Round boundary is invalid
+     */
     private void validateReferenceBoundaries(
         Conversation destination,
         List<ConversationReferenceBoundary> boundaries,
@@ -592,6 +611,15 @@ public class ConversationRoundService
         }
     }
 
+    /**
+     * Projects validated source histories into alternating user/assistant context messages while
+     * retaining the caller's reference order and frozen boundary metadata.
+     *
+     * @param references ordered validated references supplied by Runner
+     * @param sourcesById source Conversation metadata keyed by public Conversation ID
+     * @param completedRoundsByConversation completed source Rounds grouped by Conversation ID
+     * @return immutable prepared reference projections ready for the Runner context builder
+     */
     private List<PreparedConversationReference> buildPreparedReferences(
         List<ConversationReference> references,
         Map<String, Conversation> sourcesById,

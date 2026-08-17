@@ -339,6 +339,13 @@ public class ConversationRoundRpcProvider implements ConversationRpcService
         return conversationRoundTracing.traceConversationReplay(request, () -> loadConversationReplay(request));
     }
 
+    /**
+     * Executes replay validation and projection inside the tracing wrapper, translating expected
+     * persistence failures into the protobuf response contract.
+     *
+     * @param request validated ownership identity, replay boundary, and requested detail level
+     * @return replay context on success or a typed error response retaining the Conversation ID
+     */
     private GetConversationReplayResponse loadConversationReplay(GetConversationReplayRequest request)
     {
         try
@@ -422,6 +429,13 @@ public class ConversationRoundRpcProvider implements ConversationRpcService
             request, () -> prepareConversationFilesInternal(request));
     }
 
+    /**
+     * Validates an owned file batch, applies aggregate size rules, reserves every file atomically,
+     * and projects the processing state required by Runner.
+     *
+     * @param request user, Conversation, request correlation ID, and selected stable file IDs
+     * @return per-file readiness plus aggregate success/failure flags or a typed validation error
+     */
     private PrepareConversationFilesResponse prepareConversationFilesInternal(PrepareConversationFilesRequest request)
     {
         PrepareConversationFilesResult.Builder data = PrepareConversationFilesResult.newBuilder()
