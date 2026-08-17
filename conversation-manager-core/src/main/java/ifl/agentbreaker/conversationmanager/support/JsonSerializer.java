@@ -4,6 +4,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import jakarta.annotation.PostConstruct;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
@@ -14,8 +15,77 @@ import org.springframework.stereotype.Component;
 @Component
 public class JsonSerializer
 {
+    private static ObjectMapper sharedObjectMapper;
+
     @Autowired
     private ObjectMapper objectMapper;
+
+    /**
+     * Exposes the same configured mapper to MyBatis type handlers, which are instantiated outside
+     * ordinary Spring field injection.
+     */
+    @PostConstruct
+    public void registerSharedObjectMapper()
+    {
+        sharedObjectMapper = objectMapper;
+    }
+
+    /**
+     * Returns the application-configured mapper for infrastructure adapters that cannot be
+     * dependency-injected directly by Spring.
+     *
+     * @return the single configured Jackson mapper
+     * @throws IllegalStateException when called before the Spring application context initializes
+     */
+    public static ObjectMapper getSharedObjectMapper()
+    {
+        if (sharedObjectMapper == null)
+            throw new IllegalStateException("JsonSerializer has not been initialized.");
+        return sharedObjectMapper;
+    }
+
+    /**
+     * Serializes an infrastructure-owned JSONB value through the same configured mapper as
+     * ordinary Spring-managed callers.
+     *
+     * @param value value to serialize
+     * @param subject concise description of the serialized value
+     * @return JSON representation of {@code value}
+     * @throws IllegalArgumentException when Jackson cannot serialize the value
+     */
+    public static String serializeShared(Object value, String subject)
+    {
+        try
+        {
+            return getSharedObjectMapper().writeValueAsString(value);
+        }
+        catch (JsonProcessingException e)
+        {
+            throw new IllegalArgumentException(subject + " could not be serialized.", e);
+        }
+    }
+
+    /**
+     * Deserializes an infrastructure-owned JSONB value with the configured mapper.
+     *
+     * @param json persisted JSON
+     * @param typeReference concrete target type
+     * @param subject concise description of the deserialized value
+     * @param <T> target value type
+     * @return decoded value
+     * @throws IllegalArgumentException when JSON is malformed or incompatible with the target
+     */
+    public static <T> T deserializeShared(String json, TypeReference<T> typeReference, String subject)
+    {
+        try
+        {
+            return getSharedObjectMapper().readValue(json, typeReference);
+        }
+        catch (JsonProcessingException e)
+        {
+            throw new IllegalArgumentException(subject + " could not be deserialized.", e);
+        }
+    }
 
     /**
      * Serializes a value with the application's configured Jackson modules.

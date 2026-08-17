@@ -58,7 +58,7 @@ class ConversationRoundProgressServiceTest
     @BeforeEach
     void executeTransactionCallbacks()
     {
-        when(mutationLock.acquire("conv_phase12")).thenReturn(lockHandle);
+        when(mutationLock.acquire("conv_progress")).thenReturn(lockHandle);
         when(transactionTemplate.execute(any())).thenAnswer(invocation ->
         {
             TransactionCallback<?> callback = invocation.getArgument(0);
@@ -74,8 +74,8 @@ class ConversationRoundProgressServiceTest
         ConversationToolDispatch dispatch = new ConversationToolDispatch();
         AtomicReference<ConversationRoundMutation> recorded = new AtomicReference<>();
 
-        when(conversationMapper.lockConversationByIdAndUser("conv_phase12", 7L)).thenReturn(new Conversation());
-        when(roundMapper.getRound("conv_phase12", 1L)).thenReturn(round);
+        when(conversationMapper.lockConversationByIdAndUser("conv_progress", 7L)).thenReturn(new Conversation());
+        when(roundMapper.getRound("conv_progress", 1L)).thenReturn(round);
         when(mutationMapper.getMutation(42L, "mutation-1")).thenAnswer(invocation -> recorded.get());
         when(progressMapper.toDispatches(7L, 42L, request.getDispatchEvidenceList())).thenReturn(List.of(dispatch));
         when(dispatchMapper.upsertDispatchEvidence(List.of(dispatch))).thenReturn(1);
@@ -102,8 +102,8 @@ class ConversationRoundProgressServiceTest
     {
         AppendConversationRoundProgressRequest request = dispatchRequest(1L, "mutation-stale");
         ConversationRound round = inProgressRound(42L, 2L);
-        when(conversationMapper.lockConversationByIdAndUser("conv_phase12", 7L)).thenReturn(new Conversation());
-        when(roundMapper.getRound("conv_phase12", 1L)).thenReturn(round);
+        when(conversationMapper.lockConversationByIdAndUser("conv_progress", 7L)).thenReturn(new Conversation());
+        when(roundMapper.getRound("conv_progress", 1L)).thenReturn(round);
 
         RoundPersistenceException error = assertThrows(
             RoundPersistenceException.class,
@@ -119,7 +119,7 @@ class ConversationRoundProgressServiceTest
     {
         return AppendConversationRoundProgressRequest.newBuilder()
             .setUserId(7L)
-            .setConversationId("conv_phase12")
+            .setConversationId("conv_progress")
             .setRoundNumber(1L)
             .setMutationId(mutationId)
             .setExpectedRevision(expectedRevision)

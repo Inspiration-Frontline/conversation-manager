@@ -49,7 +49,7 @@ public class ConversationFileParser
     private static final String TRUNCATION_MARKER = "\n\n[Content truncated here by the configured extraction limit.]\n\n";
 
     @Autowired
-    private ConversationFileProperties properties;
+    private ConversationFileProperties conversationFileProperties;
 
     private final Tika tika = new Tika();
 
@@ -371,7 +371,7 @@ public class ConversationFileParser
      */
     private TruncatedText retainTextWithinLimit(String text)
     {
-        int maximum = properties.getMaxExtractedCharacters();
+        int maximum = conversationFileProperties.getMaxExtractedCharacters();
         if (text.length() <= maximum)
             return new TruncatedText(text, false);
 
@@ -401,8 +401,8 @@ public class ConversationFileParser
     private void configureZipSafety()
     {
         ZipSecureFile.setMinInflateRatio(0.01);
-        ZipSecureFile.setMaxEntrySize(properties.getMaxBytes() * 20);
-        ZipSecureFile.setMaxTextSize(properties.getMaxExtractedCharacters() * 4L);
+        ZipSecureFile.setMaxEntrySize(conversationFileProperties.getMaxBytes() * 20);
+        ZipSecureFile.setMaxTextSize(conversationFileProperties.getMaxExtractedCharacters() * 4L);
     }
 
     private record TruncatedText(String text, boolean truncated)

@@ -46,19 +46,19 @@ public class ConversationFileTaskWorker
     private FileCleanupTaskMapper fileCleanupTaskMapper;
 
     @Autowired
-    private ConversationFileParser parser;
+    private ConversationFileParser conversationFileParser;
 
     @Autowired
-    private FileContentSecurityScanner securityScanner;
+    private FileContentSecurityScanner fileContentSecurityScanner;
 
     @Autowired
-    private ConversationFileTaskService taskService;
+    private ConversationFileTaskService conversationFileTaskService;
 
     @Autowired
-    private ConversationFileProperties properties;
+    private ConversationFileProperties conversationFileProperties;
 
     @Autowired
-    private OSS ossClient;
+    private OSS oss;
 
     @Autowired
     @Qualifier("conversationFileTaskExecutor")
@@ -85,7 +85,7 @@ public class ConversationFileTaskWorker
 
         String processingLeaseToken = UUID.randomUUID().toString();
         List<FileProcessingTask> processingTasks = fileProcessingTaskMapper.claimTasks(
-            processingLeaseToken, properties.getTaskLeaseSeconds(), available);
+            processingLeaseToken, conversationFileProperties.getTaskLeaseSeconds(), available);
         for (FileProcessingTask task : processingTasks)
             submit(taskConcurrency, () -> processFile(task));
 
@@ -95,7 +95,7 @@ public class ConversationFileTaskWorker
 
         String cleanupLeaseToken = UUID.randomUUID().toString();
         List<FileCleanupTask> cleanupTasks = fileCleanupTaskMapper.claimTasks(
-            cleanupLeaseToken, properties.getTaskLeaseSeconds(), available);
+            cleanupLeaseToken, conversationFileProperties.getTaskLeaseSeconds(), available);
         for (FileCleanupTask task : cleanupTasks)
             submit(taskConcurrency, () -> cleanupFile(task));
     }
@@ -142,20 +142,20 @@ public class ConversationFileTaskWorker
                 // security gate, verifies MIME/checksum, extracts text plus structural metadata,
                 // and atomically marks both the resource and task complete.
                 byte[] bytes = readObject(fileResource);
-                securityScanner.scan(bytes);
-                FileExtractionResult extractionResult = parser.parse(fileResource, bytes);
-                taskService.completeProcessing(task.getId(), task.getLeaseToken(), fileResource, extractionResult);
+                fileContentSecurityScanner.scan(bytes);
+                FileExtractionResult extractionResult = conversationFileParser.parse(fileResource, bytes);
+                conversationFileTaskService.completeProcessing(task.getId(), task.getLeaseToken(), fileResource, extractionResult);
             }
             catch (FileProcessingException e)
             {
                 log.warn("File processing failed for {} with {}.", fileResource.getFileId(), e.getErrorCode(), e);
-                taskService.failProcessing(
+                conversationFileTaskService.failProcessing(
                     task.getId(), task.getLeaseToken(), fileResource, e.getErrorCode(), e.getMessage());
             }
             catch (Exception e)
             {
                 log.error("Unexpected file processing failure for {}.", fileResource.getFileId(), e);
-                taskService.failProcessing(
+                conversationFileTaskService.failProcessing(
                     task.getId(), task.getLeaseToken(), fileResource, "FILE_PROCESSING_FAILED", "The file could not be processed.");
             }
         }
@@ -193,16 +193,16 @@ public class ConversationFileTaskWorker
                 fileCleanupTaskMapper.reschedule(
                     task.getId(),
                     task.getLeaseToken(),
-                    properties.getOrphanTtlSeconds(),
+                    conversationFileProperties.getOrphanTtlSeconds(),
                     "Cleanup deferred because the file is referenced.");
                 return;
             }
 
             try
             {
-                if (ossClient.doesObjectExist(fileResource.getBucketName(), fileResource.getObjectKey()))
-                    ossClient.deleteObject(fileResource.getBucketName(), fileResource.getObjectKey());
-                taskService.completeCleanup(task.getId(), task.getLeaseToken(), fileResource);
+                if (oss.doesObjectExist(fileResource.getBucketName(), fileResource.getObjectKey()))
+                    oss.deleteObject(fileResource.getBucketName(), fileResource.getObjectKey());
+                conversationFileTaskService.completeCleanup(task.getId(), task.getLeaseToken(), fileResource);
             }
             catch (Exception e)
             {
@@ -232,13 +232,13 @@ public class ConversationFileTaskWorker
      */
     private ScheduledFuture<?> renewProcessingLease(FileProcessingTask task)
     {
-        long intervalSeconds = Math.max(1, properties.getTaskLeaseSeconds() / 3L);
+        long intervalSeconds = Math.max(1, conversationFileProperties.getTaskLeaseSeconds() / 3L);
         return conversationFileLeaseExecutor.scheduleAtFixedRate(() ->
         {
             try
             {
                 if (fileProcessingTaskMapper.renewLease(
-                    task.getId(), task.getLeaseToken(), properties.getTaskLeaseSeconds()) != 1)
+                    task.getId(), task.getLeaseToken(), conversationFileProperties.getTaskLeaseSeconds()) != 1)
                     log.warn("The processing lease for task {} could not be renewed.", task.getId());
             }
             catch (Exception e)
@@ -256,13 +256,13 @@ public class ConversationFileTaskWorker
      */
     private ScheduledFuture<?> renewCleanupLease(FileCleanupTask task)
     {
-        long intervalSeconds = Math.max(1, properties.getTaskLeaseSeconds() / 3L);
+        long intervalSeconds = Math.max(1, conversationFileProperties.getTaskLeaseSeconds() / 3L);
         return conversationFileLeaseExecutor.scheduleAtFixedRate(() ->
         {
             try
             {
                 if (fileCleanupTaskMapper.renewLease(
-                    task.getId(), task.getLeaseToken(), properties.getTaskLeaseSeconds()) != 1)
+                    task.getId(), task.getLeaseToken(), conversationFileProperties.getTaskLeaseSeconds()) != 1)
                     log.warn("The cleanup lease for task {} could not be renewed.", task.getId());
             }
             catch (Exception e)
@@ -282,8 +282,8 @@ public class ConversationFileTaskWorker
      */
     private byte[] readObject(FileResource fileResource) throws FileProcessingException
     {
-        int maximumBytes = Math.toIntExact(properties.getMaxBytes());
-        try (OSSObject object = ossClient.getObject(fileResource.getBucketName(), fileResource.getObjectKey());
+        int maximumBytes = Math.toIntExact(conversationFileProperties.getMaxBytes());
+        try (OSSObject object = oss.getObject(fileResource.getBucketName(), fileResource.getObjectKey());
              InputStream input = object.getObjectContent())
         {
             byte[] bytes = input.readNBytes(maximumBytes + 1);
@@ -341,7 +341,7 @@ public class ConversationFileTaskWorker
                 current = concurrency;
                 if (current == null)
                 {
-                    current = new Semaphore(Math.max(1, properties.getTaskConcurrency()));
+                    current = new Semaphore(Math.max(1, conversationFileProperties.getTaskConcurrency()));
                     concurrency = current;
                 }
             }

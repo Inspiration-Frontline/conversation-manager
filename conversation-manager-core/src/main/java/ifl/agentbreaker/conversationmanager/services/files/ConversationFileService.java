@@ -88,13 +88,13 @@ public class ConversationFileService
     private ConversationSharingMapper conversationSharingMapper;
 
     @Autowired
-    private ConversationFileProperties fileProperties;
+    private ConversationFileProperties conversationFileProperties;
 
     @Autowired
-    private OssStorageProperties ossProperties;
+    private OssStorageProperties ossStorageProperties;
 
     @Autowired
-    private OSS ossClient;
+    private OSS oss;
 
     @Autowired
     private TransactionTemplate transactionTemplate;
@@ -118,7 +118,7 @@ public class ConversationFileService
 
         ConversationFileKind kind = ConversationFileTypeResolver.resolveKind(extension);
         String fileId = BusinessIdManager.newFileId();
-        Instant expiresAt = Instant.now().plusSeconds(ossProperties.getPresignedUrlTtlSeconds());
+        Instant expiresAt = Instant.now().plusSeconds(ossStorageProperties.getPresignedUrlTtlSeconds());
         String objectKey = buildObjectKey(userId, fileId);
 
         FileResource fileResource = new FileResource();
@@ -128,7 +128,7 @@ public class ConversationFileService
         fileResource.setKind(kind);
         fileResource.setStatus(ConversationFileStatus.PENDING_UPLOAD);
         fileResource.setStatusRevision(1);
-        fileResource.setBucketName(ossProperties.getBucketName());
+        fileResource.setBucketName(ossStorageProperties.getBucketName());
         fileResource.setObjectKey(objectKey);
         fileResource.setOriginalFilename(filename);
         fileResource.setFileExtension(extension);
@@ -140,13 +140,13 @@ public class ConversationFileService
             throw new IllegalStateException("The file resource could not be created.");
         fileCleanupTaskMapper.addTask(
             inserted.getId(), userId, FileCleanupReason.UPLOAD_EXPIRED,
-            ossProperties.getPresignedUrlTtlSeconds());
+            ossStorageProperties.getPresignedUrlTtlSeconds());
 
         GeneratePresignedUrlRequest signedRequest = new GeneratePresignedUrlRequest(
-            ossProperties.getBucketName(), objectKey, HttpMethod.PUT);
+            ossStorageProperties.getBucketName(), objectKey, HttpMethod.PUT);
         signedRequest.setExpiration(Date.from(expiresAt));
         signedRequest.setContentType(mimeType);
-        URL signedUrl = ossClient.generatePresignedUrl(signedRequest);
+        URL signedUrl = oss.generatePresignedUrl(signedRequest);
 
         FileUploadSession session = new FileUploadSession();
         session.setFile(toFileResourceInfo(inserted));
@@ -194,7 +194,7 @@ public class ConversationFileService
         ObjectMetadata metadata;
         try
         {
-            metadata = ossClient.getObjectMetadata(existing.getBucketName(), existing.getObjectKey());
+            metadata = oss.getObjectMetadata(existing.getBucketName(), existing.getObjectKey());
         }
         catch (Exception e)
         {
@@ -217,7 +217,7 @@ public class ConversationFileService
                 throw new ServiceResponseException(ERROR_INVALID_FILE, "The upload cannot be confirmed in its current state.");
             fileProcessingTaskMapper.upsertPendingTask(updated.getId(), userId);
             fileCleanupTaskMapper.addTask(
-                updated.getId(), userId, FileCleanupReason.ORPHANED, fileProperties.getOrphanTtlSeconds());
+                updated.getId(), userId, FileCleanupReason.ORPHANED, conversationFileProperties.getOrphanTtlSeconds());
             return updated;
         });
         return toFileResourceInfo(confirmed);
@@ -300,7 +300,7 @@ public class ConversationFileService
         if (fileResource.getStatus() != ConversationFileStatus.READY)
             throw new ServiceResponseException(ERROR_INVALID_FILE, "The file is not ready for download.");
 
-        Instant expiresAt = Instant.now().plusSeconds(ossProperties.getPresignedUrlTtlSeconds());
+        Instant expiresAt = Instant.now().plusSeconds(ossStorageProperties.getPresignedUrlTtlSeconds());
         FileDownloadUrl result = new FileDownloadUrl();
         result.setFileId(fileId);
         result.setUrl(createDownloadUrl(fileResource, expiresAt));
@@ -325,7 +325,7 @@ public class ConversationFileService
         if (fileResource == null || fileResource.getStatus() != ConversationFileStatus.READY || fileResource.isDeleted())
             throw new ServiceResponseException(ERROR_INVALID_FILE, "The file is not ready for download.");
 
-        Instant expiresAt = Instant.now().plusSeconds(ossProperties.getPresignedUrlTtlSeconds());
+        Instant expiresAt = Instant.now().plusSeconds(ossStorageProperties.getPresignedUrlTtlSeconds());
         FileDownloadUrl result = new FileDownloadUrl();
         result.setFileId(fileId);
         result.setUrl(createDownloadUrl(fileResource, expiresAt));
@@ -391,7 +391,7 @@ public class ConversationFileService
             userId,
             conversationId,
             requestId,
-            fileProperties.getReservationSeconds()) == fileIds.size();
+            conversationFileProperties.getReservationSeconds()) == fileIds.size();
     }
 
     /**
@@ -428,7 +428,7 @@ public class ConversationFileService
             uniqueConversationIds,
             userId,
             FileCleanupReason.CONVERSATION_DELETED,
-            fileProperties.getOrphanTtlSeconds());
+            conversationFileProperties.getOrphanTtlSeconds());
         conversationRoundFileMapper.deleteByConversationIds(uniqueConversationIds, userId);
         fileResourceMapper.clearReservationsForConversations(uniqueConversationIds, userId);
     }
@@ -441,7 +441,7 @@ public class ConversationFileService
      */
     public String createSignedGetUrl(FileResource fileResource)
     {
-        Instant expiresAt = Instant.now().plusSeconds(ossProperties.getPresignedUrlTtlSeconds());
+        Instant expiresAt = Instant.now().plusSeconds(ossStorageProperties.getPresignedUrlTtlSeconds());
         return createSignedGetUrl(fileResource, expiresAt);
     }
 
@@ -491,20 +491,20 @@ public class ConversationFileService
     {
         if (!StringUtils.hasText(filename) || !StringUtils.hasText(extension))
             throw new ServiceResponseException(ERROR_INVALID_FILE, "A supported filename extension is required.");
-        if (!fileProperties.getAllowedExtensions().contains(extension))
+        if (!conversationFileProperties.getAllowedExtensions().contains(extension))
             throw new ServiceResponseException(ERROR_INVALID_FILE, "The file extension is not supported.");
-        if (!fileProperties.getAllowedMimeTypes().contains(mimeType))
+        if (!conversationFileProperties.getAllowedMimeTypes().contains(mimeType))
             throw new ServiceResponseException(ERROR_INVALID_FILE, "The file MIME type is not supported.");
         if (!ConversationFileTypeResolver.isMimeTypeCompatible(extension, mimeType))
             throw new ServiceResponseException(
                 ERROR_INVALID_FILE, "The file MIME type does not match its filename extension.");
-        if (fileSize <= 0 || fileSize > fileProperties.getMaxBytes())
+        if (fileSize <= 0 || fileSize > conversationFileProperties.getMaxBytes())
             throw new ServiceResponseException(ERROR_INVALID_FILE, "The file exceeds the configured size limit.");
-        if (!StringUtils.hasText(ossProperties.getBucketName())
-            || !StringUtils.hasText(ossProperties.getAccessKeyId())
-            || !StringUtils.hasText(ossProperties.getAccessKeySecret()))
+        if (!StringUtils.hasText(ossStorageProperties.getBucketName())
+            || !StringUtils.hasText(ossStorageProperties.getAccessKeyId())
+            || !StringUtils.hasText(ossStorageProperties.getAccessKeySecret()))
             throw new IllegalStateException("OSS storage is not configured.");
-        if (!ossProperties.isPrivateBucket())
+        if (!ossStorageProperties.isPrivateBucket())
             throw new IllegalStateException("Conversation files require a private OSS bucket.");
     }
 
@@ -523,7 +523,7 @@ public class ConversationFileService
         return String.format(
             Locale.ROOT,
             OBJECT_KEY_LAYOUT,
-            trimSlashes(ossProperties.getObjectPrefix()),
+            trimSlashes(ossStorageProperties.getObjectPrefix()),
             userId,
             now.getYear(),
             now.getMonthValue(),
@@ -542,7 +542,7 @@ public class ConversationFileService
         GeneratePresignedUrlRequest request = new GeneratePresignedUrlRequest(
             fileResource.getBucketName(), fileResource.getObjectKey(), HttpMethod.GET);
         request.setExpiration(Date.from(expiresAt));
-        return ossClient.generatePresignedUrl(request).toString();
+        return oss.generatePresignedUrl(request).toString();
     }
 
     /** Creates a browser download signature whose response restores the original filename. */
@@ -554,7 +554,7 @@ public class ConversationFileService
         ResponseHeaderOverrides responseHeaders = new ResponseHeaderOverrides();
         responseHeaders.setContentDisposition(buildAttachmentContentDisposition(fileResource.getOriginalFilename()));
         request.setResponseHeaders(responseHeaders);
-        return ossClient.generatePresignedUrl(request).toString();
+        return oss.generatePresignedUrl(request).toString();
     }
 
     static String buildAttachmentContentDisposition(String filename)

@@ -29,7 +29,7 @@ public class ConversationFileParserTest
         properties.setMaxBytes(10 * 1024 * 1024);
         properties.setMaxExtractedCharacters(32);
         parser = new ConversationFileParser();
-        ReflectionTestUtils.setField(parser, "properties", properties);
+        ReflectionTestUtils.setField(parser, "conversationFileProperties", properties);
     }
 
     @Test

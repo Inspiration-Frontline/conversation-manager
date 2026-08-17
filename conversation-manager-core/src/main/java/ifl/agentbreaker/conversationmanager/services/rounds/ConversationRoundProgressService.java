@@ -129,6 +129,14 @@ public class ConversationRoundProgressService
         }
     }
 
+    /**
+     * Creates the initial persisted Round, freezes request attachments/references, and records the
+     * first mutation in the same transaction.
+     *
+     * @param request validated checkpoint command
+     * @param hash SHA-256 of the complete protobuf command bytes
+     * @return committed initial revision or an idempotent replay result
+     */
     private MutationOutcome createInTransaction(CreateConversationRoundCheckpointRequest request, String hash)
     {
         Conversation conversation = requireConversation(request.getUserId(), request.getConversationId());
@@ -151,6 +159,13 @@ public class ConversationRoundProgressService
         return new MutationOutcome(0, RoundStatus.ROUND_STATUS_IN_PROGRESS, false);
     }
 
+    /**
+     * Appends new immutable evidence and advances the optimistic revision in one transaction.
+     *
+     * @param request validated append command
+     * @param hash SHA-256 of the complete protobuf command bytes
+     * @return committed next revision or an idempotent replay result
+     */
     private MutationOutcome appendInTransaction(AppendConversationRoundProgressRequest request, String hash)
     {
         requireConversation(request.getUserId(), request.getConversationId());
@@ -175,6 +190,13 @@ public class ConversationRoundProgressService
         return new MutationOutcome(committedRevision, RoundStatus.ROUND_STATUS_IN_PROGRESS, false);
     }
 
+    /**
+     * Transitions an in-progress Round to a terminal status and records its mutation atomically.
+     *
+     * @param request validated finalization command
+     * @param hash SHA-256 of the complete protobuf command bytes
+     * @return committed terminal revision or an idempotent replay result
+     */
     private MutationOutcome finalizeInTransaction(FinalizeConversationRoundRequest request, String hash)
     {
         requireConversation(request.getUserId(), request.getConversationId());
@@ -182,8 +204,11 @@ public class ConversationRoundProgressService
         ConversationRoundMutation replay = conversationRoundMutationMapper.getMutation(round.getId(), request.getMutationId());
         if (replay != null)
             return validateReplay(replay, hash, request.getStatus());
+
         conversationRoundProgressValidator.requireMutableRevision(round, request.getExpectedRevision());
 
+        // Terminal payload is assembled only after validation so a rejected command never does
+        // unnecessary serialization work or obscures the stale-revision branch above.
         String answer = request.hasFinalAnswer() && StringUtils.hasText(request.getFinalAnswer().getContent())
             ? request.getFinalAnswer().getContent() : null;
         String parts = request.hasFinalAnswer() && request.getFinalAnswer().getContentPartsCount() > 0
@@ -196,10 +221,18 @@ public class ConversationRoundProgressService
             throw conversationRoundProgressValidator.stale();
 
         long committedRevision = request.getExpectedRevision() + 1;
+
         recordMutation(round.getId(), request.getUserId(), request.getMutationId(), hash, committedRevision);
+
         return new MutationOutcome(committedRevision, request.getStatus(), false);
     }
 
+    /**
+     * Verifies that newly appended Turns continue immediately after the persisted Turn sequence.
+     *
+     * @param roundId database ID of the target Round
+     * @param request validated append command carrying ordered Turns
+     */
     private void validateTurnBoundary(long roundId, AppendConversationRoundProgressRequest request)
     {
         long nextTurn = conversationTurnMapper.countTurns(roundId) + 1;
@@ -208,6 +241,13 @@ public class ConversationRoundProgressService
                 throw conversationRoundProgressValidator.invalid("Appended turn_number must continue the persisted sequence.");
     }
 
+    /**
+     * Locks and returns the owned Conversation that contains the target Round.
+     *
+     * @param userId authenticated owner ID
+     * @param conversationId stable public Conversation ID
+     * @return locked owned Conversation
+     */
     private Conversation requireConversation(long userId, String conversationId)
     {
         Conversation conversation = conversationMapper.lockConversationByIdAndUser(conversationId, userId);
@@ -217,6 +257,13 @@ public class ConversationRoundProgressService
         return conversation;
     }
 
+    /**
+     * Returns one non-deleted Round after its parent Conversation ownership has already been checked.
+     *
+     * @param conversationId stable public Conversation ID
+     * @param roundNumber one-based Round number
+     * @return mutable or terminal persisted Round
+     */
     private ConversationRound requireRound(String conversationId, long roundNumber)
     {
         ConversationRound round = conversationRoundMapper.getRound(conversationId, roundNumber);
@@ -226,6 +273,14 @@ public class ConversationRoundProgressService
         return round;
     }
 
+    /**
+     * Resolves a checkpoint retry against the mutation ledger of the already existing Round.
+     *
+     * @param round existing Round at the requested number
+     * @param mutationId caller's command identity
+     * @param hash SHA-256 of the retry command bytes
+     * @return original commit result when the retry is byte-for-byte identical
+     */
     private MutationOutcome replay(ConversationRound round, String mutationId, String hash)
     {
         ConversationRoundMutation mutation = conversationRoundMutationMapper.getMutation(round.getId(), mutationId);
@@ -235,6 +290,14 @@ public class ConversationRoundProgressService
         return validateReplay(mutation, hash, toProtoStatus(round.getStatus()));
     }
 
+    /**
+     * Accepts an identical committed command or rejects one mutation ID reused with new content.
+     *
+     * @param mutation immutable ledger record found by Round ID and mutation ID
+     * @param hash SHA-256 of the caller's current request bytes
+     * @param status current or requested Round status returned to the caller
+     * @return idempotent replay outcome without a second database change
+     */
     private MutationOutcome validateReplay(ConversationRoundMutation mutation, String hash, RoundStatus status)
     {
         if (!mutation.getPayloadHash().equals(hash))
@@ -243,6 +306,15 @@ public class ConversationRoundProgressService
         return new MutationOutcome(mutation.getCommittedRevision(), status, true);
     }
 
+    /**
+     * Inserts the immutable ledger record proving that one mutation command committed exactly once.
+     *
+     * @param roundId database ID of the affected Round
+     * @param userId authenticated caller used for audit fields
+     * @param mutationId unique identity supplied by the caller for retries
+     * @param hash SHA-256 of the complete protobuf command bytes
+     * @param revision revision committed by this command
+     */
     private void recordMutation(long roundId, long userId, String mutationId, String hash, long revision)
     {
         ConversationRoundMutation mutation = new ConversationRoundMutation();
@@ -256,6 +328,12 @@ public class ConversationRoundProgressService
             throw new IllegalStateException("Mutation ledger insert affected an unexpected row count.");
     }
 
+    /**
+     * Computes the canonical replay hash from protobuf wire bytes rather than from a lossy JSON view.
+     *
+     * @param message complete mutation command
+     * @return lowercase hexadecimal SHA-256 digest
+     */
     private String hash(MessageLite message)
     {
         try
@@ -268,6 +346,12 @@ public class ConversationRoundProgressService
         }
     }
 
+    /**
+     * Maps the persisted enum naming convention back to its protobuf counterpart.
+     *
+     * @param status persisted Round status
+     * @return equivalent protobuf status
+     */
     private RoundStatus toProtoStatus(ConversationRoundStatus status)
     {
         return RoundStatus.valueOf("ROUND_STATUS_" + status.name());
