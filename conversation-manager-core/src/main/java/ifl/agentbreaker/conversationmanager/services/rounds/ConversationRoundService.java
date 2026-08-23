@@ -31,6 +31,7 @@ import ifl.agentbreaker.conversationmanager.domain.dtos.responses.ConversationRo
 import ifl.agentbreaker.conversationmanager.domain.dtos.responses.ResolvedConversationReference;
 import ifl.agentbreaker.conversationmanager.domain.dtos.responses.RoundHistoryView;
 import ifl.agentbreaker.conversationmanager.domain.dtos.responses.RoundFileHistory;
+import ifl.agentbreaker.conversationmanager.domain.dtos.responses.RoundToolActivityHistory;
 import ifl.agentbreaker.conversationmanager.domain.dtos.responses.SharedRoundHistoryView;
 import ifl.agentbreaker.conversationmanager.domain.entities.pg.Conversation;
 import ifl.agentbreaker.conversationmanager.domain.entities.pg.ConversationLlmCall;
@@ -172,13 +173,14 @@ public class ConversationRoundService
     }
 
     /**
-     * Builds the browser history view from the compact Round rows and attachment links. Text is
-     * recovered from stored content parts for rows written before the scalar compatibility column
-     * was populated, allowing old file conversations to remain readable after refresh.
+     * Builds the browser history view from compact Round rows plus batched Tool, attachment, and
+     * reference projections. Text is recovered from stored content parts for rows written before
+     * the scalar compatibility column was populated, allowing old conversations to remain fully
+     * readable after refresh.
      *
      * @param userId authenticated browser identity
      * @param conversationId Conversation selected in the UI
-     * @return service envelope containing visible messages and attachment summaries
+     * @return service envelope containing visible messages and replayable activity summaries
      */
     public ServiceResponse<RoundHistoryView> getHttpHistory(long userId, String conversationId)
     {
@@ -189,27 +191,52 @@ public class ConversationRoundService
                 .listRoundFiles(conversationId)
                 .stream()
                 .collect(Collectors.groupingBy(RoundFileHistory::roundNumber));
+            Map<Long, List<RoundToolActivityHistory>> toolActivitiesByRound = conversationToolCallExecutionMapper
+                .listRoundToolActivities(conversationId)
+                .stream()
+                .collect(Collectors.groupingBy(RoundToolActivityHistory::roundNumber));
             Map<Long, List<ConversationRoundReference>> referencesByRound = listReferencesByRound(history.rounds());
             return ServiceResponse.buildSuccessResponse(new RoundHistoryView(
                 conversationId,
                 history.latestRoundNumber(),
-                history.rounds().stream().map(round -> new RoundHistoryView.RoundView(
-                    round.getRoundNumber(), extractTextContent(round), round.getFinalAnswerContent(),
-                    round.getStatus().name(), round.getErrorMessage(), round.getTurnCount(),
-                    round.getStartTime().toEpochMilli(), getRoundEndTime(round),
-                    filesByRound.getOrDefault(round.getRoundNumber(), List.of()).stream()
-                        .map(file -> new RoundHistoryView.FileView(
-                            file.fileId(), file.originalFilename(), file.mimeType(), file.fileSize(),
-                            file.kind(), file.status()))
-                        .toList(),
-                    referencesByRound.getOrDefault(round.getId(), List.of()).stream()
-                        .map(this::toReferenceView)
-                        .toList())).toList()));
+                history.rounds().stream()
+                    .map(round -> toRoundView(round, toolActivitiesByRound, filesByRound, referencesByRound))
+                    .toList()));
         }
         catch (RoundPersistenceException e)
         {
             return ServiceResponse.buildErrorResponse(e.getCode(), e.getMessage());
         }
+    }
+
+    private RoundHistoryView.RoundView toRoundView(
+        ConversationRound round,
+        Map<Long, List<RoundToolActivityHistory>> toolActivitiesByRound,
+        Map<Long, List<RoundFileHistory>> filesByRound,
+        Map<Long, List<ConversationRoundReference>> referencesByRound)
+    {
+        return new RoundHistoryView.RoundView(
+            round.getRoundNumber(), extractTextContent(round), round.getFinalAnswerContent(),
+            round.getStatus().name(), round.getErrorMessage(), round.getTurnCount(),
+            round.getStartTime().toEpochMilli(), getRoundEndTime(round),
+            toolActivitiesByRound.getOrDefault(round.getRoundNumber(), List.of()).stream()
+                .map(this::toToolActivityView)
+                .toList(),
+            filesByRound.getOrDefault(round.getRoundNumber(), List.of()).stream()
+                .map(file -> new RoundHistoryView.FileView(
+                    file.fileId(), file.originalFilename(), file.mimeType(), file.fileSize(),
+                    file.kind(), file.status()))
+                .toList(),
+            referencesByRound.getOrDefault(round.getId(), List.of()).stream()
+                .map(this::toReferenceView)
+                .toList());
+    }
+
+    private RoundHistoryView.ToolActivityView toToolActivityView(RoundToolActivityHistory activity)
+    {
+        return new RoundHistoryView.ToolActivityView(
+            activity.toolCallId(), activity.toolName(), activity.toolKey(), activity.arguments(),
+            activity.status(), activity.resultContent(), activity.errorMessage());
     }
 
     private long getRoundEndTime(ConversationRound round)

@@ -35,4 +35,27 @@
             )
         </foreach>
     </insert>
+
+    <select id="listRoundToolActivities"
+            resultType="ifl.agentbreaker.conversationmanager.domain.dtos.responses.RoundToolActivityHistory">
+        SELECT round."round_number" AS "roundNumber",
+               turn."turn_number" AS "turnNumber",
+               execution."execution_order" AS "executionOrder",
+               response_call."tool_call_id" AS "toolCallId",
+               response_call."function_name" AS "toolName",
+               execution."tool_key" AS "toolKey",
+               response_call."arguments" AS "arguments",
+               execution."status" AS "status",
+               execution."result_content" AS "resultContent",
+               execution."error_message" AS "errorMessage"
+        FROM "conversation_tool_call_execution" execution
+        INNER JOIN "conversation_llm_response_tool_call" response_call
+            ON response_call."id" = execution."response_tool_call_id"
+           AND response_call."turn_id" = execution."turn_id"
+        INNER JOIN "conversation_turn" turn ON turn."id" = execution."turn_id"
+        INNER JOIN "conversation_round" round ON round."id" = turn."round_id"
+        WHERE round."conversation_id" = #{conversationId}
+          AND round."deleted" = FALSE
+        ORDER BY round."round_number", turn."turn_number", execution."execution_order"
+    </select>
 </mapper>

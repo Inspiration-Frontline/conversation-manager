@@ -6,7 +6,12 @@ public record RoundHistoryView(String conversationId, long latestRoundNumber, Li
 {
     public record RoundView(long roundNumber, String userMessage, String assistantAnswer, String status,
                             String errorMessage, long turnCount, long startTime, long endTime,
-                            List<FileView> files, List<ReferenceView> references)
+                            List<ToolActivityView> tools, List<FileView> files, List<ReferenceView> references)
+    {
+    }
+
+    public record ToolActivityView(String callId, String name, String toolKey, String arguments,
+                                   String status, String result, String errorMessage)
     {
     }
 
