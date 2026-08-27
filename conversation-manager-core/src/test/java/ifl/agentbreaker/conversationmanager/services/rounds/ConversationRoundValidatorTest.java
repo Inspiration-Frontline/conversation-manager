@@ -9,7 +9,6 @@ import ifl.agentbreaker.conversationmanager.rpc.ConversationErrorCode;
 import ifl.agentbreaker.conversationmanager.rpc.ConversationReference;
 import ifl.agentbreaker.conversationmanager.rpc.ConversationTurn;
 import ifl.agentbreaker.conversationmanager.rpc.FunctionCall;
-import ifl.agentbreaker.conversationmanager.rpc.LlmCall;
 import ifl.agentbreaker.conversationmanager.rpc.LlmConversationMessage;
 import ifl.agentbreaker.conversationmanager.rpc.LlmMessageStorageMode;
 import ifl.agentbreaker.conversationmanager.rpc.LlmRequest;
@@ -106,10 +105,9 @@ class ConversationRoundValidatorTest
     {
         SaveConversationRoundRequest valid = validToolLoopRequest();
         ConversationTurn invalidSecondTurn = valid.getTurns(1).toBuilder()
-            .setLlmCall(valid.getTurns(1).getLlmCall().toBuilder()
-                .setRequest(valid.getTurns(1).getLlmCall().getRequest().toBuilder()
-                    .setMessages(1, valid.getTurns(1).getLlmCall().getRequest().getMessages(1).toBuilder()
-                        .setContent("wrong result"))))
+            .setRequest(valid.getTurns(1).getRequest().toBuilder()
+                .setMessages(1, valid.getTurns(1).getRequest().getMessages(1).toBuilder()
+                    .setContent("wrong result")))
             .build();
         SaveConversationRoundRequest invalid = valid.toBuilder().setTurns(1, invalidSecondTurn).build();
 
@@ -204,8 +202,6 @@ class ConversationRoundValidatorTest
         String calculatorResult = "{\"status\":\"error\",\"error\":\"division by zero\"}";
 
         LlmRequest firstRequest = LlmRequest.newBuilder()
-            .setProvider("litellm")
-            .setModel("test-model")
             .setMessageStorageMode(LlmMessageStorageMode.LLM_MESSAGE_STORAGE_MODE_FULL_SNAPSHOT)
             .addMessages(message(MessageRole.MESSAGE_ROLE_SYSTEM, "system"))
             .addMessages(message(MessageRole.MESSAGE_ROLE_USER, "question"))
@@ -214,7 +210,12 @@ class ConversationRoundValidatorTest
             .build();
         LlmResponse firstResponse = response("", "tool_calls", timeCall, calculatorCall);
         ConversationTurn firstTurn = turnBuilder(1, START, START + 25)
-            .setLlmCall(call(firstRequest, firstResponse, START, START + 10, "request-1"))
+            .setRequest(firstRequest)
+            .setResponse(firstResponse)
+            .setRequestId("request-1")
+            .setTraceId(TRACE_ID)
+            .setLlmStartTime(START)
+            .setLlmEndTime(START + 10)
             .addToolCallExecutions(execution(
                 timeCall, "builtin.current_time", ToolCallExecutionStatus.TOOL_CALL_EXECUTION_STATUS_COMPLETED,
                 timeResult, "", START + 10, START + 20))
@@ -229,8 +230,6 @@ class ConversationRoundValidatorTest
             .addToolCalls(calculatorCall)
             .build();
         LlmRequest secondRequest = LlmRequest.newBuilder()
-            .setProvider("litellm")
-            .setModel("test-model")
             .setMessageStorageMode(LlmMessageStorageMode.LLM_MESSAGE_STORAGE_MODE_APPEND_DELTA)
             .addMessages(assistantDelta)
             .addMessages(toolMessage("call-time", timeResult))
@@ -239,8 +238,12 @@ class ConversationRoundValidatorTest
             .addTools(toolDefinition("builtin.calculator", "calculate_expression"))
             .build();
         ConversationTurn secondTurn = turnBuilder(2, START + 25, START + 35)
-            .setLlmCall(call(secondRequest, response("final answer", "stop"),
-                START + 25, START + 35, "request-2"))
+            .setRequest(secondRequest)
+            .setResponse(response("final answer", "stop"))
+            .setRequestId("request-2")
+            .setTraceId(TRACE_ID)
+            .setLlmStartTime(START + 25)
+            .setLlmEndTime(START + 35)
             .build();
 
         return SaveConversationRoundRequest.newBuilder()
@@ -261,14 +264,17 @@ class ConversationRoundValidatorTest
     private SaveConversationRoundRequest validTextRequest(long userId, String answer)
     {
         LlmRequest request = LlmRequest.newBuilder()
-            .setProvider("litellm")
-            .setModel("test-model")
             .setMessageStorageMode(LlmMessageStorageMode.LLM_MESSAGE_STORAGE_MODE_FULL_SNAPSHOT)
             .addMessages(message(MessageRole.MESSAGE_ROLE_SYSTEM, "system"))
             .addMessages(message(MessageRole.MESSAGE_ROLE_USER, "question"))
             .build();
         ConversationTurn turn = turnBuilder(1, START, START + 10)
-            .setLlmCall(call(request, response(answer, "stop"), START, START + 10, "request"))
+            .setRequest(request)
+            .setResponse(response(answer, "stop"))
+            .setRequestId("request")
+            .setTraceId(TRACE_ID)
+            .setLlmStartTime(START)
+            .setLlmEndTime(START + 10)
             .build();
         return SaveConversationRoundRequest.newBuilder()
             .setUserId(userId)
@@ -293,18 +299,6 @@ class ConversationRoundValidatorTest
             .setEndTime(end)
             .setAgentIdentity(AgentIdentity.newBuilder()
                 .setAgentId(1).setName("general-assistant").setVersion(1));
-    }
-
-    private LlmCall call(LlmRequest request, LlmResponse response, long start, long end, String requestId)
-    {
-        return LlmCall.newBuilder()
-            .setRequest(request)
-            .setResponse(response)
-            .setRequestId(requestId)
-            .setTraceId(TRACE_ID)
-            .setStartTime(start)
-            .setEndTime(end)
-            .build();
     }
 
     private LlmResponse response(String content, String finishReason, ToolCall... calls)

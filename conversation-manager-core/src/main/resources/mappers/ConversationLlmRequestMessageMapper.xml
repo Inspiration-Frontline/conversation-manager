@@ -7,7 +7,8 @@
         <result column="creation_time" property="creationTime"/>
         <result column="modifier_id" property="modifierId"/>
         <result column="modification_time" property="modificationTime"/>
-        <result column="llm_call_id" property="llmCallId"/>
+        <result column="round_id" property="roundId"/>
+        <result column="turn_id" property="turnId"/>
         <result column="message_order" property="messageOrder"/>
         <result column="role" property="role"/>
         <result column="content" property="content"/>
@@ -17,34 +18,33 @@
 
     <select id="insertRequestMessages" resultMap="RequestMessageResultMap" affectData="true">
         INSERT INTO "conversation_llm_request_message" (
-            "creator_id", "modifier_id", "llm_call_id", "message_order", "role", "content",
+            "creator_id", "modifier_id", "round_id", "turn_id", "message_order", "role", "content",
             "content_parts", "tool_call_id"
         ) VALUES
         <foreach collection="items" item="item" separator=",">
             (
-                #{item.creatorId}, #{item.modifierId}, #{item.llmCallId}, #{item.messageOrder},
+                #{item.creatorId}, #{item.modifierId}, #{item.roundId}, #{item.turnId}, #{item.messageOrder},
                 #{item.role}, #{item.content}, CAST(#{item.contentParts} AS JSONB), #{item.toolCallId}
             )
         </foreach>
-        RETURNING "id", "creator_id", "creation_time", "modifier_id", "modification_time", "llm_call_id",
+        RETURNING "id", "creator_id", "creation_time", "modifier_id", "modification_time", "round_id", "turn_id",
                   "message_order", "role", "content", "content_parts", "tool_call_id"
     </select>
 
     <select id="listRequestMessages" resultMap="RequestMessageResultMap">
-        SELECT "id", "creator_id", "creation_time", "modifier_id", "modification_time", "llm_call_id",
+        SELECT "id", "creator_id", "creation_time", "modifier_id", "modification_time", "round_id", "turn_id",
                "message_order", "role", "content", "content_parts", "tool_call_id"
         FROM "conversation_llm_request_message"
-        WHERE "llm_call_id" = #{llmCallId}
+        WHERE "turn_id" = #{turnId}
         ORDER BY "message_order" ASC
     </select>
 
     <select id="listRequestMessagesForRound" resultMap="RequestMessageResultMap">
         SELECT message."id", message."creator_id", message."creation_time", message."modifier_id",
-               message."modification_time", message."llm_call_id", message."message_order", message."role",
+               message."modification_time", message."round_id", message."turn_id", message."message_order", message."role",
                message."content", message."content_parts", message."tool_call_id"
-        FROM "conversation_turn" turn
-        INNER JOIN "conversation_llm_call" call ON call."turn_id" = turn."id"
-        INNER JOIN "conversation_llm_request_message" message ON message."llm_call_id" = call."id"
+        FROM "conversation_llm_request_message" message
+        INNER JOIN "conversation_turn" turn ON turn."id" = message."turn_id"
         WHERE turn."round_id" = #{roundId}
         ORDER BY turn."turn_number", message."message_order"
     </select>

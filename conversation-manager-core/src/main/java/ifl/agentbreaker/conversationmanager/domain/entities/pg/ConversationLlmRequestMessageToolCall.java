@@ -7,6 +7,10 @@ import lombok.EqualsAndHashCode;
 @EqualsAndHashCode(callSuper = true)
 public class ConversationLlmRequestMessageToolCall extends EntityBase
 {
+    private long roundId;
+
+    private long turnId;
+
     /**
      * Database ID of the historical assistant request message containing this Tool call.
      */

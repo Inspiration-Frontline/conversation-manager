@@ -16,29 +16,72 @@
         <result column="error_message" property="errorMessage"/>
         <result column="start_time" property="startTime"/>
         <result column="end_time" property="endTime"/>
+        <result column="llm_start_time" property="llmStartTime"/>
+        <result column="llm_end_time" property="llmEndTime"/>
+        <result column="request_id" property="requestId"/>
+        <result column="trace_id" property="traceId"/>
+        <result column="message_storage_mode" property="messageStorageMode"/>
+        <result column="request_messages_snapshot" property="requestMessagesSnapshot"/>
+        <result column="request_messages_snapshot_hash" property="requestMessagesSnapshotHash"/>
+        <result column="raw_request" property="rawRequest"/>
+        <result column="response_message_present" property="responseMessagePresent"/>
+        <result column="response_content" property="responseContent"/>
+        <result column="response_content_parts" property="responseContentParts"/>
+        <result column="finish_reason" property="finishReason"/>
+        <result column="usage_present" property="usagePresent"/>
+        <result column="prompt_tokens" property="promptTokens"/>
+        <result column="completion_tokens" property="completionTokens"/>
+        <result column="total_tokens" property="totalTokens"/>
+        <result column="cached_prompt_tokens" property="cachedPromptTokens"/>
+        <result column="reasoning_tokens" property="reasoningTokens"/>
+        <result column="raw_response" property="rawResponse"/>
+        <result column="response_error_message" property="responseErrorMessage"/>
+        <result column="reasoning_content" property="reasoningContent"/>
     </resultMap>
 
     <select id="insertTurns" resultMap="TurnResultMap" affectData="true">
         INSERT INTO "conversation_turn" (
             "creator_id", "modifier_id", "round_id", "turn_number", "agent_id", "agent_name",
-            "agent_version", "status", "error_message", "start_time", "end_time"
+            "agent_version", "status", "error_message", "start_time", "end_time", "llm_start_time",
+            "llm_end_time", "request_id", "trace_id", "message_storage_mode", "request_messages_snapshot",
+            "request_messages_snapshot_hash", "raw_request", "response_message_present", "response_content",
+            "response_content_parts", "finish_reason", "usage_present", "prompt_tokens", "completion_tokens",
+            "total_tokens", "cached_prompt_tokens", "reasoning_tokens", "raw_response", "response_error_message",
+            "reasoning_content"
         ) VALUES
         <foreach collection="items" item="item" separator=",">
             (
                 #{item.creatorId}, #{item.modifierId}, #{item.roundId}, #{item.turnNumber},
                 #{item.agentId}, #{item.agentName}, #{item.agentVersion}, #{item.status},
-                #{item.errorMessage}, #{item.startTime}, #{item.endTime}
+                #{item.errorMessage}, #{item.startTime}, #{item.endTime}, #{item.llmStartTime}, #{item.llmEndTime},
+                #{item.requestId}, #{item.traceId}, #{item.messageStorageMode},
+                CAST(#{item.requestMessagesSnapshot} AS JSONB),
+                ENCODE(DIGEST(CAST(CAST(#{item.requestMessagesSnapshot} AS JSONB) AS TEXT), 'sha256'), 'hex'),
+                #{item.rawRequest}, #{item.responseMessagePresent}, #{item.responseContent},
+                CAST(#{item.responseContentParts} AS JSONB), #{item.finishReason}, #{item.usagePresent},
+                #{item.promptTokens}, #{item.completionTokens}, #{item.totalTokens}, #{item.cachedPromptTokens},
+                #{item.reasoningTokens}, #{item.rawResponse}, #{item.responseErrorMessage}, #{item.reasoningContent}
             )
         </foreach>
         RETURNING "id", "creator_id", "creation_time", "modifier_id", "modification_time", "round_id",
                   "turn_number", "agent_id", "agent_name", "agent_version", "status", "error_message",
-                  "start_time", "end_time"
+                  "start_time", "end_time", "llm_start_time", "llm_end_time", "request_id", "trace_id",
+                  "message_storage_mode", "request_messages_snapshot", "request_messages_snapshot_hash",
+                  "raw_request", "response_message_present", "response_content", "response_content_parts",
+                  "finish_reason", "usage_present", "prompt_tokens", "completion_tokens", "total_tokens",
+                  "cached_prompt_tokens", "reasoning_tokens", "raw_response", "response_error_message",
+                  "reasoning_content"
     </select>
 
     <select id="getCompletedTurn" resultMap="TurnResultMap">
         SELECT "id", "creator_id", "creation_time", "modifier_id", "modification_time", "round_id",
                "turn_number", "agent_id", "agent_name", "agent_version", "status", "error_message",
-               "start_time", "end_time"
+               "start_time", "end_time", "llm_start_time", "llm_end_time", "request_id", "trace_id",
+               "message_storage_mode", "request_messages_snapshot", "request_messages_snapshot_hash",
+               "raw_request", "response_message_present", "response_content", "response_content_parts",
+               "finish_reason", "usage_present", "prompt_tokens", "completion_tokens", "total_tokens",
+               "cached_prompt_tokens", "reasoning_tokens", "raw_response", "response_error_message",
+               "reasoning_content"
         FROM "conversation_turn"
         WHERE "round_id" = #{roundId}
           AND "turn_number" = #{turnNumber}

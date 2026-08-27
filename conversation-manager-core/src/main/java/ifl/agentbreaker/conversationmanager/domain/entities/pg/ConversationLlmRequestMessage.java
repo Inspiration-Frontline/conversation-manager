@@ -8,10 +8,9 @@ import lombok.EqualsAndHashCode;
 @EqualsAndHashCode(callSuper = true)
 public class ConversationLlmRequestMessage extends EntityBase
 {
-    /**
-     * Database ID of the LLM call containing this request message.
-     */
-    private long llmCallId;
+    private long roundId;
+
+    private long turnId;
 
     /**
      * Zero-based position in the normalized provider message array.

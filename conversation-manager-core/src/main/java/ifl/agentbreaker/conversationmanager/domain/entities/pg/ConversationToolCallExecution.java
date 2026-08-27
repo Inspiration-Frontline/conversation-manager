@@ -18,16 +18,21 @@ public class ConversationToolCallExecution extends EntityBase
      */
     private long turnId;
 
-    /**
-     * Database ID of the response Tool call that caused this execution.
-     */
-    private long responseToolCallId;
+    private long roundId;
+
+    private int callOrder;
+
+    private String toolCallId;
+
+    private String type;
+
+    private String toolName;
+
+    private String arguments;
 
     /**
      * Zero-based reporting order among Tool executions in the Turn.
      */
-    private int executionOrder;
-
     /**
      * Globally unique and permanently stable identity of the executed Tool.
      */

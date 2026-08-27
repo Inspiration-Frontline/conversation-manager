@@ -1,7 +1,7 @@
 # Conversation Manager Next Steps
 
-Status: Round/Turn contract and PostgreSQL schema approved; core persistence and RPC implementation
-are pending.
+Status: Round/Turn contract, PostgreSQL schema, persistence, RPC implementation, and migration
+verified on 2026-08-25.
 
 This document is the implementation queue for the finalized Round/Turn model. The source contracts
 are:
@@ -23,9 +23,10 @@ Do not implement the old message-oriented RPC proposal:
 - `POST /conversation/messages`
 - `POST /conversation/turn`
 
-The new RPC model saves one complete Round atomically. It does not dual-write Round/Turn data into
-the legacy `conversation_message` table. Existing HTTP conversation, message, group, sharing, and
-fork behavior remains unchanged.
+The new RPC model saves one complete Round atomically. It does not write to the removed
+`conversation_message` table. The coordinated schema cutover removed that empty table, its legacy
+message-history endpoints and DTOs, and the old export implementation; existing conversation list,
+group, sharing, and fork behavior remains unchanged while history and export read from Round/Turn.
 
 The finalized RPC surface is:
 
@@ -44,15 +45,15 @@ The generated Dubbo Triple service is the new RPC boundary. Do not expand the ha
 Completed:
 
 - finalized Proto messages, RPC methods, business error codes, and response envelopes;
-- normalized PostgreSQL tables for Conversation, Round, Turn, LLM calls, request messages, Tool
-  definition snapshots, response Tool calls, and Tool executions;
+- normalized PostgreSQL tables for Conversation, Round, Turn, request messages, Tool definition
+  snapshots, and Tool executions;
 - high-water storage in `conversation.latest_round_number`;
 - Round tombstone columns and single-table database constraints;
 - UTC timestamps and database-managed `modification_time`;
 - application-managed logical relationships with no PostgreSQL foreign keys;
 - Tool audit identity using `tool_key`, `tool_name`, `source_type`, and `definition_hash`.
 
-Not implemented:
+Completed in the coordinated cutover:
 
 - MyBatis persistence for the new execution tables;
 - cross-table and aggregate validation;
@@ -63,6 +64,9 @@ Not implemented:
 - generated Dubbo Triple provider;
 - end-to-end provider and consumer verification.
 
+The next task is feature work on top of the target Round/Turn contract. Do not recreate the removed
+legacy message or standalone LLM-call tables.
+
 ## Implementation Principles
 
 ### DAO Scope
@@ -72,14 +76,14 @@ table. Keep methods table-scoped and query-specific; do not pre-build generic CR
 
 Batch operations are appropriate only for repeated children that are already available as one
 collection during `SaveConversationRound`, for example Turns, request messages, Tool definitions,
-response Tool calls, and Tool executions. Use batch or set-based SQL when it materially simplifies
+and Tool executions. Use batch or set-based SQL when it materially simplifies
 the aggregate write and preserves generated-ID linkage.
 
 Do not add speculative APIs:
 
 - Round needs a single insert, identity/retry lookup, history query, and tombstone update; it does
   not currently need bulk insert or bulk delete methods.
-- LLM call is one row per Turn and does not need a general batch-delete API.
+- The LLM invocation is part of the Turn row and does not need a separate Mapper or delete API.
 - Physical purge methods wait until a retention job is designed.
 - Mapper methods that have no current service caller should not be added for symmetry.
 
@@ -127,11 +131,11 @@ request before persistence when any invariant fails.
 Validation areas:
 
 - positive IDs, Round numbers, Turn numbers, and continuous ordering;
-- Round, Turn, LLM call, and Tool execution time containment;
+- Round, Turn, model-call, and Tool execution time containment;
 - completed, failed, and cancelled status consistency;
 - text versus content-parts exclusivity and non-empty JSON arrays;
 - Turn 1 `FULL_SNAPSHOT` and later `APPEND_DELTA` storage modes;
-- one LLM call per Turn;
+- one model request and response per Turn;
 - request-message roles and historical Tool call linkage;
 - unique `tool_key` and `tool_name` values inside one LLM request;
 - valid `source_type` and lowercase SHA-256 `definition_hash`;

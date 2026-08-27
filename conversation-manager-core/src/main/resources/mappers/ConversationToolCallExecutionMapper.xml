@@ -7,9 +7,13 @@
         <result column="creation_time" property="creationTime"/>
         <result column="modifier_id" property="modifierId"/>
         <result column="modification_time" property="modificationTime"/>
+        <result column="round_id" property="roundId"/>
         <result column="turn_id" property="turnId"/>
-        <result column="response_tool_call_id" property="responseToolCallId"/>
-        <result column="execution_order" property="executionOrder"/>
+        <result column="call_order" property="callOrder"/>
+        <result column="tool_call_id" property="toolCallId"/>
+        <result column="type" property="type"/>
+        <result column="tool_name" property="toolName"/>
+        <result column="arguments" property="arguments"/>
         <result column="tool_key" property="toolKey"/>
         <result column="status" property="status"/>
         <result column="result_content" property="resultContent"/>
@@ -22,14 +26,14 @@
 
     <insert id="insertToolCallExecutions">
         INSERT INTO "conversation_tool_call_execution" (
-            "creator_id", "modifier_id", "turn_id", "response_tool_call_id", "execution_order",
-            "tool_key", "status", "result_content", "result_content_parts", "raw_result",
+            "creator_id", "modifier_id", "round_id", "turn_id", "call_order", "tool_call_id", "type",
+            "tool_name", "arguments", "tool_key", "status", "result_content", "result_content_parts", "raw_result",
             "error_message", "start_time", "end_time"
         ) VALUES
         <foreach collection="items" item="item" separator=",">
             (
-                #{item.creatorId}, #{item.modifierId}, #{item.turnId}, #{item.responseToolCallId},
-                #{item.executionOrder}, #{item.toolKey}, #{item.status}, #{item.resultContent},
+                #{item.creatorId}, #{item.modifierId}, #{item.roundId}, #{item.turnId}, #{item.callOrder},
+                #{item.toolCallId}, #{item.type}, #{item.toolName}, #{item.arguments}, #{item.toolKey}, #{item.status}, #{item.resultContent},
                 CAST(#{item.resultContentParts} AS JSONB), #{item.rawResult}, #{item.errorMessage},
                 #{item.startTime}, #{item.endTime}
             )
@@ -40,22 +44,19 @@
             resultType="ifl.agentbreaker.conversationmanager.domain.dtos.responses.RoundToolActivityHistory">
         SELECT round."round_number" AS "roundNumber",
                turn."turn_number" AS "turnNumber",
-               execution."execution_order" AS "executionOrder",
-               response_call."tool_call_id" AS "toolCallId",
-               response_call."function_name" AS "toolName",
+               execution."call_order" AS "executionOrder",
+               execution."tool_call_id" AS "toolCallId",
+               execution."tool_name" AS "toolName",
                execution."tool_key" AS "toolKey",
-               response_call."arguments" AS "arguments",
+               execution."arguments" AS "arguments",
                execution."status" AS "status",
                execution."result_content" AS "resultContent",
                execution."error_message" AS "errorMessage"
         FROM "conversation_tool_call_execution" execution
-        INNER JOIN "conversation_llm_response_tool_call" response_call
-            ON response_call."id" = execution."response_tool_call_id"
-           AND response_call."turn_id" = execution."turn_id"
         INNER JOIN "conversation_turn" turn ON turn."id" = execution."turn_id"
         INNER JOIN "conversation_round" round ON round."id" = turn."round_id"
         WHERE round."conversation_id" = #{conversationId}
           AND round."deleted" = FALSE
-        ORDER BY round."round_number", turn."turn_number", execution."execution_order"
+        ORDER BY round."round_number", turn."turn_number", execution."call_order"
     </select>
 </mapper>

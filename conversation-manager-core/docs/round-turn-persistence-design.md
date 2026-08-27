@@ -1,11 +1,12 @@
 # Round/Turn Persistence Design Review
 
-Status: schema implemented in the initial forward/rollback SQL; persistence services and RPC are pending
+Status: implemented target schema; consolidation migration and persistence refactor verified on 2026-08-25
 
 This document defines the PostgreSQL persistence model and transaction boundaries required by the
-finalized `ConversationRpcService` Round/Turn contract. The table model is now represented in the
-initial forward/rollback SQL and PostgreSQL entities. RPC provider implementation still follows the
-table-scoped Mapper and persistence-service work described below.
+finalized `ConversationRpcService` Round/Turn contract. The repository now uses the target physical
+schema. The dated expand/backfill/contract migrations and their verification record are described
+here and in `docs/ArchitectureDesigns/Database Migration, Batch Access, and Conversation
+References.md`.
 
 The source contract is maintained in the sibling `agent-breaker-protos` repository:
 
@@ -18,12 +19,14 @@ The source contract is maintained in the sibling `agent-breaker-protos` reposito
 The recommended model is a normalized, append-oriented execution model stored beside the existing
 conversation-management tables.
 
-- Keep `conversation`, `conversation_message`, grouping, sharing, and file tables intact.
+- Keep `conversation`, grouping, sharing, and file tables. The empty transitional
+  `conversation_message` table and its runtime code were removed during the contract migration.
 - Add `latest_round_number` to `conversation` as the authoritative high-water mark.
-- Add dedicated Round, Turn, LLM call, request-message, tool-definition, tool-call, and tool-execution
-  tables.
+- Add dedicated Round, Turn, request-message, Tool-definition, and Tool-execution tables. The
+  former standalone LLM-call and response Tool-call tables are merged into Turn and Tool execution.
 - Make the new tables the only persistence source for the finalized Round/Turn RPC surface.
-- Do not dual-write new RPC data into `conversation_message`.
+- No runtime path writes `conversation_message`; its pre-cutover zero-row check and backup are
+  recorded in the migration verification record.
 - Preserve logically deleted Round rows and all children until a separate retention job purges or
   anonymizes their payloads.
 
@@ -60,15 +63,15 @@ The existing tables remain responsible for current HTTP behavior:
 | Existing table | Existing responsibility | Decision |
 | --- | --- | --- |
 | `conversation` | Ownership, title, pinning, soft deletion, list ordering | Extend with high-water mark |
-| `conversation_message` | Legacy flat message history | Preserve; no new RPC dual-write |
+| `conversation_message` | Removed flat message history | Dropped after the zero-row check; no runtime entity, Mapper, DTO, or endpoint remains |
 | `conversation_group*` | Grouping and root-list behavior | Preserve |
 | `conversation_sharing` | Round snapshot through `end_round_number` | Use normalized Round high-water mark |
 | `message_file` | Uploaded file metadata | Preserve |
 
 The first RPC provider milestone preserved legacy HTTP response shapes. Phase 8 later moved sharing
 and Fork to normalized Round/Turn execution records and removed the legacy message boundary from
-`conversation_sharing`. The `conversation_message` table remains only for its separate legacy HTTP
-history/export surface and is not dual-written by the current Agent execution path.
+`conversation_sharing`. The current database has no `conversation_message` table. Normalized
+Round/Turn data is the only history, replay, and export source.
 
 ## Aggregate Layout
 
@@ -79,18 +82,11 @@ conversation
   +-- conversation_round
         |
         +-- conversation_turn
-              |
-              +-- conversation_llm_call
-              |     |
-              |     +-- conversation_llm_request_message
-              |     |     |
-              |     |     +-- conversation_llm_request_message_tool_call
-              |     |
-              |     +-- conversation_llm_tool_definition
-              |     |
-              |     +-- conversation_llm_response_tool_call
-              |
-              +-- conversation_tool_call_execution
+              |-- request_messages_snapshot (query projection)
+              |-- conversation_llm_request_message (source of truth)
+              |     `-- conversation_llm_request_message_tool_call
+              |-- conversation_llm_tool_definition
+              `-- conversation_tool_call_execution
 ```
 
 Content-part arrays remain one ordered JSONB value. They are structured value objects, not
@@ -205,58 +201,28 @@ The save service validates the source-Turn relationship before commit:
 
 ### `conversation_turn`
 
-| Column | Type | Rules |
-| --- | --- | --- |
-| `id` | `BIGSERIAL` | Primary key |
-| `round_id` | `BIGINT` | Logical reference to `conversation_round.id` |
-| `turn_number` | `BIGINT` | Positive and unique inside Round |
-| `agent_id` | `BIGINT` | Positive stable database identity |
-| `agent_name` | `VARCHAR(200)` | Non-empty runtime/handoff name |
-| `agent_version` | `INTEGER` | Positive resolved definition version |
-| `status` | `VARCHAR(16)` | Completed, failed, or cancelled |
-| `error_message` | `TEXT` | Status-consistent error value |
-| `start_time` | `TIMESTAMPTZ` | UTC instant converted from caller epoch milliseconds |
-| `end_time` | `TIMESTAMPTZ` | UTC instant, not earlier than start |
-| `creation_time` | `TIMESTAMPTZ` | Database default `NOW()` |
+The former `conversation_llm_call` row is merged into the Turn. In addition to the existing identity,
+status, and Agent columns, the target row contains:
+
+- `llm_start_time`, `llm_end_time` for the model-provider call boundary;
+- `message_storage_mode` and `request_messages_snapshot` plus its deterministic hash;
+- `request_id`, `trace_id`, normalized response content, finish reason, usage, reasoning, and errors;
+- nullable `raw_request` and `raw_response` with their existing presence semantics.
+
+Turn `start_time/end_time` are the orchestration boundary. They do not store an aggregate Tool
+duration. Each Tool execution stores its own timestamps. Provider, model, temperature,
+max-output-token, and other fixed settings are recovered from the immutable `agent_id +
+agent_version` definition because formal executions prohibit runtime model-parameter overrides.
 
 The service validates a continuous ordered sequence from 1 through N. The unique constraint on
 `(round_id, turn_number)` is the database defense against duplicates.
 
-### `conversation_llm_call`
-
-There is exactly one LLM call row per Turn.
-
-Request columns:
-
-- `turn_id` as a unique logical reference to `conversation_turn`
-- `provider`, `model`, `request_id`, and `trace_id`
-- `message_storage_mode`
-- `tool_choice_present`, `tool_choice_mode`, and `tool_choice_name`
-- `response_format` as TEXT
-- nullable `temperature` and `max_output_tokens`
-- nullable `raw_request`; NULL means absent and empty TEXT means retained empty payload
-- `start_time` and `end_time` as UTC `TIMESTAMPTZ`
-
-Response columns:
-
-- `response_message_present`
-- `response_content` or `response_content_parts`
-- `finish_reason`
-- `usage_present` plus prompt, completion, total, cached-prompt, and reasoning token counts
-- nullable `raw_response` with Proto-presence semantics
-- `response_error_message`
-- nullable normalized `reasoning_content`, separate from user-visible response content
-
-Checks enforce request storage mode, optional tool-choice consistency, non-negative token values,
-content representation exclusivity, and response success/error consistency. Time containment and
-other parent/child rules remain service validations because PostgreSQL `CHECK` constraints cannot
-reference another table.
 
 ### `conversation_llm_request_message`
 
 Stores the ordered `LlmRequest.messages` array.
 
-- Unique `(llm_call_id, message_order)` preserves order.
+- Unique `(round_id, turn_id, message_order)` preserves order.
 - `role` stores the normalized Proto role.
 - `content` and `content_parts` are mutually exclusive, but both may be absent for a tool-call-only
   assistant message.
@@ -279,38 +245,28 @@ from earlier model invocations and must replay exactly as request context.
 
 Stores the complete ordered tool definition list offered in one model request.
 
-- Unique `(llm_call_id, tool_order)`.
-- Unique `(llm_call_id, tool_key)` prevents duplicate logical Tools.
-- Unique `(llm_call_id, tool_name)` enforces provider-visible name uniqueness.
+- Unique `(round_id, turn_id, tool_order)`.
+- Unique `(round_id, turn_id, tool_key)` prevents duplicate logical Tools.
+- Unique `(round_id, turn_id, tool_name)` enforces provider-visible name uniqueness.
 - Stores the globally stable `tool_key`, provider-facing `tool_name`, execution provenance
   `source_type`, description, exact `parameters_json` TEXT, non-null `strict`, and a lowercase
   SHA-256 `definition_hash`.
 - `source_type` is restricted to `INTERNAL`, `BUSINESS`, or `MCP`. Provider adapters derive
   protocol-specific wrappers such as OpenAI's `function`; that wrapper is not stored as provenance.
 
-### `conversation_llm_response_tool_call`
-
-Stores tool calls emitted by the current LLM response.
-
-- Includes `turn_id` and `llm_call_id` so the service can validate same-Turn integrity.
-- Unique `(llm_call_id, call_order)`.
-- Unique `(llm_call_id, tool_call_id)`.
-- Stores `tool_call_id`, `type`, `function_name`, and exact `arguments` TEXT.
-
 ### `conversation_tool_call_execution`
 
-Stores exactly one execution outcome for a current-response tool call.
+Stores both the current model response Tool Call and its exactly-one execution outcome.
 
-- Stores logical references to `conversation_turn` and the response Tool call.
-- The save service ensures the execution and response Tool call belong to the same Turn.
-- Unique `response_tool_call_id` prevents more than one execution for a model-emitted call.
-- Unique `(turn_id, execution_order)` preserves parallel-call reporting order.
-- Stores the globally stable `tool_key`, status, normalized result content or content-parts,
-  optional raw result, error message, and UTC start/end timestamps.
+- Stores `round_id`, `turn_id`, `call_order`, `tool_call_id`, `type`, `tool_name`, `arguments`, and
+  `tool_key` for the model request and stable Tool identity.
+- Stores status, normalized result content or content-parts, optional raw result, error message, and
+  UTC start/end timestamps for execution audit.
+- Unique `(round_id, turn_id, call_order)` and `(round_id, turn_id, tool_call_id)` preserve response
+  order and prevent duplicate outcomes.
 
-The database can enforce at most one execution per response-call ID inside this table. The service
-must validate that the referenced response call exists, belongs to the same Turn, and has exactly
-one execution, including failed and cancelled executions.
+The service validates that every emitted Tool Call has exactly one execution row, including failed,
+cancelled, rejected, and unknown executions.
 
 ## Indexes
 
@@ -322,13 +278,11 @@ Required indexes are intentionally read-path driven:
 | `conversation_round` | `(conversation_id, round_number) WHERE deleted = FALSE` | Active history/replay |
 | `conversation_round` | `(conversation_id, deleted, end_time)` | Cleanup/analysis support |
 | `conversation_turn` | unique `(round_id, turn_number)` | Ordered Turn lookup |
-| `conversation_llm_call` | unique `(turn_id)` | One LLM call per Turn |
-| Request message | unique `(llm_call_id, message_order)` | Ordered replay |
+| Request message | unique `(round_id, turn_id, message_order)` | Ordered replay |
 | Request tool call | unique `(request_message_id, call_order)` | Ordered replay |
-| Tool definition | unique `(llm_call_id, tool_order)` | Ordered request reconstruction |
-| Response tool call | unique `(llm_call_id, call_order)` | Ordered response reconstruction |
-| Tool execution | unique `(turn_id, execution_order)` | Ordered execution reconstruction |
-| Tool execution | unique `(response_tool_call_id)` | Exactly-at-most-one execution |
+| Tool definition | unique `(round_id, turn_id, tool_order)` | Ordered request reconstruction |
+| Tool execution | unique `(round_id, turn_id, call_order)` | Ordered response reconstruction |
+| Tool execution | unique `(round_id, turn_id, tool_call_id)` | Exactly one outcome per response call |
 
 Every logical parent-reference column used for joins is covered by either an explicit B-tree index
 or the B-tree index PostgreSQL creates for a leading UNIQUE constraint. Do not add a second ordinary
@@ -404,7 +358,6 @@ remain true while holding the conversation mutation lock:
 - Creation time is older than the configured grace period.
 - The conversation is not already deleted.
 - No `conversation_round` row exists, including tombstones.
-- No legacy `conversation_message` row exists.
 - The grace period exceeds the maximum runner execution and retry window.
 
 The job must recheck these predicates inside its deletion transaction after acquiring the lock.
@@ -493,34 +446,22 @@ Recommended service split:
 - `ConversationRoundPayloadHasher`: versioned canonical hashing.
 - Dedicated Proto adapter/provider: generated DTO conversion and response envelopes only.
 
-Existing `ConversationService` and the handwritten `IConversationRpcService` remain untouched in
-the first implementation pass.
+`ConversationService` now exports through `ConversationRoundService.getHttpHistory`, and the
+handwritten `IConversationRpcService` retains only the unrelated title-update operation.
 
-## Implemented Migration Plan
+## Consolidation Migration Plan
 
-The current early-development schema applies these changes directly in the initial forward SQL and
-its matching rollback SQL.
+The development database was migrated with an additive expansion, typed backfill, old-versus-target
+comparison, application switch, and final contraction. The detailed backup, fail-fast checks,
+rollback boundary, and verification manifest are defined in `docs/ArchitectureDesigns/Database
+Migration, Batch Access, and Conversation References.md`. Historical SQL files remain immutable.
 
-Forward order:
+## Verification Record
 
-1. Add `conversation.latest_round_number` with default and check.
-2. Create Round and Turn tables.
-3. Create LLM and tool child tables.
-4. Add single-table checks, uniqueness constraints, and indexes.
-5. Add modification-time triggers.
+The coordinated cutover was accepted after verifying:
 
-Rollback order is the exact reverse. It drops all tables created by this clean-schema initialization
-and then drops the shared modification-time function.
-
-The migration is safe for existing conversations because their high-water mark starts at zero and
-no new Round rows exist.
-
-## Verification Gates
-
-Before the schema is accepted for RPC implementation, verify:
-
-- Forward migration on a database containing current legacy data.
-- Rollback restores that legacy schema and data unchanged.
+- Forward expansion and contract migrations on a database containing current legacy data.
+- Backup restore into a temporary database, followed by the same migration sequence.
 - Unique and check constraints reject invalid identities, times, statuses, content shapes, and
   duplicate ordering keys.
 - Concurrent saves cannot advance the same conversation high-water twice.
@@ -529,14 +470,15 @@ Before the schema is accepted for RPC implementation, verify:
 - Round summary avoids loading child/raw data.
 - Model-context replay handles multiple Turns and a zero-Turn failed Round deterministically.
 - Tail deletion commits prior successes, stops after the first failure, and preserves high-water.
-- Existing HTTP list, pin, group, share, fork, export, and legacy message history behavior remains
-  unchanged.
+- Existing HTTP list, pin, group, share, and fork behavior remains unchanged. History and export
+  use normalized Round/Turn data; the legacy message endpoint and table are removed.
 
 ## Approval Checklist
 
-This design recommends approval of the following decisions before migration work begins:
+The following decisions are implemented:
 
-- New normalized tables, with no `conversation_message` dual-write.
+- New normalized tables, with no `conversation_message` dual-write, plus removal of the empty
+  table and all runtime dependencies on it.
 - `conversation.latest_round_number` as the only authoritative high-water mark.
 - Round tombstones retained in the Round table.
 - Versioned canonical SHA-256 hash as retry identity.
@@ -544,5 +486,5 @@ This design recommends approval of the following decisions before migration work
 - Separate per-Round deletion transactions while retaining one distributed mutation lock.
 - Legacy sharing/forking does not include new execution history in the first milestone.
 
-The next implementation task is the table-scoped Mapper and persistence layer. RPC adapter code
-still comes afterward.
+The table-scoped Mapper, persistence layer, RPC adapter, migration, and runtime verification are
+complete. Future work must extend the target model rather than reintroduce the removed tables.

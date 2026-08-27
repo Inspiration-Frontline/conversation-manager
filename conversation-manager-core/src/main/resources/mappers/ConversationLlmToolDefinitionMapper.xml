@@ -7,7 +7,8 @@
         <result column="creation_time" property="creationTime"/>
         <result column="modifier_id" property="modifierId"/>
         <result column="modification_time" property="modificationTime"/>
-        <result column="llm_call_id" property="llmCallId"/>
+        <result column="round_id" property="roundId"/>
+        <result column="turn_id" property="turnId"/>
         <result column="tool_order" property="toolOrder"/>
         <result column="tool_key" property="toolKey"/>
         <result column="tool_name" property="toolName"/>
@@ -20,12 +21,12 @@
 
     <insert id="insertToolDefinitions">
         INSERT INTO "conversation_llm_tool_definition" (
-            "creator_id", "modifier_id", "llm_call_id", "tool_order", "tool_key", "tool_name",
+            "creator_id", "modifier_id", "round_id", "turn_id", "tool_order", "tool_key", "tool_name",
             "source_type", "description", "parameters_json", "strict", "definition_hash"
         ) VALUES
         <foreach collection="items" item="item" separator=",">
             (
-                #{item.creatorId}, #{item.modifierId}, #{item.llmCallId}, #{item.toolOrder},
+                #{item.creatorId}, #{item.modifierId}, #{item.roundId}, #{item.turnId}, #{item.toolOrder},
                 #{item.toolKey}, #{item.toolName}, #{item.sourceType}, #{item.description},
                 #{item.parametersJson}, #{item.strict}, #{item.definitionHash}
             )

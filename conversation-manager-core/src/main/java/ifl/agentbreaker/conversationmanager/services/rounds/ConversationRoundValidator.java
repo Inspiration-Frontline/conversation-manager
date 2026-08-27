@@ -9,7 +9,6 @@ import ifl.agentbreaker.conversationmanager.rpc.AssistantMessage;
 import ifl.agentbreaker.conversationmanager.rpc.ConversationErrorCode;
 import ifl.agentbreaker.conversationmanager.rpc.ConversationTurn;
 import ifl.agentbreaker.conversationmanager.rpc.ContentPart;
-import ifl.agentbreaker.conversationmanager.rpc.LlmCall;
 import ifl.agentbreaker.conversationmanager.rpc.LlmConversationMessage;
 import ifl.agentbreaker.conversationmanager.rpc.LlmMessageStorageMode;
 import ifl.agentbreaker.conversationmanager.rpc.LlmRequest;
@@ -106,10 +105,10 @@ public class ConversationRoundValidator
             "The final answer must reference the last turn.");
         validateTurns(request, true);
         ConversationTurn finalTurn = request.getTurns(request.getTurnsCount() - 1);
-        require(finalTurn.getLlmCall().getResponse().getMessage().getToolCallsCount() == 0,
+        require(finalTurn.getResponse().getMessage().getToolCallsCount() == 0,
             "The final turn cannot end with pending Tool calls.");
         require(request.getFinalAnswer().getContent().equals(
-                finalTurn.getLlmCall().getResponse().getMessage().getContent()),
+                finalTurn.getResponse().getMessage().getContent()),
             "The final answer must match the last LLM response.");
     }
 
@@ -157,11 +156,11 @@ public class ConversationRoundValidator
             requireTime(turn.getStartTime(), turn.getEndTime(), "turn");
             require(turn.getStartTime() >= request.getStartTime() && turn.getEndTime() <= request.getEndTime(),
                 "Turn timing must be contained by round timing.");
-            validateLlmCall(turn.getLlmCall(), turn, index, request.getTraceId());
+            validateTurnInvocation(turn, index, request.getTraceId());
             if (previousTurn != null)
-                validateContinuationDelta(previousTurn, turn.getLlmCall().getRequest());
+                validateContinuationDelta(previousTurn, turn.getRequest());
             if (!isLast)
-                require(turn.getLlmCall().getResponse().getMessage().getToolCallsCount() > 0,
+                require(turn.getResponse().getMessage().getToolCallsCount() > 0,
                     "Every non-final Turn must continue through at least one Tool call.");
             previousTurn = turn;
         }
@@ -176,7 +175,7 @@ public class ConversationRoundValidator
      */
     private void validateContinuationDelta(ConversationTurn previousTurn, LlmRequest currentRequest)
     {
-        AssistantMessage previousMessage = previousTurn.getLlmCall().getResponse().getMessage();
+        AssistantMessage previousMessage = previousTurn.getResponse().getMessage();
         List<ToolCall> previousCalls = previousMessage.getToolCallsList();
         require(!previousCalls.isEmpty(), "APPEND_DELTA requires Tool calls from the preceding Turn.");
         require(currentRequest.getMessagesCount() == previousCalls.size() + 1,
@@ -225,25 +224,23 @@ public class ConversationRoundValidator
     }
 
     /**
-     * Validates one nested LLM call including storage mode, provider metadata, response, and Tool
-     * execution evidence.
+     * Validates the flattened LLM invocation fields on one Turn, including storage mode, response,
+     * and Tool execution evidence.
      *
-     * @param call nested model call
-     * @param turn parent Turn defining the time boundary
+     * @param turn Turn containing the model invocation
      * @param turnIndex zero-based Turn index selecting FULL_SNAPSHOT versus APPEND_DELTA
      */
-    private void validateLlmCall(LlmCall call, ConversationTurn turn, int turnIndex, String roundTraceId)
+    private void validateTurnInvocation(ConversationTurn turn, int turnIndex, String roundTraceId)
     {
-        require(call != null && call.hasRequest() && call.hasResponse(), "The turn requires one LLM call.");
-        require(call.getTraceId().equals(roundTraceId),
+        require(turn.hasRequest() && turn.hasResponse(), "The turn requires one LLM request and response.");
+        require(turn.getTraceId().equals(roundTraceId),
             "Every LLM call trace_id must match the containing Round trace_id.");
-        requireTime(call.getStartTime(), call.getEndTime(), "LLM call");
-        require(call.getStartTime() >= turn.getStartTime() && call.getEndTime() <= turn.getEndTime(),
+        requireTime(turn.getLlmStartTime(), turn.getLlmEndTime(), "LLM call");
+        require(turn.getLlmStartTime() >= turn.getStartTime()
+                && turn.getLlmEndTime() <= turn.getEndTime(),
             "LLM call timing must be contained by turn timing.");
 
-        LlmRequest request = call.getRequest();
-        require(StringUtils.hasText(request.getProvider()) && StringUtils.hasText(request.getModel()),
-            "LLM provider and model are required.");
+        LlmRequest request = turn.getRequest();
         require(request.getMessageStorageMode() == (turnIndex == 0
                 ? LlmMessageStorageMode.LLM_MESSAGE_STORAGE_MODE_FULL_SNAPSHOT
                 : LlmMessageStorageMode.LLM_MESSAGE_STORAGE_MODE_APPEND_DELTA),
@@ -253,7 +250,7 @@ public class ConversationRoundValidator
 
         Map<String, ToolDefinition> toolsByName = validateToolDefinitions(request);
         validateRequestMessages(request.getMessagesList());
-        validateResponseAndExecutions(call.getResponse(), turn, toolsByName, call.getEndTime());
+        validateResponseAndExecutions(turn.getResponse(), turn, toolsByName, turn.getLlmEndTime());
     }
 
     /**

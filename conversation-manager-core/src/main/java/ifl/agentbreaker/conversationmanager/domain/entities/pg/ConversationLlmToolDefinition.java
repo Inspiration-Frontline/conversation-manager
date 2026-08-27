@@ -11,10 +11,9 @@ import lombok.EqualsAndHashCode;
 @EqualsAndHashCode(callSuper = true)
 public class ConversationLlmToolDefinition extends EntityBase
 {
-    /**
-     * Database ID of the LLM call that used this frozen definition.
-     */
-    private long llmCallId;
+    private long roundId;
+
+    private long turnId;
 
     /**
      * Zero-based position of the Tool in the provider request.

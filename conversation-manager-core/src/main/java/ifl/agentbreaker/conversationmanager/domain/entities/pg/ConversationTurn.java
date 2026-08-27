@@ -1,6 +1,7 @@
 package ifl.agentbreaker.conversationmanager.domain.entities.pg;
 
 import ifl.agentbreaker.conversationmanager.domain.constants.ConversationTurnStatus;
+import ifl.agentbreaker.conversationmanager.domain.constants.LlmMessageStorageMode;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
 
@@ -57,4 +58,46 @@ public class ConversationTurn extends EntityBase
      * UTC instant at which Turn processing finished.
      */
     private Instant endTime;
+
+    private Instant llmStartTime;
+
+    private Instant llmEndTime;
+
+    private String requestId;
+
+    private String traceId;
+
+    private LlmMessageStorageMode messageStorageMode;
+
+    private String requestMessagesSnapshot;
+
+    private String requestMessagesSnapshotHash;
+
+    private String rawRequest;
+
+    private boolean responseMessagePresent;
+
+    private String responseContent;
+
+    private String responseContentParts;
+
+    private String finishReason;
+
+    private boolean usagePresent;
+
+    private Long promptTokens;
+
+    private Long completionTokens;
+
+    private Long totalTokens;
+
+    private Long cachedPromptTokens;
+
+    private Long reasoningTokens;
+
+    private String rawResponse;
+
+    private String responseErrorMessage;
+
+    private String reasoningContent;
 }

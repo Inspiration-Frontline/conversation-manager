@@ -2,9 +2,7 @@ package ifl.agentbreaker.conversationmanager.controllers;
 
 import ifl.agentbreaker.authcenter.session.UserContextService;
 import ifl.agentbreaker.conversationmanager.api.dto.responses.ConversationAbstract;
-import ifl.agentbreaker.conversationmanager.api.dto.responses.ConversationMessageHistory;
 import ifl.agentbreaker.conversationmanager.api.dto.requests.DeleteConversationRequest;
-import ifl.agentbreaker.conversationmanager.api.dto.requests.DeleteMessagesRequest;
 import ifl.agentbreaker.conversationmanager.api.dto.requests.UpdateTitleRequest;
 import ifl.agentbreaker.conversationmanager.domain.dtos.requests.*;
 import ifl.agentbreaker.conversationmanager.domain.dtos.responses.ConversationSharingResult;
@@ -75,18 +73,6 @@ public class ConversationController
     }
 
     /**
-     * Returns the legacy message projection retained for older clients.
-     *
-     * @param conversationId stable Conversation identifier from the route
-     * @return ordered message history for the owned Conversation
-     */
-    @GetMapping("/{conversationId}/messages")
-    public ServiceResponse<ConversationMessageHistory> getConversationMessages(@PathVariable String conversationId)
-    {
-        return conversationService.getConversationMessageHistory(conversationId);
-    }
-
-    /**
      * Returns persisted Round history, including attachment summaries needed to rebuild the UI.
      *
      * @param conversationId stable Conversation identifier from the route
@@ -133,18 +119,6 @@ public class ConversationController
     public ServiceResponse<Boolean> deleteConversation(@Valid @RequestBody DeleteConversationRequest request)
     {
         return conversationService.deleteConversations(request.getConversationIds());
-    }
-
-    /**
-     * Soft-deletes selected message/turn rows while preserving the parent Conversation.
-     *
-     * @param request Conversation ID and message identifiers to remove
-     * @return {@code true} after the deletion is committed
-     */
-    @DeleteMapping("/messages")
-    public ServiceResponse<Boolean> deleteMessages(@Valid @RequestBody DeleteMessagesRequest request)
-    {
-        return conversationService.deleteMessages(request);
     }
 
     /**

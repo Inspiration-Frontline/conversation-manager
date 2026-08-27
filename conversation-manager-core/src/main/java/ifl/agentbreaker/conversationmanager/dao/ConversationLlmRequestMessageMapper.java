@@ -12,7 +12,7 @@ public interface ConversationLlmRequestMessageMapper
     List<ConversationLlmRequestMessage> insertRequestMessages(
         @Param("items") List<ConversationLlmRequestMessage> messages);
 
-    List<ConversationLlmRequestMessage> listRequestMessages(@Param("llmCallId") long llmCallId);
+    List<ConversationLlmRequestMessage> listRequestMessages(@Param("turnId") long turnId);
 
     List<ConversationLlmRequestMessage> listRequestMessagesForRound(@Param("roundId") long roundId);
 }

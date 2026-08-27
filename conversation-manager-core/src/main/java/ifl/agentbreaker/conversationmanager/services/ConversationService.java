@@ -1,18 +1,11 @@
 package ifl.agentbreaker.conversationmanager.services;
 
-import com.fasterxml.jackson.core.type.TypeReference;
 import ifl.agentbreaker.authcenter.session.UserContextService;
 import ifl.agentbreaker.conversationmanager.api.IConversationRpcService;
-import ifl.agentbreaker.conversationmanager.api.dto.ContentPart;
-import ifl.agentbreaker.conversationmanager.api.dto.ToolCall;
-import ifl.agentbreaker.conversationmanager.api.dto.requests.DeleteMessagesRequest;
 import ifl.agentbreaker.conversationmanager.api.dto.requests.UpdateTitleRequest;
 import ifl.agentbreaker.conversationmanager.api.dto.responses.ConversationAbstract;
-import ifl.agentbreaker.conversationmanager.api.dto.responses.ConversationMessageHistory;
-import ifl.agentbreaker.conversationmanager.api.dto.responses.ConversationMessageInfo;
 import ifl.agentbreaker.conversationmanager.dao.ConversationMapper;
 import ifl.agentbreaker.conversationmanager.dao.ConversationGroupMapper;
-import ifl.agentbreaker.conversationmanager.dao.ConversationMessageMapper;
 import ifl.agentbreaker.conversationmanager.dao.ConversationRoundMapper;
 import ifl.agentbreaker.conversationmanager.dao.ConversationRoundReferenceMapper;
 import ifl.agentbreaker.conversationmanager.dao.ConversationSharingMapper;
@@ -28,9 +21,9 @@ import ifl.agentbreaker.conversationmanager.domain.dtos.requests.ShareConversati
 import ifl.agentbreaker.conversationmanager.domain.dtos.responses.ConversationSharingResult;
 import ifl.agentbreaker.conversationmanager.domain.dtos.responses.ConversationShareSummary;
 import ifl.agentbreaker.conversationmanager.domain.dtos.responses.SharedConversationView;
+import ifl.agentbreaker.conversationmanager.domain.dtos.responses.RoundHistoryView;
 import ifl.agentbreaker.conversationmanager.domain.entities.pg.Conversation;
 import ifl.agentbreaker.conversationmanager.domain.entities.pg.ConversationGroup;
-import ifl.agentbreaker.conversationmanager.domain.entities.pg.ConversationMessage;
 import ifl.agentbreaker.conversationmanager.domain.entities.pg.ConversationSharing;
 import ifl.agentbreaker.conversationmanager.support.BusinessIdManager;
 import ifl.agentbreaker.conversationmanager.support.ConversationTitleManager;
@@ -57,7 +50,6 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.List;
 import java.util.Locale;
 
@@ -85,13 +77,6 @@ public class ConversationService implements IConversationRpcService
     private static final int DEFAULT_PAGE_INDEX = 1;
     private static final int DEFAULT_PAGE_SIZE = 20;
     private static final int MAX_PAGE_SIZE = 100;
-    private static final TypeReference<List<ContentPart>> CONTENT_PARTS_TYPE = new TypeReference<>()
-    {
-    };
-    private static final TypeReference<List<ToolCall>> TOOL_CALLS_TYPE = new TypeReference<>()
-    {
-    };
-
     @Autowired
     private JsonSerializer jsonSerializer;
 
@@ -100,9 +85,6 @@ public class ConversationService implements IConversationRpcService
 
     @Autowired
     private ConversationGroupMapper conversationGroupMapper;
-
-    @Autowired
-    private ConversationMessageMapper conversationMessageMapper;
 
     @Autowired
     private ConversationRoundMapper conversationRoundMapper;
@@ -373,23 +355,6 @@ public class ConversationService implements IConversationRpcService
     }
 
     /**
-     * Returns the legacy flat-message projection for one owned Conversation.
-     *
-     * @param conversationId stable public ID used for ownership lookup
-     * @return ordered legacy messages, or a not-found response
-     */
-    public ServiceResponse<ConversationMessageHistory> getConversationMessageHistory(String conversationId)
-    {
-        long userId = UserContextService.getCurrentUserId();
-
-        Conversation conversation = conversationMapper.getConversationByIdAndUser(conversationId, userId);
-        if (conversation == null)
-            return ServiceResponse.buildErrorResponse(ERROR_CONVERSATION_NOT_FOUND, "Conversation does not exist.");
-
-        return ServiceResponse.buildSuccessResponse(buildConversationMessageHistory(conversation));
-    }
-
-    /**
      * Returns only export formats backed by a concrete renderer in this service.
      *
      * @return enum names accepted by {@link #exportConversation}
@@ -425,8 +390,15 @@ public class ConversationService implements IConversationRpcService
 
         try
         {
-            ConversationMessageHistory history = buildConversationMessageHistory(conversation);
-            ExportPayload payload = buildExportPayload(history, request.getExportFormat());
+            ServiceResponse<RoundHistoryView> historyResponse = conversationRoundService.getHttpHistory(
+                userId, request.getConversationId());
+            if (!historyResponse.isSuccess())
+            {
+                sendError(response, HttpServletResponse.SC_NOT_FOUND, "Conversation does not exist.");
+                return;
+            }
+            ExportPayload payload = buildExportPayload(
+                conversation.getTitle(), historyResponse.getData(), request.getExportFormat());
             response.setCharacterEncoding(StandardCharsets.UTF_8.name());
             response.setContentType(payload.contentType());
             response.setHeader("Content-Disposition", "attachment; filename=\"" + payload.filename() + "\"");
@@ -515,24 +487,6 @@ public class ConversationService implements IConversationRpcService
     }
 
     /**
-     * Deletes selected legacy messages after verifying ownership of their parent Conversation.
-     *
-     * @param request parent Conversation ID and message IDs selected by the caller
-     * @return success after the owner-scoped delete completes
-     */
-    @Transactional(rollbackFor = Exception.class)
-    public ServiceResponse<Boolean> deleteMessages(DeleteMessagesRequest request)
-    {
-        long userId = UserContextService.getCurrentUserId();
-
-        if (!conversationMapper.existsByIdAndUser(request.getConversationId(), userId))
-            return ServiceResponse.buildErrorResponse(ERROR_CONVERSATION_NOT_FOUND, "Conversation does not exist.");
-
-        conversationMessageMapper.deleteMessages(request.getConversationId(), userId, request.getMessageIds());
-        return ServiceResponse.buildSuccessResponse(true);
-    }
-
-    /**
      * Pins or unpins root-level owned Conversations as one set-based operation.
      *
      * <p>Grouped Conversations cannot be pinned because pinning is a property of root navigation.
@@ -582,66 +536,6 @@ public class ConversationService implements IConversationRpcService
     }
 
     /**
-     * Builds a legacy message-history DTO up to an optional share snapshot boundary.
-     *
-     * @param conversation authorized parent entity
-     * @return ordered public history projection
-     */
-    private ConversationMessageHistory buildConversationMessageHistory(Conversation conversation)
-    {
-        List<ConversationMessage> messages = conversationMessageMapper
-            .listConversationMessages(conversation.getConversationId());
-        List<ConversationMessageInfo> messageInfos = messages.stream()
-            .map(this::toConversationMessageInfo)
-            .toList();
-
-        ConversationMessageHistory history = new ConversationMessageHistory();
-        history.setConversationId(conversation.getConversationId());
-        history.setTitle(conversation.getTitle());
-        history.setMessages(messageInfos);
-        return history;
-    }
-
-    /**
-     * Maps a persisted message and deserializes its structured JSON fields for HTTP clients.
-     *
-     * @param message persisted legacy message row
-     * @return public message projection
-     */
-    private ConversationMessageInfo toConversationMessageInfo(ConversationMessage message)
-    {
-        ConversationMessageInfo messageInfo = new ConversationMessageInfo();
-        BeanUtils.copyProperties(message, messageInfo, "contentParts", "toolCalls");
-        messageInfo.setContentParts(readJsonList(message.getContentParts(), CONTENT_PARTS_TYPE));
-        messageInfo.setToolCalls(readJsonList(message.getToolCalls(), TOOL_CALLS_TYPE));
-        return messageInfo;
-    }
-
-    /**
-     * Deserializes an optional JSON array without failing the entire history projection.
-     *
-     * @param json nullable persisted JSON text
-     * @param typeReference concrete list element type retained for Jackson
-     * @param <T> structured content or tool-call element type
-     * @return parsed list, {@code null} when absent, or an empty list when malformed
-     */
-    private <T> List<T> readJsonList(String json, TypeReference<List<T>> typeReference)
-    {
-        if (!StringUtils.hasText(json))
-            return null;
-
-        try
-        {
-            return jsonSerializer.deserialize(json, typeReference, "Conversation message JSON");
-        }
-        catch (Exception e)
-        {
-            log.warn("Failed to parse conversation message JSON.", e);
-            return Collections.emptyList();
-        }
-    }
-
-    /**
      * Resolves optional Group membership only after the new Conversation shell has been assembled.
      *
      * @param conversation new Conversation awaiting persistence
@@ -685,16 +579,17 @@ public class ConversationService implements IConversationRpcService
      * @return filename, media type, and serialized content
      * @throws IOException when JSON serialization fails
      */
-    private ExportPayload buildExportPayload(ConversationMessageHistory history, ExportFormat exportFormat) throws IOException
+    private ExportPayload buildExportPayload(
+        String title, RoundHistoryView history, ExportFormat exportFormat) throws IOException
     {
-        String baseFilename = history.getConversationId() + "." + exportFormat.name().toLowerCase(Locale.ROOT);
+        String baseFilename = history.conversationId() + "." + exportFormat.name().toLowerCase(Locale.ROOT);
         return switch (exportFormat)
         {
             case JSON -> new ExportPayload(baseFilename, MediaType.APPLICATION_JSON_VALUE,
-                jsonSerializer.serialize(history, "Conversation export"));
-            case HTML -> new ExportPayload(baseFilename, MediaType.TEXT_HTML_VALUE, toHtml(history));
-            case MARKDOWN -> new ExportPayload(baseFilename, "text/markdown;charset=UTF-8", toMarkdown(history));
-            case TXT -> new ExportPayload(baseFilename, MediaType.TEXT_PLAIN_VALUE, toPlainText(history));
+                jsonSerializer.serialize(new ExportView(title, history), "Conversation export"));
+            case HTML -> new ExportPayload(baseFilename, MediaType.TEXT_HTML_VALUE, toHtml(title, history));
+            case MARKDOWN -> new ExportPayload(baseFilename, "text/markdown;charset=UTF-8", toMarkdown(title, history));
+            case TXT -> new ExportPayload(baseFilename, MediaType.TEXT_PLAIN_VALUE, toPlainText(title, history));
         };
     }
 
@@ -704,12 +599,17 @@ public class ConversationService implements IConversationRpcService
      * @param history authorized history projection
      * @return UTF-8-safe text content
      */
-    private String toPlainText(ConversationMessageHistory history)
+    private String toPlainText(String title, RoundHistoryView history)
     {
         StringBuilder builder = new StringBuilder();
-        builder.append(history.getTitle()).append(System.lineSeparator()).append(System.lineSeparator());
-        for (ConversationMessageInfo message : history.getMessages())
-            builder.append(message.getRole()).append(": ").append(TextNormalizer.trimToEmpty(message.getContent())).append(System.lineSeparator());
+        builder.append(title).append(System.lineSeparator()).append(System.lineSeparator());
+        for (RoundHistoryView.RoundView round : history.rounds())
+        {
+            builder.append("User: ").append(TextNormalizer.trimToEmpty(round.userMessage()))
+                .append(System.lineSeparator());
+            builder.append("Assistant: ").append(TextNormalizer.trimToEmpty(round.assistantAnswer()))
+                .append(System.lineSeparator()).append(System.lineSeparator());
+        }
 
         return builder.toString();
     }
@@ -720,12 +620,19 @@ public class ConversationService implements IConversationRpcService
      * @param history authorized history projection
      * @return Markdown document text
      */
-    private String toMarkdown(ConversationMessageHistory history)
+    private String toMarkdown(String title, RoundHistoryView history)
     {
         StringBuilder builder = new StringBuilder();
-        builder.append("# ").append(history.getTitle()).append(System.lineSeparator()).append(System.lineSeparator());
-        for (ConversationMessageInfo message : history.getMessages())
-            builder.append("## ").append(message.getRole()).append(System.lineSeparator()).append(TextNormalizer.trimToEmpty(message.getContent())).append(System.lineSeparator()).append(System.lineSeparator());
+        builder.append("# ").append(title).append(System.lineSeparator()).append(System.lineSeparator());
+        for (RoundHistoryView.RoundView round : history.rounds())
+        {
+            builder.append("## Round ").append(round.roundNumber()).append(System.lineSeparator())
+                .append("### User").append(System.lineSeparator())
+                .append(TextNormalizer.trimToEmpty(round.userMessage())).append(System.lineSeparator())
+                .append("### Assistant").append(System.lineSeparator())
+                .append(TextNormalizer.trimToEmpty(round.assistantAnswer())).append(System.lineSeparator())
+                .append(System.lineSeparator());
+        }
 
         return builder.toString();
     }
@@ -736,20 +643,20 @@ public class ConversationService implements IConversationRpcService
      * @param history authorized history projection
      * @return complete HTML document with untrusted text escaped
      */
-    private String toHtml(ConversationMessageHistory history)
+    private String toHtml(String title, RoundHistoryView history)
     {
         StringBuilder builder = new StringBuilder();
         builder.append("<!doctype html><html><head><meta charset=\"utf-8\"><title>")
-            .append(escapeHtml(history.getTitle()))
+            .append(escapeHtml(title))
             .append("</title></head><body><h1>")
-            .append(escapeHtml(history.getTitle()))
+            .append(escapeHtml(title))
             .append("</h1>");
-        for (ConversationMessageInfo message : history.getMessages())
+        for (RoundHistoryView.RoundView round : history.rounds())
         {
-            builder.append("<section><h2>")
-                .append(message.getRole())
-                .append("</h2><p>")
-                .append(escapeHtml(TextNormalizer.trimToEmpty(message.getContent())))
+            builder.append("<section><h2>Round ").append(round.roundNumber()).append("</h2><h3>User</h3><p>")
+                .append(escapeHtml(TextNormalizer.trimToEmpty(round.userMessage())))
+                .append("</p><h3>Assistant</h3><p>")
+                .append(escapeHtml(TextNormalizer.trimToEmpty(round.assistantAnswer())))
                 .append("</p></section>");
         }
         builder.append("</body></html>");
@@ -828,6 +735,10 @@ public class ConversationService implements IConversationRpcService
      * @param content serialized export body
      */
     private record ExportPayload(String filename, String contentType, String content)
+    {
+    }
+
+    private record ExportView(String title, RoundHistoryView history)
     {
     }
 }
