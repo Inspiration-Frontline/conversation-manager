@@ -21,10 +21,12 @@ import stark.dataworks.boot.web.ServiceResponse;
 
 import java.util.List;
 
+/** HTTP boundary for direct uploads, processing status, deletion, and signed downloads. */
 @RestController
 @RequestMapping("/conversation/files")
 public class ConversationFileController
 {
+    /** Service enforcing file ownership, lifecycle, and signed-URL policy. */
     @Autowired
     private ConversationFileService conversationFileService;
 
@@ -110,7 +112,11 @@ public class ConversationFileController
         return conversationFileService.getFileDownloadUrl(fileId);
     }
 
-    /** Creates a short-lived signed URL for an attachment visible in a shared snapshot. */
+    /** Creates a short-lived signed URL for an attachment visible in a shared snapshot.
+     * @param sharedConversationId stable share identity authorizing the read
+     * @param fileId stable file identity attached before the share boundary
+     * @return signed download URL or a client-safe authorization error
+     */
     @GetMapping("/shared/{sharedConversationId}/{fileId}/download-url")
     public ServiceResponse<FileDownloadUrl> getSharedFileDownloadUrl(
         @PathVariable String sharedConversationId, @PathVariable String fileId)

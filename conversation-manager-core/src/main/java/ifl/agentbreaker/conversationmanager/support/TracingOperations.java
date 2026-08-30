@@ -13,6 +13,7 @@ import java.util.function.Function;
 @Component
 public class TracingOperations
 {
+    /** Spring-managed Micrometer tracer used to create child spans. */
     private final Tracer tracer;
 
     /**

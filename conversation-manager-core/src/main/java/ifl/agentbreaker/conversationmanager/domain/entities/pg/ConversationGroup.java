@@ -3,6 +3,7 @@ package ifl.agentbreaker.conversationmanager.domain.entities.pg;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
 
+/** Persisted owner-scoped Group used to order Conversations in navigation. */
 @Data
 @EqualsAndHashCode(callSuper = true)
 public class ConversationGroup extends EntityBase

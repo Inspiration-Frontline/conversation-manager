@@ -5,6 +5,7 @@ import lombok.EqualsAndHashCode;
 
 import java.time.Instant;
 
+/** Durable root aggregate for one user's Conversation and its Round-number high-water mark. */
 @Data
 @EqualsAndHashCode(callSuper = true)
 public class Conversation extends EntityBase
@@ -45,9 +46,6 @@ public class Conversation extends EntityBase
      */
     private long latestRoundNumber;
 
-    /**
-     * Whether the conversation is deleted.
-     */
-    // Here we use a logic deletion instead of a hard deletion because the shared conversation may contain the deleted conversation, since the shared conversation is a snapshot of the parent conversation.
+    /** Whether the Conversation is hidden while historical sharing and audit references to remain intact. */
     private boolean deleted;
 }

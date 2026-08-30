@@ -25,7 +25,10 @@ import static org.mockito.Mockito.when;
 
 class ConversationRoundTracingTest
 {
+    /** Mock span whose tags and lifecycle are asserted by the tracing wrapper tests. */
     private Span span;
+
+    /** Tracing decorator under test for round RPC operations. */
     private ConversationRoundTracing roundTracing;
 
     @BeforeEach

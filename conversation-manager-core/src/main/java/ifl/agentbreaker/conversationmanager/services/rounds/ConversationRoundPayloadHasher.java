@@ -17,6 +17,7 @@ import java.util.HexFormat;
 @Component
 public class ConversationRoundPayloadHasher
 {
+    /** Version of the canonical payload hashing algorithm. */
     public static final short CURRENT_VERSION = 1;
 
     /**

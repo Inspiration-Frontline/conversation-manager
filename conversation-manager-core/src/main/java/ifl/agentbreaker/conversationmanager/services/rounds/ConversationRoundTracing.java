@@ -24,6 +24,7 @@ import java.util.function.Supplier;
 @Component
 public class ConversationRoundTracing
 {
+    /** Shared helper that starts, tags, records exceptions on, and closes Micrometer spans. */
     private final TracingOperations tracingOperations;
 
     /**
@@ -36,7 +37,13 @@ public class ConversationRoundTracing
         this.tracingOperations = tracingOperations;
     }
 
-    /** Traces Round persistence without exposing Span operations to the RPC provider. */
+    /**
+     * Traces Round persistence without exposing Span operations to the RPC provider.
+     *
+     * @param request complete Round persistence command used only for bounded metadata tags
+     * @param operation business operation executed inside the new child span
+     * @return response returned by the supplied persistence operation
+     */
     public SaveConversationRoundResponse traceSaveConversationRound(
         SaveConversationRoundRequest request,
         Supplier<SaveConversationRoundResponse> operation)
@@ -54,7 +61,13 @@ public class ConversationRoundTracing
         });
     }
 
-    /** Traces compact Round history loading and its selected durable boundary. */
+    /**
+     * Traces compact Round history loading and its selected durable boundary.
+     *
+     * @param request owner-scoped history request
+     * @param operation business operation executed inside the new child span
+     * @return response returned by the supplied history operation
+     */
     public GetConversationRoundHistoryResponse traceConversationRoundHistory(
         GetConversationRoundHistoryRequest request,
         Supplier<GetConversationRoundHistoryResponse> operation)
@@ -73,7 +86,13 @@ public class ConversationRoundTracing
         });
     }
 
-    /** Traces replay/context loading without recording Conversation content. */
+    /**
+     * Traces replay/context loading without recording Conversation content.
+     *
+     * @param request replay boundary and detail level
+     * @param operation business operation executed inside the new child span
+     * @return response returned by the supplied replay operation
+     */
     public GetConversationReplayResponse traceConversationReplay(
         GetConversationReplayRequest request,
         Supplier<GetConversationReplayResponse> operation)
@@ -90,7 +109,13 @@ public class ConversationRoundTracing
         });
     }
 
-    /** Traces file authorization/preparation and aggregate readiness. */
+    /**
+     * Traces file authorization/preparation and aggregate readiness.
+     *
+     * @param request stable file IDs and request correlation data
+     * @param operation business operation executed inside the new child span
+     * @return response returned by the supplied file-preparation operation
+     */
     public PrepareConversationFilesResponse traceConversationFiles(
         PrepareConversationFilesRequest request,
         Supplier<PrepareConversationFilesResponse> operation)
@@ -108,7 +133,13 @@ public class ConversationRoundTracing
         });
     }
 
-    /** Traces same-Group reference preparation and the resolved count. */
+    /**
+     * Traces same-Group reference preparation and the resolved count.
+     *
+     * @param request destination and ordered frozen reference boundaries
+     * @param operation business operation executed inside the new child span
+     * @return response returned by the supplied reference-preparation operation
+     */
     public PrepareConversationReferencesResponse traceConversationReferences(
         PrepareConversationReferencesRequest request,
         Supplier<PrepareConversationReferencesResponse> operation)
@@ -123,6 +154,12 @@ public class ConversationRoundTracing
         });
     }
 
+    /**
+     * Adds bounded aggregate counts and identifiers without recording message or Tool content.
+     *
+     * @param span active persistence span
+     * @param request complete Round save request supplying metadata counts
+     */
     private static void tagSaveRequest(Span span, SaveConversationRoundRequest request)
     {
         int toolExecutionCount = request.getTurnsList().stream()
@@ -140,6 +177,12 @@ public class ConversationRoundTracing
         span.tag("conversation.trace_id", request.getTraceId());
     }
 
+    /**
+     * Adds the common RPC success and error-code outcome tags.
+     *
+     * @param span active RPC child span
+     * @param base common response envelope returned by the operation
+     */
     private static void tagBase(Span span, ResponseBase base)
     {
         span.tag("rpc.success", Boolean.toString(base.getSuccess()));

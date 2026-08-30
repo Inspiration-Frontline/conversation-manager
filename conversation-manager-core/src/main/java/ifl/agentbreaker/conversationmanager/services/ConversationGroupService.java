@@ -33,23 +33,31 @@ import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
+/** Enforces owner-scoped Group ordering and membership changes inside PostgreSQL transactions. */
 @Slf4j
 @Service
 @Validated
 @LogArgumentsAndResponse
 public class ConversationGroupService
 {
+    /** Client error returned when the requested owned Group does not exist. */
     private static final int ERROR_GROUP_NOT_FOUND = 2102;
+    /** Client error returned when any requested Conversation is missing or belongs elsewhere. */
     private static final int ERROR_INVALID_CONVERSATION = 2103;
+    /** Client error returned when a reorder omits, repeats, or invents a Group ID. */
     private static final int ERROR_INVALID_GROUP_ORDER = 2104;
+    /** Maximum normalized Group name length persisted by this service. */
     private static final int MAX_GROUP_NAME_LENGTH = 100;
 
+    /** Mapper for owner-scoped Conversation membership and pin mutations. */
     @Autowired
     private ConversationMapper conversationMapper;
 
+    /** Service that removes file references when Conversations are deleted with a Group. */
     @Autowired
     private ConversationFileService conversationFileService;
 
+    /** Mapper for Group rows, ordering locks, and summary projections. */
     @Autowired
     private ConversationGroupMapper conversationGroupMapper;
 
@@ -249,6 +257,12 @@ public class ConversationGroupService
         return ServiceResponse.buildSuccessResponse(true);
     }
 
+    /**
+     * Maps a persisted Group to the response shape used by Group mutations.
+     *
+     * @param group persisted Group carrying its generated identity and normalized metadata
+     * @return Group response with an initially unset member count
+     */
     private ConversationGroupAbstract toConversationGroupAbstract(ConversationGroup group)
     {
         ConversationGroupAbstract groupAbstract = new ConversationGroupAbstract();

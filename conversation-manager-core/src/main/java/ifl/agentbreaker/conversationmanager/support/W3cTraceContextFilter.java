@@ -35,6 +35,7 @@ import java.util.Map;
 @Activate(group = CommonConstants.PROVIDER, order = Integer.MIN_VALUE + 1000)
 public class W3cTraceContextFilter implements Filter
 {
+    /** Reads lowercase W3C propagation headers from Dubbo attachment maps. */
     private static final AttachmentGetter ATTACHMENT_GETTER = new AttachmentGetter();
 
     /**
@@ -84,6 +85,11 @@ public class W3cTraceContextFilter implements Filter
         return extractParentContext(attachments, openTelemetry.getPropagators().getTextMapPropagator());
     }
 
+    /** Extracts a parent context with the supplied propagator and safe fallback behavior.
+     * @param attachments Dubbo attachment map carrying W3C propagation values
+     * @param propagator OpenTelemetry text-map propagator
+     * @return extracted parent context, or the current context when extraction is unavailable
+     */
     private static Context extractParentContext(
         Map<String, String> attachments,
         TextMapPropagator propagator)
@@ -109,6 +115,12 @@ public class W3cTraceContextFilter implements Filter
      */
     private static final class AttachmentGetter implements TextMapGetter<Map<String, String>>
     {
+        /**
+         * Returns the propagation keys available in a Dubbo attachment carrier.
+         *
+         * @param carrier Dubbo attachment map
+         * @return keys visible to the W3C propagator
+         */
         @Override
         public Iterable<String> keys(Map<String, String> carrier)
         {
@@ -117,6 +129,13 @@ public class W3cTraceContextFilter implements Filter
             return carrier.keySet();
         }
 
+        /**
+         * Reads one propagation value from a Dubbo attachment carrier.
+         *
+         * @param carrier Dubbo attachment map
+         * @param key Lowercase W3C header name
+         * @return propagated value, or {@code null} when absent
+         */
         @Override
         public String get(Map<String, String> carrier, String key)
         {

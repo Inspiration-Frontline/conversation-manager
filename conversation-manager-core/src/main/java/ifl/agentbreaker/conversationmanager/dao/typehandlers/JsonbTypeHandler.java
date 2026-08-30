@@ -19,9 +19,13 @@ import java.sql.SQLException;
  */
 public abstract class JsonbTypeHandler<T> extends BaseTypeHandler<T>
 {
+    /** Non-generic target class, when the JSONB value has no erased type parameters. */
     private final Class<T> targetClass;
+    /** Generic target type retained through Jackson's {@link TypeReference}. */
     private final TypeReference<T> targetTypeReference;
+    /** Business label included in serialization failure messages. */
     private final String subject;
+    /** Semantic value returned when the database column is null or blank. */
     private final T emptyValue;
 
     /**
@@ -55,6 +59,12 @@ public abstract class JsonbTypeHandler<T> extends BaseTypeHandler<T>
         this.emptyValue = emptyValue;
     }
 
+    /** Serializes a typed value into a PostgreSQL JSONB parameter.
+     * @param statement prepared JDBC statement receiving the JSONB value
+     * @param parameterIndex one-based JDBC parameter index
+     * @param parameter typed value to serialize
+     * @param jdbcType declared JDBC type supplied by MyBatis
+     */
     @Override
     public void setNonNullParameter(
         PreparedStatement statement,
@@ -75,24 +85,44 @@ public abstract class JsonbTypeHandler<T> extends BaseTypeHandler<T>
         statement.setObject(parameterIndex, jsonb);
     }
 
+    /** Deserializes a nullable JSONB column by name.
+     * @param resultSet JDBC result set containing JSONB text
+     * @param columnName column label to read
+     * @return typed value, or the configured empty value
+     */
     @Override
     public T getNullableResult(ResultSet resultSet, String columnName) throws SQLException
     {
         return deserialize(resultSet.getString(columnName));
     }
 
+    /** Deserializes a nullable JSONB column by index.
+     * @param resultSet JDBC result set containing JSONB text
+     * @param columnIndex one-based column index to read
+     * @return typed value, or the configured empty value
+     */
     @Override
     public T getNullableResult(ResultSet resultSet, int columnIndex) throws SQLException
     {
         return deserialize(resultSet.getString(columnIndex));
     }
 
+    /** Deserializes a nullable JSONB value from a callable statement.
+     * @param statement callable JDBC statement containing JSONB text
+     * @param columnIndex one-based parameter index to read
+     * @return typed value, or the configured empty value
+     */
     @Override
     public T getNullableResult(CallableStatement statement, int columnIndex) throws SQLException
     {
         return deserialize(statement.getString(columnIndex));
     }
 
+    /** Converts JSON text to the handler's target type.
+     * @param json JSONB text, possibly {@code null}
+     * @return decoded value, or the configured empty value
+     * @throws SQLException when JSON cannot be decoded
+     */
     private T deserialize(String json) throws SQLException
     {
         if (json == null || json.isBlank())

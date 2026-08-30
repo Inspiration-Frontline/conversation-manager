@@ -12,7 +12,8 @@
         <result column="request_message_id" property="requestMessageId"/>
         <result column="call_order" property="callOrder"/>
         <result column="tool_call_id" property="toolCallId"/>
-        <result column="type" property="type"/>
+        <result column="type" property="type"
+                typeHandler="ifl.agentbreaker.conversationmanager.dao.typehandlers.ToolCallTypeTypeHandler"/>
         <result column="function_name" property="functionName"/>
         <result column="arguments" property="arguments"/>
     </resultMap>
@@ -25,7 +26,9 @@
         <foreach collection="items" item="item" separator=",">
             (
                 #{item.creatorId}, #{item.modifierId}, #{item.roundId}, #{item.turnId}, #{item.requestMessageId}, #{item.callOrder},
-                #{item.toolCallId}, #{item.type}, #{item.functionName}, #{item.arguments}
+                #{item.toolCallId},
+                #{item.type, typeHandler=ifl.agentbreaker.conversationmanager.dao.typehandlers.ToolCallTypeTypeHandler},
+                #{item.functionName}, #{item.arguments}
             )
         </foreach>
     </insert>

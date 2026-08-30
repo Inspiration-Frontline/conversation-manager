@@ -66,21 +66,27 @@ import static ifl.agentbreaker.conversationmanager.rpc.ConversationRound.getDefa
 @DubboService(filter = "w3c-trace-context")
 public class ConversationRoundRpcProvider implements ConversationRpcService
 {
+    /** Application service that validates and persists complete Conversation Rounds. */
     @Autowired
     private ConversationRoundService conversationRoundService;
 
+    /** File service that authorizes uploads and prepares attachment metadata for Runner. */
     @Autowired
     private ConversationFileService conversationFileService;
 
+    /** Configured limits used when validating a batch of Conversation attachments. */
     @Autowired
     private ConversationFileProperties conversationFileProperties;
 
+    /** Mapper used to verify Conversation ownership before reserving files. */
     @Autowired
     private ConversationMapper conversationMapper;
 
+    /** Tracing wrapper that records RPC outcomes without changing the response contract. */
     @Autowired
     private ConversationRoundTracing conversationRoundTracing;
 
+    /** Checkpoint/progress service used by streaming Runner mutations. */
     @Autowired
     private ConversationRoundProgressService conversationRoundProgressService;
 
@@ -130,6 +136,10 @@ public class ConversationRoundRpcProvider implements ConversationRpcService
         return conversationRoundTracing.traceSaveConversationRound(request, () -> persistConversationRound(request));
     }
 
+    /** Converts persistence validation failures into the two-field save response envelope.
+     * @param request complete Round mutation received from Runner
+     * @return persisted Round projection, or a typed domain error response
+     */
     private SaveConversationRoundResponse persistConversationRound(SaveConversationRoundRequest request)
     {
         try
@@ -163,6 +173,10 @@ public class ConversationRoundRpcProvider implements ConversationRpcService
         return CompletableFuture.completedFuture(saveConversationRound(request));
     }
 
+    /** Creates or replays the durable checkpoint for an in-progress Round.
+     * @param request checkpoint identity, revision, and initial capture supplied by Runner
+     * @return mutation outcome including the committed revision and resulting status
+     */
     @Override
     public CreateConversationRoundCheckpointResponse createConversationRoundCheckpoint(
         CreateConversationRoundCheckpointRequest request)
@@ -181,6 +195,10 @@ public class ConversationRoundRpcProvider implements ConversationRpcService
         }
     }
 
+    /** Adapts checkpoint creation to the asynchronous Dubbo method signature.
+     * @param request checkpoint identity, revision, and initial capture supplied by Runner
+     * @return future containing the checkpoint mutation outcome
+     */
     @Override
     public CompletableFuture<CreateConversationRoundCheckpointResponse> createConversationRoundCheckpointAsync(
         CreateConversationRoundCheckpointRequest request)
@@ -188,6 +206,10 @@ public class ConversationRoundRpcProvider implements ConversationRpcService
         return CompletableFuture.completedFuture(createConversationRoundCheckpoint(request));
     }
 
+    /** Appends an idempotent progress capture to an existing Round checkpoint.
+     * @param request progress sequence, payload, and expected revision supplied by Runner
+     * @return mutation outcome including the committed revision and resulting status
+     */
     @Override
     public AppendConversationRoundProgressResponse appendConversationRoundProgress(
         AppendConversationRoundProgressRequest request)
@@ -206,6 +228,10 @@ public class ConversationRoundRpcProvider implements ConversationRpcService
         }
     }
 
+    /** Adapts progress appending to the asynchronous Dubbo method signature.
+     * @param request progress sequence, payload, and expected revision supplied by Runner
+     * @return future containing the progress mutation outcome
+     */
     @Override
     public CompletableFuture<AppendConversationRoundProgressResponse> appendConversationRoundProgressAsync(
         AppendConversationRoundProgressRequest request)
@@ -213,6 +239,10 @@ public class ConversationRoundRpcProvider implements ConversationRpcService
         return CompletableFuture.completedFuture(appendConversationRoundProgress(request));
     }
 
+    /** Finalizes a checkpointed Round with its terminal status and captured answer.
+     * @param request terminal status, final answer, and expected revision supplied by Runner
+     * @return mutation outcome including the committed revision and resulting status
+     */
     @Override
     public FinalizeConversationRoundResponse finalizeConversationRound(FinalizeConversationRoundRequest request)
     {
@@ -231,6 +261,10 @@ public class ConversationRoundRpcProvider implements ConversationRpcService
         }
     }
 
+    /** Adapts Round finalization to the asynchronous Dubbo method signature.
+     * @param request terminal status, final answer, and expected revision supplied by Runner
+     * @return future containing the finalization mutation outcome
+     */
     @Override
     public CompletableFuture<FinalizeConversationRoundResponse> finalizeConversationRoundAsync(
         FinalizeConversationRoundRequest request)
@@ -238,6 +272,12 @@ public class ConversationRoundRpcProvider implements ConversationRpcService
         return CompletableFuture.completedFuture(finalizeConversationRound(request));
     }
 
+    /** Builds the common mutation payload returned by checkpoint, progress, and finalize calls.
+     * @param conversationId Stable public identifier of the Conversation.
+     * @param roundNumber Numeric round number used for ordering or bounds.
+     * @param outcome committed revision, idempotency flag, and resulting status
+     * @return protocol mutation result for the requested Conversation Round
+     */
     private ConversationRoundMutationResult toMutationResult(String conversationId, long roundNumber,
         ConversationRoundProgressService.MutationOutcome outcome)
     {
@@ -260,6 +300,10 @@ public class ConversationRoundRpcProvider implements ConversationRpcService
             request, () -> loadConversationRoundHistory(request));
     }
 
+    /** Loads compact Round summaries and translates persistence errors into RPC responses.
+     * @param request owned Conversation identity supplied by Runner
+     * @return ordered Round history, or a typed ownership/not-found response
+     */
     private GetConversationRoundHistoryResponse loadConversationRoundHistory(GetConversationRoundHistoryRequest request)
     {
         try
@@ -510,6 +554,10 @@ public class ConversationRoundRpcProvider implements ConversationRpcService
             request, () -> prepareConversationReferencesInternal(request));
     }
 
+    /** Converts reference authorization failures into the RPC response envelope.
+     * @param request destination Conversation and frozen source boundaries
+     * @return prepared reference projections, or a typed domain error response
+     */
     private PrepareConversationReferencesResponse prepareConversationReferencesInternal(
         PrepareConversationReferencesRequest request)
     {

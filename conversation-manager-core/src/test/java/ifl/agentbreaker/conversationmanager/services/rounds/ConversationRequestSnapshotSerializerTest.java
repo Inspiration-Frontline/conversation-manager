@@ -19,8 +19,10 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class ConversationRequestSnapshotSerializerTest
 {
+    /** Jackson mapper configured with the same modules as the Conversation Manager service. */
     private final ObjectMapper objectMapper = new JacksonConfiguration().conversationManagerObjectMapper();
 
+    /** Snapshot serializer under test. */
     private final ConversationRequestSnapshotSerializer serializer = new ConversationRequestSnapshotSerializer();
 
     @BeforeEach

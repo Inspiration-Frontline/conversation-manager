@@ -6,6 +6,7 @@ import lombok.Data;
 @Data
 public class ForkConversationRequest
 {
+    /** Stable identifier of the shared conversation. */
     @NotBlank(message = "Shared conversation ID is required.")
     private String sharedConversationId;
 }

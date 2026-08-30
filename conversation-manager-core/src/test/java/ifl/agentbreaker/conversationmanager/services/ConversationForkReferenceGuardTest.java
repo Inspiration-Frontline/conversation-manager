@@ -33,25 +33,30 @@ import static org.mockito.Mockito.when;
 @ExtendWith(MockitoExtension.class)
 class ConversationForkReferenceGuardTest
 {
+    /** Mapper for loading the source and destination conversations used by the fork guard. */
     @Mock
     private ConversationMapper conversationMapper;
 
+    /** Mapper for verifying that fork history is not written when a reference blocks the fork. */
     @Mock
     private ConversationRoundMapper conversationRoundMapper;
 
+    /** Mapper for detecting references in completed rounds before a fork is allocated. */
     @Mock
     private ConversationRoundReferenceMapper conversationRoundReferenceMapper;
 
+    /** Mapper for resolving the shared conversation snapshot requested by the test. */
     @Mock
     private ConversationSharingMapper conversationSharingMapper;
 
+    /** Service under test, with persistence collaborators injected by Mockito. */
     @InjectMocks
     private ConversationService conversationService;
 
     @BeforeEach
     void setCurrentUser()
     {
-        UserContextService.setCurrentUser(new UserInfo(9, "phase10", "Phase 10", Collections.emptyList()));
+        UserContextService.setCurrentUser(new UserInfo(9, "test-user", "Test User", Collections.emptyList()));
     }
 
     @AfterEach

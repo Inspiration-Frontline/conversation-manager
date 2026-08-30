@@ -69,35 +69,50 @@ import java.util.Locale;
 @LogArgumentsAndResponse
 public class ConversationService implements IConversationRpcService
 {
+    /** Client-visible code for an unknown or unauthorized Conversation. */
     private static final int ERROR_CONVERSATION_NOT_FOUND = 2002;
+    /** Client-visible code for an unknown or expired share. */
     private static final int ERROR_SHARE_NOT_FOUND = 2003;
+    /** Client-visible code for export rendering or response-write failure. */
     private static final int ERROR_EXPORT_FAILED = 2004;
+    /** Client-visible code for invalid Conversation state. */
     private static final int ERROR_INVALID_CONVERSATION = 2005;
 
+    /** First page used when navigation input omits a page index. */
     private static final int DEFAULT_PAGE_INDEX = 1;
+    /** Default number of Conversations returned by navigation. */
     private static final int DEFAULT_PAGE_SIZE = 20;
+    /** Upper bound preventing unbounded navigation queries. */
     private static final int MAX_PAGE_SIZE = 100;
+    /** Shared serializer used by export renderers. */
     @Autowired
     private JsonSerializer jsonSerializer;
 
+    /** Persistence operations for owned Conversation metadata. */
     @Autowired
     private ConversationMapper conversationMapper;
 
+    /** Persistence operations for Conversation Group membership. */
     @Autowired
     private ConversationGroupMapper conversationGroupMapper;
 
+    /** Persistence operations for Round history and export projections. */
     @Autowired
     private ConversationRoundMapper conversationRoundMapper;
 
+    /** Persistence operations for frozen Conversation references. */
     @Autowired
     private ConversationRoundReferenceMapper conversationRoundReferenceMapper;
 
+    /** Persistence operations for share creation and revocation. */
     @Autowired
     private ConversationSharingMapper conversationSharingMapper;
 
+    /** File authorization and cleanup coordination service. */
     @Autowired
     private ConversationFileService conversationFileService;
 
+    /** Round persistence and replay domain service. */
     @Autowired
     private ConversationRoundService conversationRoundService;
 
@@ -107,6 +122,7 @@ public class ConversationService implements IConversationRpcService
      * <p>The shell gives the browser a stable ID for streaming, refresh, and retry flows. The
      * first successfully persisted Round later replaces the default title.</p>
      *
+     * @param request optional initial Group placement; {@code null} creates an ungrouped Conversation
      * @return newly created Conversation summary owned by the authenticated user
      */
     @Transactional(rollbackFor = Exception.class)
@@ -738,6 +754,10 @@ public class ConversationService implements IConversationRpcService
     {
     }
 
+    /** Groups export title and history for renderer selection.
+     * @param title display title of the exported Conversation
+     * @param history bounded Round history included in the export
+     */
     private record ExportView(String title, RoundHistoryView history)
     {
     }

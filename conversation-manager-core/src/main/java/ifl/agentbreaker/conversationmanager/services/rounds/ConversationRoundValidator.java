@@ -41,15 +41,17 @@ import java.util.Set;
 @Component
 public class ConversationRoundValidator
 {
+    /** Lowercase 128-bit hexadecimal format required for persisted W3C trace IDs. */
     private static final String W3C_TRACE_ID_PATTERN = "[0-9a-f]{32}";
 
+    /** Shared JSON parser used to compare and validate persisted Tool arguments. */
     @Autowired
     private ObjectMapper objectMapper;
 
+    /** Configured bounds used to validate cross-Conversation reference counts. */
     @Autowired
     private ConversationReferenceProperties conversationReferenceProperties;
 
-    // TODO: Rename to validate() once the remaining Round/Turn phases share this contract.
     /**
      * Validates the complete Round persistence contract before any database mutation occurs.
      * Completed and partial terminal Rounds intentionally have different answer/Turn requirements.
@@ -57,7 +59,7 @@ public class ConversationRoundValidator
      * @param request complete Runner persistence request
      * @throws RoundPersistenceException when any cross-row invariant is invalid
      */
-    public void validatePhaseFour(SaveConversationRoundRequest request)
+    public void validateRoundRequest(SaveConversationRoundRequest request)
     {
         require(request.getUserId() > 0, "user_id must be positive.");
         require(StringUtils.hasText(request.getConversationId()), "conversation_id is required.");

@@ -15,8 +15,10 @@ import org.springframework.stereotype.Component;
 @Component
 public class JsonSerializer
 {
+    /** Mapper shared with infrastructure type handlers created outside Spring injection. */
     private static ObjectMapper sharedObjectMapper;
 
+    /** Spring-configured mapper used by ordinary service serialization. */
     @Autowired
     private ObjectMapper objectMapper;
 

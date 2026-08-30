@@ -5,6 +5,7 @@ import lombok.Data;
 
 import java.util.List;
 
+/** Detailed Group projection containing its ordered Conversation summaries. */
 @Data
 public class ConversationGroupInfo
 {

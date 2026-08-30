@@ -14,9 +14,13 @@ import java.util.*;
  */
 public final class BusinessIdManager
 {
+    /** Public prefix for Conversation identifiers. */
     private static final String CONVERSATION_PREFIX = "conv";
+    /** Public prefix for Conversation Group identifiers. */
     private static final String CONVERSATION_GROUP_PREFIX = "group";
+    /** Public prefix for sharing identifiers. */
     private static final String CONVERSATION_SHARING_PREFIX = "share";
+    /** Public prefix for file identifiers. */
     private static final String FILE_PREFIX = "file";
 
     /** Prevents construction because all operations are stateless domain helpers. */

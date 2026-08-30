@@ -19,7 +19,10 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 public class ConversationFileParserTest
 {
+    /** Parser under test for bounded text and document extraction. */
     private ConversationFileParser parser;
+
+    /** Extraction limits supplied to the parser for each test case. */
     private ConversationFileProperties properties;
 
     @BeforeEach

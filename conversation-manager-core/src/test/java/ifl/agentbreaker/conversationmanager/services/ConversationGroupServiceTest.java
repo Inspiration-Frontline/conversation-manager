@@ -31,24 +31,29 @@ import static org.mockito.Mockito.when;
 @ExtendWith(MockitoExtension.class)
 class ConversationGroupServiceTest
 {
+    /** Stable user identifier used by the ownership and ordering assertions. */
     private static final long USER_ID = 101L;
 
+    /** Mapper for conversation ownership checks and group cleanup behavior. */
     @Mock
     private ConversationMapper conversationMapper;
 
+    /** File service used when deleting a group and its associated conversation files. */
     @Mock
     private ConversationFileService conversationFileService;
 
+    /** Mapper for group locking, ordering, persistence, and deletion operations. */
     @Mock
     private ConversationGroupMapper conversationGroupMapper;
 
+    /** Service under test, with its mocked persistence collaborators injected. */
     @InjectMocks
     private ConversationGroupService conversationGroupService;
 
     @BeforeEach
     void setUpUser()
     {
-        UserContextService.setCurrentUser(new UserInfo(USER_ID, "phase9", "Phase 9", Collections.emptyList()));
+        UserContextService.setCurrentUser(new UserInfo(USER_ID, "test-user", "Test User", Collections.emptyList()));
     }
 
     @AfterEach

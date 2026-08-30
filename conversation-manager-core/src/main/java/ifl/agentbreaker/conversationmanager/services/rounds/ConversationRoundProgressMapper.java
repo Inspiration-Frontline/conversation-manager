@@ -24,6 +24,7 @@ import java.util.Map;
 @Component
 class ConversationRoundProgressMapper
 {
+    /** Shared serializer used for deterministic Round content-part JSONB. */
     @Autowired
     private JsonSerializer jsonSerializer;
 

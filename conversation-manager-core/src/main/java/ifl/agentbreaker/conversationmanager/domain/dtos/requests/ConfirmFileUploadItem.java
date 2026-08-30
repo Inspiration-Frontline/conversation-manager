@@ -8,9 +8,11 @@ import lombok.Data;
 @Data
 public class ConfirmFileUploadItem
 {
+    /** Stable identifier of the file. */
     @NotBlank(message = "File ID is required.")
     private String fileId;
 
+    /** Lowercase or uppercase hexadecimal SHA-256 digest calculated from the uploaded bytes. */
     @Pattern(regexp = "^[0-9a-fA-F]{64}$")
     private String sha256;
 }

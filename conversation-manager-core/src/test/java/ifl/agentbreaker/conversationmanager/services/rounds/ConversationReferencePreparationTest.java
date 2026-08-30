@@ -27,15 +27,19 @@ import static org.mockito.Mockito.when;
 @ExtendWith(MockitoExtension.class)
 class ConversationReferencePreparationTest
 {
+    /** Mapper for loading destination and source conversations within the current user scope. */
     @Mock
     private ConversationMapper conversationMapper;
 
+    /** Mapper for loading the boundary and completed rounds used as reference context. */
     @Mock
     private ConversationRoundMapper conversationRoundMapper;
 
+    /** Configuration that limits the number of references accepted in a round. */
     @Mock
     private ConversationReferenceProperties conversationReferenceProperties;
 
+    /** Round service under test, with reference persistence collaborators injected. */
     @InjectMocks
     private ConversationRoundService conversationRoundService;
 

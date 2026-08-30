@@ -8,6 +8,7 @@ import java.util.List;
 @Data
 public class MoveConversationsRequest
 {
+    /** Stable identifiers of the selected conversation values. */
     @NotEmpty(message = "Conversation IDs are required.")
     private List<String> conversationIds;
 

@@ -4,6 +4,7 @@ import lombok.Data;
 
 import java.time.Instant;
 
+/** Shared PostgreSQL identity and audit fields inherited by durable Conversation Manager entities. */
 @Data
 public abstract class EntityBase
 {

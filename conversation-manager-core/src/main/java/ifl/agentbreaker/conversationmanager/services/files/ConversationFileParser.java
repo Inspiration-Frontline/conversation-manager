@@ -46,11 +46,14 @@ import java.util.HexFormat;
 @Component
 public class ConversationFileParser
 {
+    /** Marker inserted between representative excerpts when text is bounded. */
     private static final String TRUNCATION_MARKER = "\n\n[Content truncated here by the configured extraction limit.]\n\n";
 
+    /** Configured extraction limits and parser policy. */
     @Autowired
     private ConversationFileProperties conversationFileProperties;
 
+    /** Apache Tika detector used only for MIME sniffing. */
     private final Tika tika = new Tika();
 
     /**
@@ -405,6 +408,11 @@ public class ConversationFileParser
         ZipSecureFile.setMaxTextSize(conversationFileProperties.getMaxExtractedCharacters() * 4L);
     }
 
+    /** Applies the configured text limit and chooses representative excerpts when necessary.
+     * @param text extracted text before the chat context bound
+     * @param truncated whether extraction already exceeded the configured limit
+     * @return bounded text and its truncation flag
+     */
     private record TruncatedText(String text, boolean truncated)
     {
     }

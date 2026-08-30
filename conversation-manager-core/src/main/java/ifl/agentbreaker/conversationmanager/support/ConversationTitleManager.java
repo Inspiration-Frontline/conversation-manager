@@ -11,9 +11,12 @@ import java.util.regex.Pattern;
  */
 public final class ConversationTitleManager
 {
+    /** Maximum normalized title length persisted and shown by the UI. */
     public static final int MAX_TITLE_LENGTH = 200;
+    /** Fallback title used when no visible user text or filename exists. */
     public static final String DEFAULT_TITLE = "New Conversation";
 
+    /** Whitespace pattern used to collapse title separators. */
     private static final Pattern WHITESPACE = Pattern.compile("\\s+");
 
     /** Prevents construction because title policy is stateless. */

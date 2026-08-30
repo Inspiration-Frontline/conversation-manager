@@ -8,19 +8,28 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+/** Commits file-resource and task terminal states together in one transaction. */
 @Service
 public class ConversationFileTaskService
 {
+    /** Mapper updating the file resource's durable processing state. */
     @Autowired
     private FileResourceMapper fileResourceMapper;
 
+    /** Mapper completing the currently leased extraction task. */
     @Autowired
     private FileProcessingTaskMapper fileProcessingTaskMapper;
 
+    /** Mapper completing the currently leased object-cleanup task. */
     @Autowired
     private FileCleanupTaskMapper fileCleanupTaskMapper;
 
-    /** Marks a leased processing task READY and stores extracted text and typed metadata. */
+    /** Marks a leased processing task READY and stores extracted text and typed metadata.
+     * @param taskId database identity of the leased processing task
+     * @param leaseToken ownership token preventing stale workers from committing
+     * @param fileResource owned file being transitioned to READY
+     * @param extractionResult validated parser output to persist
+     */
     @Transactional(rollbackFor = Exception.class)
     public void completeProcessing(long taskId,
                                    String leaseToken,
@@ -43,7 +52,13 @@ public class ConversationFileTaskService
             throw new IllegalStateException("The file processing task lease was lost.");
     }
 
-    /** Marks a leased processing task FAILED and records a retryable error on the file resource. */
+    /** Marks a leased processing task FAILED and records a retryable error on the file resource.
+     * @param taskId database identity of the leased processing task
+     * @param leaseToken ownership token preventing stale workers from committing
+     * @param fileResource owned file being transitioned to FAILED
+     * @param errorCode stable file-processing failure code
+     * @param errorMessage diagnostic failure explanation
+     */
     @Transactional(rollbackFor = Exception.class)
     public void failProcessing(long taskId,
                                String leaseToken,
@@ -55,7 +70,11 @@ public class ConversationFileTaskService
         fileProcessingTaskMapper.markFailed(taskId, leaseToken, errorMessage);
     }
 
-    /** Marks a physical cleanup task complete and finalizes the logical file deletion. */
+    /** Marks a physical cleanup task complete and finalizes the logical file deletion.
+     * @param taskId database identity of the leased cleanup task
+     * @param leaseToken ownership token preventing stale workers from committing
+     * @param fileResource owned file whose object was removed
+     */
     @Transactional(rollbackFor = Exception.class)
     public void completeCleanup(long taskId, String leaseToken, FileResource fileResource)
     {

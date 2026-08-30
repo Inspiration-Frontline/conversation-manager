@@ -22,14 +22,17 @@ import stark.dataworks.boot.web.ServiceResponse;
 
 import java.util.List;
 
+/** HTTP boundary for owner-scoped Conversation metadata, history, sharing, and export operations. */
 @Slf4j
 @RestController
 @RequestMapping("/conversation")
 public class ConversationController
 {
+    /** Service owning Conversation metadata, sharing, and export behavior. */
     @Autowired
     private ConversationService conversationService;
 
+    /** Service owning durable Round history and reference resolution. */
     @Autowired
     private ConversationRoundService conversationRoundService;
 
@@ -39,6 +42,7 @@ public class ConversationController
      * <p>The browser needs an ID before it can stream a Round, and keeping this shell in the
      * Conversation Manager makes a refresh or a failed first generation addressable.</p>
      *
+     * @param request optional group placement for the new Conversation
      * @return the newly created owned Conversation summary
      */
     @PostMapping("/new")
@@ -133,7 +137,10 @@ public class ConversationController
         return conversationService.shareConversation(request);
     }
 
-    /** Returns owner-scoped share records for one Conversation. */
+    /** Returns owner-scoped share records, optionally filtered to one Conversation.
+     * @param conversationId optional owned Conversation identity
+     * @return ordered share metadata visible to the current owner
+     */
     @GetMapping("/shares")
     public ServiceResponse<List<ConversationShareSummary>> listConversationShares(
         @RequestParam(required = false) String conversationId)
@@ -141,14 +148,20 @@ public class ConversationController
         return conversationService.listConversationShares(conversationId);
     }
 
-    /** Revokes one owner-created share link. */
+    /** Revokes one owner-created share link.
+     * @param sharedConversationId stable share identity to revoke
+     * @return {@code true} after the revocation timestamp is committed
+     */
     @PostMapping("/share/revoke")
     public ServiceResponse<Boolean> revokeConversationShare(@RequestParam String sharedConversationId)
     {
         return conversationService.revokeConversationShare(sharedConversationId);
     }
 
-    /** Reads an authenticated immutable Conversation snapshot. */
+    /** Reads an authenticated immutable Conversation snapshot.
+     * @param sharedConversationId stable share identity from the public route
+     * @return redacted history bounded by the share snapshot
+     */
     @GetMapping("/shared/{sharedConversationId}")
     public ServiceResponse<SharedConversationView> getSharedConversation(@PathVariable String sharedConversationId)
     {

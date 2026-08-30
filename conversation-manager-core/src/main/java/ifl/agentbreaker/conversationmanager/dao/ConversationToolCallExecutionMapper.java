@@ -7,9 +7,16 @@ import org.apache.ibatis.annotations.Param;
 
 import java.util.List;
 
+/** MyBatis persistence operations for model-emitted Tool calls and their terminal executions. */
 @Mapper
 public interface ConversationToolCallExecutionMapper
 {
+    /**
+     * Persists a batch of complete Tool-call audit records across already-persisted Turns.
+     *
+     * @param executions executions carrying model call identity, arguments, result, status, and timing
+     * @return affected row count
+     */
     int insertToolCallExecutions(@Param("items") List<ConversationToolCallExecution> executions);
 
     /**

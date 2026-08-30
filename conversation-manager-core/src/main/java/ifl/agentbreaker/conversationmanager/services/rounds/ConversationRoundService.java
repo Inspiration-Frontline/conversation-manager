@@ -21,6 +21,7 @@ import ifl.agentbreaker.conversationmanager.domain.constants.ConversationTurnSta
 import ifl.agentbreaker.conversationmanager.domain.constants.LlmMessageRole;
 import ifl.agentbreaker.conversationmanager.domain.constants.LlmMessageStorageMode;
 import ifl.agentbreaker.conversationmanager.domain.constants.ToolCallExecutionStatus;
+import ifl.agentbreaker.conversationmanager.domain.constants.ToolCallType;
 import ifl.agentbreaker.conversationmanager.domain.constants.ToolSourceType;
 import ifl.agentbreaker.conversationmanager.domain.dtos.ConversationReferenceBoundary;
 import ifl.agentbreaker.conversationmanager.domain.dtos.requests.ResolveConversationReferencesRequest;
@@ -87,63 +88,83 @@ import java.util.stream.Collectors;
 @LogArgumentsAndResponse
 public class ConversationRoundService
 {
+    /** Persistence operations for owned Conversation metadata. */
     @Autowired
     private ConversationMapper conversationMapper;
 
+    /** Persistence operations for Conversation Group membership. */
     @Autowired
     private ConversationGroupMapper conversationGroupMapper;
 
+    /** Persistence operations for Round rows and projections. */
     @Autowired
     private ConversationRoundMapper conversationRoundMapper;
 
+    /** Persistence operations for frozen Conversation references. */
     @Autowired
     private ConversationRoundReferenceMapper conversationRoundReferenceMapper;
 
+    /** Persistence operations for normalized Turn rows. */
     @Autowired
     private ConversationTurnMapper conversationTurnMapper;
 
+    /** Serializer for read-optimized request-message JSONB snapshots. */
     @Autowired
     private ConversationRequestSnapshotSerializer conversationRequestSnapshotSerializer;
 
+    /** Persistence operations for normalized LLM request messages. */
     @Autowired
     private ConversationLlmRequestMessageMapper conversationLlmRequestMessageMapper;
 
+    /** Persistence operations for request-message Tool calls. */
     @Autowired
     private ConversationLlmRequestMessageToolCallMapper conversationLlmRequestMessageToolCallMapper;
 
+    /** Persistence operations for Tool definitions captured on a Turn. */
     @Autowired
     private ConversationLlmToolDefinitionMapper conversationLlmToolDefinitionMapper;
 
+    /** Persistence operations for executed Tool-call evidence. */
     @Autowired
     private ConversationToolCallExecutionMapper conversationToolCallExecutionMapper;
 
+    /** Persistence operations for Round-to-file references. */
     @Autowired
     private ConversationRoundFileMapper conversationRoundFileMapper;
 
+    /** Persistence operations for file-resource ownership and references. */
     @Autowired
     private FileResourceMapper fileResourceMapper;
 
+    /** Persistence operations for deferred file cleanup. */
     @Autowired
     private FileCleanupTaskMapper fileCleanupTaskMapper;
 
+    /** Validates Round requests and lifecycle invariants. */
     @Autowired
     private ConversationRoundValidator conversationRoundValidator;
 
+    /** Configured limits for same-Group Conversation references. */
     @Autowired
     private ConversationReferenceProperties conversationReferenceProperties;
 
+    /** Computes canonical hashes for idempotent Round retries. */
     @Autowired
     private ConversationRoundPayloadHasher conversationRoundPayloadHasher;
 
+    /** Shared serializer for JSONB request and content projections. */
     @Autowired
     private JsonSerializer jsonSerializer;
 
+    /** Per-Conversation lock guarding ordered Round mutations. */
     @Autowired
     private ConversationMutationLock conversationMutationLock;
 
+    /** Programmatic transaction boundary for multi-table Round writes. */
     @Autowired
     private TransactionTemplate transactionTemplate;
 
+    /** Client-visible code for an unknown or unauthorized Conversation. */
     private static final int ERROR_CONVERSATION_NOT_FOUND = 2002;
 
     /**
@@ -201,6 +222,13 @@ public class ConversationRoundService
         }
     }
 
+    /** Builds one Round history view from its grouped Tool, file, and reference projections.
+     * @param round persisted Round metadata
+     * @param toolActivitiesByRound Tool evidence grouped by Round number
+     * @param filesByRound file evidence grouped by Round number
+     * @param referencesByRound frozen references grouped by database Round ID
+     * @return user-visible Round history view
+     */
     private RoundHistoryView.RoundView toRoundView(
         ConversationRound round,
         Map<Long, List<RoundToolActivityHistory>> toolActivitiesByRound,
@@ -224,6 +252,10 @@ public class ConversationRoundService
                 .toList());
     }
 
+    /** Converts persisted Tool activity into the HTTP history projection.
+     * @param activity persisted Tool activity row
+     * @return user-visible Tool activity view
+     */
     private RoundHistoryView.ToolActivityView toToolActivityView(RoundToolActivityHistory activity)
     {
         return new RoundHistoryView.ToolActivityView(
@@ -231,6 +263,10 @@ public class ConversationRoundService
             activity.status(), activity.resultContent(), activity.errorMessage());
     }
 
+    /** Resolves the terminal timestamp while tolerating an in-progress Round.
+     * @param round persisted Round row
+     * @return end time in epoch milliseconds, or start time when not finished
+     */
     private long getRoundEndTime(ConversationRound round)
     {
         return round.getEndTime() == null ? round.getStartTime().toEpochMilli() : round.getEndTime().toEpochMilli();
@@ -258,6 +294,11 @@ public class ConversationRoundService
         }
     }
 
+    /** Resolves and validates source Conversation boundaries for the HTTP picker.
+     * @param userId trusted authenticated caller identity
+     * @param request destination and ordered source selection
+     * @return ordered title and high-water snapshots
+     */
     private List<ResolvedConversationReference> resolveReferenceBoundaries(
         long userId, ResolveConversationReferencesRequest request)
     {
@@ -316,6 +357,12 @@ public class ConversationRoundService
         return List.copyOf(sourceIds);
     }
 
+    /** Determines the Group that authorizes the selected source Conversations.
+     * @param userId trusted authenticated caller identity
+     * @param request destination Conversation or Group selection
+     * @param sourceIds normalized source Conversation identifiers
+     * @return authorized Group database identity
+     */
     private long resolveReferenceGroupId(
         long userId, ResolveConversationReferencesRequest request, List<String> sourceIds)
     {
@@ -333,6 +380,11 @@ public class ConversationRoundService
         return groupId;
     }
 
+    /** Verifies that every selected source is owned by and belongs to the resolved Group.
+     * @param groupId authorized Group database identity
+     * @param sourceIds normalized source Conversation identifiers
+     * @param sourcesById loaded source Conversations keyed by public ID
+     */
     private void validateResolvedSources(
         long groupId, Set<String> sourceIds, Map<String, Conversation> sourcesById)
     {
@@ -348,12 +400,20 @@ public class ConversationRoundService
         }
     }
 
+    /** Converts an owned Conversation into a frozen reference summary.
+     * @param source owned source Conversation
+     * @return source title and current high-water boundary
+     */
     private ResolvedConversationReference toResolvedReference(Conversation source)
     {
         return new ResolvedConversationReference(
             source.getConversationId(), source.getTitle(), source.getLatestRoundNumber());
     }
 
+    /** Creates the protocol error used for invalid reference selections.
+     * @param message caller-safe validation message
+     * @return classified invalid-reference exception
+     */
     private RoundPersistenceException invalidReferenceRequest(String message)
     {
         return new RoundPersistenceException(
@@ -399,6 +459,10 @@ public class ConversationRoundService
                     .toList())).toList());
     }
 
+    /** Loads and groups frozen references for the supplied Round rows.
+     * @param rounds persisted Rounds whose references are needed
+     * @return references grouped by database Round ID
+     */
     private Map<Long, List<ConversationRoundReference>> listReferencesByRound(List<ConversationRound> rounds)
     {
         if (rounds.isEmpty())
@@ -408,6 +472,10 @@ public class ConversationRoundService
             .collect(Collectors.groupingBy(ConversationRoundReference::getRoundId));
     }
 
+    /** Converts a stored reference to the owner-visible history view.
+     * @param reference persisted frozen reference
+     * @return reference view including source ID and boundary
+     */
     private RoundHistoryView.ReferenceView toReferenceView(ConversationRoundReference reference)
     {
         return new RoundHistoryView.ReferenceView(
@@ -416,6 +484,10 @@ public class ConversationRoundService
             reference.getSourceTitle());
     }
 
+    /** Converts a stored reference to the redacted sharing projection.
+     * @param reference persisted frozen reference
+     * @return shared view excluding the source Conversation ID
+     */
     private SharedRoundHistoryView.ReferenceView toSharedReferenceView(
         ConversationRoundReference reference)
     {
@@ -480,6 +552,11 @@ public class ConversationRoundService
     /**
      * Authorizes and projects frozen same-Group references without exposing Tool or intermediate
      * Turn traces. The returned messages are derived evidence and never mutate source history.
+     *
+     * @param userId authenticated owner of destination and source Conversations
+     * @param destinationConversationId stable destination Conversation identifier
+     * @param references ordered source identifiers and inclusive frozen Round boundaries
+     * @return authorized reference evidence in the same order as the request
      */
     public List<PreparedConversationReference> prepareReferences(
         long userId, String destinationConversationId, List<ConversationReference> references)
@@ -503,6 +580,11 @@ public class ConversationRoundService
         return buildPreparedReferences(references, sourcesById, completedRoundsByConversation);
     }
 
+    /** Validates the identity, destination, and configured count limit for Runner references.
+     * @param userId Trusted authenticated user identifier.
+     * @param destinationConversationId Stable identifier of the destination conversation.
+     * @param references source Conversation IDs and frozen ending Round numbers to validate
+     */
     private void validatePrepareReferencesRequest(
         long userId, String destinationConversationId, List<ConversationReference> references)
     {
@@ -514,6 +596,11 @@ public class ConversationRoundService
                 "The Conversation reference request is invalid.");
     }
 
+    /** Loads and validates the destination Conversation for reference preparation.
+     * @param userId Trusted authenticated user identifier.
+     * @param destinationConversationId Stable identifier of the destination conversation.
+     * @return owned destination Conversation used for Group validation
+     */
     private Conversation getReferenceDestination(long userId, String destinationConversationId)
     {
         Conversation destination = conversationMapper.getConversationByIdAndUser(destinationConversationId, userId);
@@ -527,6 +614,11 @@ public class ConversationRoundService
         return destination;
     }
 
+    /** Normalizes source selections into unique frozen boundary values.
+     * @param destinationConversationId Stable identifier of the destination conversation.
+     * @param references source Conversation IDs and ending Round numbers supplied by Runner
+     * @return ordered, duplicate-free boundary projections
+     */
     private List<ConversationReferenceBoundary> buildReferenceBoundaries(
         String destinationConversationId, List<ConversationReference> references)
     {
@@ -549,6 +641,11 @@ public class ConversationRoundService
         return List.copyOf(boundaries);
     }
 
+    /** Loads all selected source Conversations in one ownership-scoped query.
+     * @param userId Trusted authenticated user identifier.
+     * @param sourceIds Stable identifiers of the selected source values.
+     * @return owned source Conversations keyed by their public IDs
+     */
     private Map<String, Conversation> loadReferenceSources(long userId, Set<String> sourceIds)
     {
         return conversationMapper
@@ -557,6 +654,10 @@ public class ConversationRoundService
             .collect(Collectors.toMap(Conversation::getConversationId, source -> source));
     }
 
+    /** Loads all selected boundary Rounds in one set-based query.
+     * @param boundaries source Conversation and ending Round pairs to load
+     * @return persisted boundary Rounds keyed by Conversation and Round number
+     */
     private Map<RoundBoundaryKey, ConversationRound> loadReferenceBoundaryRounds(
         List<ConversationReferenceBoundary> boundaries)
     {
@@ -606,6 +707,10 @@ public class ConversationRoundService
         }
     }
 
+    /** Loads completed source Rounds up to every frozen boundary.
+     * @param boundaries source Conversation and ending Round pairs defining each high-water limit
+     * @return completed Rounds grouped by source Conversation ID
+     */
     private Map<String, List<ConversationRound>> loadCompletedReferenceRounds(
         List<ConversationReferenceBoundary> boundaries)
     {
@@ -615,6 +720,10 @@ public class ConversationRoundService
             .collect(Collectors.groupingBy(ConversationRound::getConversationId));
     }
 
+    /** Ensures every selected source contributes at least one completed Round.
+     * @param boundaries ordered source Conversation and Round boundary pairs
+     * @param completedRoundsByConversation completed Rounds grouped by source Conversation ID
+     */
     private void validateCompletedReferenceRounds(
         List<ConversationReferenceBoundary> boundaries,
         Map<String, List<ConversationRound>> completedRoundsByConversation)
@@ -693,7 +802,7 @@ public class ConversationRoundService
             .setContent(message.getContent() == null ? "" : message.getContent())
             .addAllToolCalls(toolCalls.stream().map(toolCall -> ToolCall.newBuilder()
                 .setId(toolCall.getToolCallId())
-                .setType(toolCall.getType())
+                .setType(toolCall.getType().getWireValue())
                 .setFunction(FunctionCall.newBuilder()
                     .setName(toolCall.getFunctionName())
                     .setArguments(toolCall.getArguments()))
@@ -714,7 +823,7 @@ public class ConversationRoundService
      */
     public SaveConversationRoundRequest save(SaveConversationRoundRequest request)
     {
-        conversationRoundValidator.validatePhaseFour(request);
+        conversationRoundValidator.validateRoundRequest(request);
         String payloadHash = conversationRoundPayloadHasher.hash(request);
         try (ConversationMutationLock.LockHandle ignored =
                  conversationMutationLock.acquire(request.getConversationId()))
@@ -1155,7 +1264,7 @@ public class ConversationRoundService
                 toolCall.setTurnId(savedMessage.getTurnId());
                 toolCall.setCallOrder(callOrder++);
                 toolCall.setToolCallId(sourceToolCall.getId());
-                toolCall.setType(sourceToolCall.getType());
+                toolCall.setType(ToolCallType.fromWireValue(sourceToolCall.getType()));
                 toolCall.setFunctionName(sourceToolCall.getFunction().getName());
                 toolCall.setArguments(sourceToolCall.getFunction().getArguments());
                 requestToolCalls.add(toolCall);
@@ -1357,7 +1466,7 @@ public class ConversationRoundService
         execution.setTurnId(turnId);
         execution.setCallOrder(callOrder);
         execution.setToolCallId(toolCall.getId());
-        execution.setType(toolCall.getType());
+        execution.setType(ToolCallType.fromWireValue(toolCall.getType()));
         execution.setToolName(toolCall.getFunction().getName());
         execution.setArguments(toolCall.getFunction().getArguments());
         execution.setToolKey(source.getToolKey());
@@ -1445,20 +1554,36 @@ public class ConversationRoundService
             throw new IllegalStateException(label + " batch inserted an unexpected row count.");
     }
 
+    /** Carries a source protobuf Turn alongside its normalized database entity.
+     * @param sourceTurn Runner Turn payload
+     * @param turn normalized entity with generated identity
+     */
     private record TurnPersistenceContext(
         ifl.agentbreaker.conversationmanager.rpc.ConversationTurn sourceTurn,
         ConversationTurn turn)
     {
     }
 
+    /** Identifies one request message within a normalized Turn.
+     * @param turnId Database identifier of the containing Turn.
+     * @param messageOrder Numeric message order used for ordering or bounds.
+     */
     private record RequestMessageKey(long turnId, int messageOrder)
     {
     }
 
+    /** Identifies one response Tool call within a normalized Turn.
+     * @param turnId Database identifier of the containing Turn.
+     * @param toolCallId Provider-generated Tool call identifier.
+     */
     private record ResponseToolCallKey(long turnId, String toolCallId)
     {
     }
 
+    /** Identifies one Conversation and frozen Round boundary pair.
+     * @param conversationId Stable public identifier of the Conversation.
+     * @param roundNumber Numeric round number used for ordering or bounds.
+     */
     private record RoundBoundaryKey(String conversationId, long roundNumber)
     {
     }

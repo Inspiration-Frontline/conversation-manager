@@ -36,7 +36,10 @@ import static org.mockito.Mockito.when;
  */
 class W3cTraceContextFilterTest
 {
+    /** Explicit SDK registered for the duration of the filter integration tests. */
     private static OpenTelemetrySdk openTelemetrySdk;
+
+    /** Tracer obtained from the test SDK for creating parent spans. */
     private static Tracer tracer;
 
     @BeforeAll

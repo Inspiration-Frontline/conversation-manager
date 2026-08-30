@@ -61,8 +61,11 @@ import java.util.Map;
 @LogArgumentsAndResponse
 public class ConversationFileService
 {
+    /** Client-visible code for invalid upload metadata or content. */
     public static final int ERROR_INVALID_FILE = 2300;
+    /** Client-visible code for an unknown or unauthorized file. */
     public static final int ERROR_FILE_NOT_FOUND = 2301;
+    /** Client-visible code when a file is still being processed. */
     public static final int ERROR_FILE_BUSY = 2302;
 
     /**
@@ -72,30 +75,39 @@ public class ConversationFileService
      */
     private static final String OBJECT_KEY_LAYOUT = "%s/%d/%04d/%02d/%s/source";
 
+    /** Persistence operations for owned file-resource metadata. */
     @Autowired
     private FileResourceMapper fileResourceMapper;
 
+    /** Persistence operations for asynchronous extraction tasks. */
     @Autowired
     private FileProcessingTaskMapper fileProcessingTaskMapper;
 
+    /** Persistence operations for asynchronous OSS cleanup tasks. */
     @Autowired
     private FileCleanupTaskMapper fileCleanupTaskMapper;
 
+    /** Persistence operations for Round-to-file references. */
     @Autowired
     private ConversationRoundFileMapper conversationRoundFileMapper;
 
+    /** Persistence operations for sharing snapshot authorization. */
     @Autowired
     private ConversationSharingMapper conversationSharingMapper;
 
+    /** Configured file-size, retention, and extraction limits. */
     @Autowired
     private ConversationFileProperties conversationFileProperties;
 
+    /** Private OSS bucket and signed-URL settings. */
     @Autowired
     private OssStorageProperties ossStorageProperties;
 
+    /** OSS client used for signed URLs and object reads/deletes. */
     @Autowired
     private OSS oss;
 
+    /** Programmatic transaction boundary for multi-step file mutations. */
     @Autowired
     private TransactionTemplate transactionTemplate;
 
@@ -312,6 +324,11 @@ public class ConversationFileService
      * Mints a signed URL only when the file is linked from a completed Round inside a valid share
      * boundary. The caller is authenticated by the HTTP filter; no owner identity is inferred from
      * the file request itself.
+     *
+     * @param conversationId source Conversation captured by the share
+     * @param endRoundNumber inclusive frozen Round boundary of the share
+     * @param fileId stable file identifier requested by the authenticated viewer
+     * @return a short-lived signed download URL for the authorized file
      */
     public ServiceResponse<FileDownloadUrl> getSharedFileDownloadUrl(
         String conversationId, long endRoundNumber, String fileId)
@@ -333,7 +350,13 @@ public class ConversationFileService
         return ServiceResponse.buildSuccessResponse(result);
     }
 
-    /** Resolves and authorizes a share before delegating to the boundary-checked file method. */
+    /**
+     * Resolves an active share token before delegating to the frozen-boundary authorization path.
+     *
+     * @param sharedConversationId stable public identifier of the authenticated share
+     * @param fileId stable file identifier requested from that share
+     * @return a short-lived signed download URL for the authorized file
+     */
     public ServiceResponse<FileDownloadUrl> getSharedFileDownloadUrl(String sharedConversationId, String fileId)
     {
         ConversationSharing sharing = conversationSharingMapper.getActiveConversationSharingBySharedId(sharedConversationId);

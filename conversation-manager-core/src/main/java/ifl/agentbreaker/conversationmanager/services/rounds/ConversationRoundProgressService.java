@@ -30,36 +30,47 @@ import java.time.Instant;
 import java.util.HexFormat;
 import java.util.List;
 
+/** Applies idempotent checkpoint, append, and finalize mutations to one in-progress Round. */
 @Service
 public class ConversationRoundProgressService
 {
+    /** Mapper for Conversation ownership and monotonic high-water updates. */
     @Autowired
     private ConversationMapper conversationMapper;
 
+    /** Mapper for Round checkpoints, revisions, and terminal state. */
     @Autowired
     private ConversationRoundMapper conversationRoundMapper;
 
+    /** Mapper for the immutable mutation idempotency ledger. */
     @Autowired
     private ConversationRoundMutationMapper conversationRoundMutationMapper;
 
+    /** Mapper for durable remote Tool delivery evidence and startup recovery. */
     @Autowired
     private ConversationToolDispatchMapper conversationToolDispatchMapper;
 
+    /** Mapper used to validate the persisted Turn append boundary. */
     @Autowired
     private ConversationTurnMapper conversationTurnMapper;
 
+    /** Service that persists normalized Turns and their child rows in batches. */
     @Autowired
     private ConversationRoundService conversationRoundService;
 
+    /** Distributed short-lived lock serializing mutations of one Conversation aggregate. */
     @Autowired
     private ConversationMutationLock conversationMutationLock;
 
+    /** Transaction boundary used after the distributed mutation lease is acquired. */
     @Autowired
     private TransactionTemplate transactionTemplate;
 
+    /** Validator for command shape, optimistic revision, and mutable-state invariants. */
     @Autowired
     private ConversationRoundProgressValidator conversationRoundProgressValidator;
 
+    /** Mapper component converting protobuf progress commands into persistence entities. */
     @Autowired
     private ConversationRoundProgressMapper conversationRoundProgressMapper;
 

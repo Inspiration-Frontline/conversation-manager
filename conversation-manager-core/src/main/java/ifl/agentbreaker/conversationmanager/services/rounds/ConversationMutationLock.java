@@ -28,18 +28,24 @@ import java.util.concurrent.TimeUnit;
 @Component
 public class ConversationMutationLock
 {
+    /** Maximum time a mutation lease remains valid without renewal. */
     private static final Duration LEASE = Duration.ofSeconds(30);
+    /** Maximum time to wait for a competing mutation lease. */
     private static final Duration WAIT = Duration.ofSeconds(2);
+    /** Lua script that releases a lease only when its ownership token still matches. */
     private static final DefaultRedisScript<Long> RELEASE_SCRIPT = new DefaultRedisScript<>(
         "if redis.call('get', KEYS[1]) == ARGV[1] then return redis.call('del', KEYS[1]) else return 0 end",
         Long.class);
+    /** Lua script that renews a lease only when its ownership token still matches. */
     private static final DefaultRedisScript<Long> RENEW_SCRIPT = new DefaultRedisScript<>(
         "if redis.call('get', KEYS[1]) == ARGV[1] then return redis.call('pexpire', KEYS[1], ARGV[2]) else return 0 end",
         Long.class);
 
+    /** Redis client used to acquire, renew, and release mutation leases. */
     @Autowired
     private StringRedisTemplate stringRedisTemplate;
 
+    /** Single scheduler that renews active leases until their handles close. */
     private final ScheduledExecutorService renewer = Executors.newScheduledThreadPool(1, runnable ->
     {
         Thread thread = new Thread(runnable, "conversation-mutation-lock-renewer");
@@ -91,11 +97,16 @@ public class ConversationMutationLock
         throw new IllegalStateException("Timed out acquiring conversation mutation lock.");
     }
 
+    /** Token-owning lease handle that renews until it is closed exactly once. */
     public final class LockHandle implements AutoCloseable
     {
+        /** Redis key owned by this lock handle. */
         private final String key;
+        /** Random ownership token required by release and renewal scripts. */
         private final String token;
+        /** Scheduled task that renews the lease while the handle remains open. */
         private final ScheduledFuture<?> renewal;
+        /** Whether close has already released this handle's lease. */
         private boolean closed;
 
         /**

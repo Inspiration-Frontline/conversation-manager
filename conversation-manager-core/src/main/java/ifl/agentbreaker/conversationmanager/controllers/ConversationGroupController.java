@@ -17,11 +17,13 @@ import stark.dataworks.boot.web.ServiceResponse;
 
 import java.util.List;
 
+/** HTTP boundary for owner-scoped Group lifecycle, ordering, and Conversation membership. */
 @Slf4j
 @RestController
 @RequestMapping("/conversation-group")
 public class ConversationGroupController
 {
+    /** Service enforcing Group ownership, ordering, and membership transactions. */
     @Autowired
     private ConversationGroupService conversationGroupService;
 

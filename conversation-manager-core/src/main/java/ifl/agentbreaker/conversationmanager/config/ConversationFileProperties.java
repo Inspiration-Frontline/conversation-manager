@@ -9,20 +9,31 @@ import java.util.Locale;
 import java.util.Set;
 import jakarta.annotation.PostConstruct;
 
+/** Validated operational limits for upload, extraction, reservation, and background file work. */
 @Component
 @ConfigurationProperties(prefix = "agent-breaker.files")
 @Data
 public class ConversationFileProperties
 {
+    /** Maximum bytes accepted for one uploaded object. */
     private long maxBytes = 10 * 1024 * 1024;
+    /** Maximum number of files frozen into one user request. */
     private int maxCountPerMessage = 5;
+    /** Maximum combined bytes of files frozen into one user request. */
     private long maxTotalBytesPerMessage = 50 * 1024 * 1024;
+    /** Grace period before an unreferenced file resource becomes eligible for cleanup. */
     private long orphanTtlSeconds = 24 * 60 * 60;
+    /** Maximum extracted characters retained as bounded model evidence. */
     private int maxExtractedCharacters = 300_000;
+    /** Maximum concurrent background file tasks owned by this process. */
     private int taskConcurrency = 8;
+    /** Duration of a processing or cleanup task lease before another worker may recover it. */
     private int taskLeaseSeconds = 300;
+    /** Duration for which a prepared file selection remains reserved for one request. */
     private int reservationSeconds = 4 * 60 * 60;
+    /** Normalized filename extensions allowed at upload time. */
     private Set<String> allowedExtensions = new LinkedHashSet<>();
+    /** Normalized declared MIME types allowed at upload time. */
     private Set<String> allowedMimeTypes = new LinkedHashSet<>();
 
     /**

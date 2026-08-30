@@ -35,8 +35,10 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 
 class ConversationRoundValidatorTest
 {
+    /** Stable trace identifier used by valid RPC round requests. */
     private static final String TRACE_ID = "0123456789abcdef0123456789abcdef";
 
+    /** Fixed request start time used to keep validation fixtures deterministic. */
     private static final long START = 1_700_000_000_000L;
     private static final String DEFINITION_HASH = "0".repeat(64);
 
@@ -56,13 +58,13 @@ class ConversationRoundValidatorTest
     @Test
     void acceptsOneCompletedTextTurn()
     {
-        assertDoesNotThrow(() -> validator.validatePhaseFour(validTextRequest(1, "answer")));
+        assertDoesNotThrow(() -> validator.validateRoundRequest(validTextRequest(1, "answer")));
     }
 
     @Test
     void acceptsTwoTurnLoopWithParallelCallsAndPartialToolFailure()
     {
-        assertDoesNotThrow(() -> validator.validatePhaseFour(validToolLoopRequest()));
+        assertDoesNotThrow(() -> validator.validateRoundRequest(validToolLoopRequest()));
     }
 
     @Test
@@ -74,7 +76,7 @@ class ConversationRoundValidatorTest
                 .setSourceEndRoundNumber(4))
             .build();
 
-        assertDoesNotThrow(() -> validator.validatePhaseFour(request));
+        assertDoesNotThrow(() -> validator.validateRoundRequest(request));
     }
 
     @Test
@@ -95,9 +97,9 @@ class ConversationRoundValidatorTest
             .build();
 
         assertThrows(RoundPersistenceException.class,
-            () -> validator.validatePhaseFour(duplicateRequest));
+            () -> validator.validateRoundRequest(duplicateRequest));
         assertThrows(RoundPersistenceException.class,
-            () -> validator.validatePhaseFour(selfRequest));
+            () -> validator.validateRoundRequest(selfRequest));
     }
 
     @Test
@@ -112,7 +114,7 @@ class ConversationRoundValidatorTest
         SaveConversationRoundRequest invalid = valid.toBuilder().setTurns(1, invalidSecondTurn).build();
 
         RoundPersistenceException error = assertThrows(
-            RoundPersistenceException.class, () -> validator.validatePhaseFour(invalid));
+            RoundPersistenceException.class, () -> validator.validateRoundRequest(invalid));
 
         assertEquals(ConversationErrorCode.CONVERSATION_ERROR_CODE_INVALID_REQUEST_VALUE, error.getCode());
     }
@@ -126,7 +128,7 @@ class ConversationRoundValidatorTest
             .build();
         SaveConversationRoundRequest invalid = valid.toBuilder().setTurns(0, invalidFirstTurn).build();
 
-        assertThrows(RoundPersistenceException.class, () -> validator.validatePhaseFour(invalid));
+        assertThrows(RoundPersistenceException.class, () -> validator.validateRoundRequest(invalid));
     }
 
     @Test
@@ -160,7 +162,7 @@ class ConversationRoundValidatorTest
             .setEndTime(START + 25)
             .build();
 
-        assertDoesNotThrow(() -> validator.validatePhaseFour(cancelled));
+        assertDoesNotThrow(() -> validator.validateRoundRequest(cancelled));
     }
 
     @Test
@@ -178,8 +180,8 @@ class ConversationRoundValidatorTest
             .setErrorMessage("Generation cancelled.")
             .build();
 
-        assertDoesNotThrow(() -> validator.validatePhaseFour(failed));
-        assertDoesNotThrow(() -> validator.validatePhaseFour(cancelled));
+        assertDoesNotThrow(() -> validator.validateRoundRequest(failed));
+        assertDoesNotThrow(() -> validator.validateRoundRequest(cancelled));
     }
 
     @Test

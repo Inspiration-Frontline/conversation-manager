@@ -9,9 +9,11 @@ import java.util.List;
 @Data
 public class RemoveConversationFromGroupRequest
 {
+    /** Stable identifier of the conversation group. */
     @Positive(message = "Conversation group ID must be positive.")
     private long conversationGroupId;
 
+    /** Stable identifiers of the selected conversation values. */
     @NotEmpty(message = "Conversation IDs are required.")
     private List<String> conversationIds;
 }

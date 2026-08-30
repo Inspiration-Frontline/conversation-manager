@@ -24,6 +24,7 @@ import java.util.List;
 @Component
 class ConversationRequestSnapshotSerializer
 {
+    /** Shared serializer used for deterministic JSONB request snapshots. */
     @Autowired
     private JsonSerializer jsonSerializer;
 
@@ -54,6 +55,10 @@ class ConversationRequestSnapshotSerializer
         };
     }
 
+    /** Converts one provider-neutral request message into the persisted snapshot shape.
+     * @param message protobuf request message sent to the model
+     * @return JSON-friendly immutable snapshot
+     */
     private RequestMessageSnapshot toSnapshot(LlmConversationMessage message)
     {
         return new RequestMessageSnapshot(
@@ -64,6 +69,10 @@ class ConversationRequestSnapshotSerializer
             toToolCalls(message.getToolCallsList()));
     }
 
+    /** Converts structured content parts while omitting empty collections.
+     * @param contentParts provider-neutral content parts
+     * @return immutable snapshots, or {@code null} when no parts exist
+     */
     private List<ContentPartSnapshot> toContentParts(List<ContentPart> contentParts)
     {
         if (contentParts.isEmpty())
@@ -82,6 +91,10 @@ class ConversationRequestSnapshotSerializer
         return List.copyOf(snapshots);
     }
 
+    /** Converts embedded provider Tool calls into stable snapshot values.
+     * @param toolCalls Tool calls emitted in one request message
+     * @return immutable Tool-call snapshots
+     */
     private List<ToolCallSnapshot> toToolCalls(List<ToolCall> toolCalls)
     {
         List<ToolCallSnapshot> snapshots = new ArrayList<>();
@@ -94,6 +107,10 @@ class ConversationRequestSnapshotSerializer
         return List.copyOf(snapshots);
     }
 
+    /** JSONB projection of one normalized request message.
+     * @param role normalized LLM message role
+     * @param content optional text content
+     */
     @JsonPropertyOrder({"role", "content", "content_parts", "tool_call_id", "tool_calls"})
     private record RequestMessageSnapshot(
         LlmMessageRole role,
@@ -104,6 +121,10 @@ class ConversationRequestSnapshotSerializer
     {
     }
 
+    /** JSONB projection of one structured content part.
+     * @param type provider-neutral content discriminator
+     * @param text optional text payload
+     */
     @JsonInclude(JsonInclude.Include.NON_NULL)
     @JsonPropertyOrder({"type", "text", "file_url"})
     private record ContentPartSnapshot(
@@ -113,11 +134,19 @@ class ConversationRequestSnapshotSerializer
     {
     }
 
+    /** JSONB projection of a provider-bound file URL.
+     * @param url signed file URL
+     * @param detail optional provider image-detail hint
+     */
     @JsonPropertyOrder({"url", "detail"})
     private record FileUrlSnapshot(String url, String detail)
     {
     }
 
+    /** JSONB projection of one model-emitted Tool call.
+     * @param id Database or protocol identifier.
+     * @param type provider protocol call shape
+     */
     @JsonPropertyOrder({"id", "type", "function_name", "arguments"})
     private record ToolCallSnapshot(
         String id,

@@ -4,12 +4,15 @@ import ifl.agentbreaker.conversationmanager.domain.constants.LlmMessageRole;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
 
+/** Normalized source-of-truth row for one ordered message sent in a model Turn. */
 @Data
 @EqualsAndHashCode(callSuper = true)
 public class ConversationLlmRequestMessage extends EntityBase
 {
+    /** Database identifier of the containing Round. */
     private long roundId;
 
+    /** Database identifier of the containing Turn. */
     private long turnId;
 
     /**

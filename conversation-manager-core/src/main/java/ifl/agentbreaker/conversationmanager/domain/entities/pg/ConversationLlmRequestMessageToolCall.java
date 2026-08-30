@@ -1,14 +1,24 @@
 package ifl.agentbreaker.conversationmanager.domain.entities.pg;
 
+import ifl.agentbreaker.conversationmanager.domain.constants.ToolCallType;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
 
+/**
+ * Historical Tool call embedded in one normalized Assistant request message.
+ */
 @Data
 @EqualsAndHashCode(callSuper = true)
 public class ConversationLlmRequestMessageToolCall extends EntityBase
 {
+    /**
+     * Database ID of the containing Round, retained for bounded replay queries.
+     */
     private long roundId;
 
+    /**
+     * Database ID of the containing Turn.
+     */
     private long turnId;
 
     /**
@@ -27,9 +37,9 @@ public class ConversationLlmRequestMessageToolCall extends EntityBase
     private String toolCallId;
 
     /**
-     * Provider protocol Tool call type, normally function.
+     * Provider protocol shape of the historical Tool call.
      */
-    private String type;
+    private ToolCallType type;
 
     /**
      * Provider-facing function name requested by the historical assistant message.

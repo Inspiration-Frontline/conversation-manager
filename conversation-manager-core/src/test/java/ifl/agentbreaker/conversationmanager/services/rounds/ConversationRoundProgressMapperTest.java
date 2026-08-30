@@ -17,8 +17,13 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 
 class ConversationRoundProgressMapperTest
 {
+    /** JSON mapper used to configure the serializer under test. */
     private final ObjectMapper objectMapper = new ObjectMapper();
+
+    /** JSON boundary serializer injected into the progress mapper. */
     private final JsonSerializer jsonSerializer = new JsonSerializer();
+
+    /** Progress mapper under test. */
     private final ConversationRoundProgressMapper mapper = new ConversationRoundProgressMapper();
 
     @BeforeEach

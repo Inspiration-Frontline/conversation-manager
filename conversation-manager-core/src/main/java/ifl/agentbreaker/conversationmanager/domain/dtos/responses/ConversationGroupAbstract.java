@@ -2,6 +2,7 @@ package ifl.agentbreaker.conversationmanager.domain.dtos.responses;
 
 import lombok.Data;
 
+/** Navigation summary for one Conversation Group, including its current member count. */
 @Data
 public class ConversationGroupAbstract
 {

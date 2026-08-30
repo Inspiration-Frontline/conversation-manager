@@ -17,19 +17,34 @@ import java.time.Instant;
 @EqualsAndHashCode(callSuper = true)
 public class ConversationToolDispatch extends EntityBase
 {
+    /** Database identifier of the containing Round. */
     private long roundId;
+    /** Stable identifier of the attempt. */
     private String attemptId;
+    /** Numeric turn number used for ordering or bounds. */
     private long turnNumber;
+    /** Provider-generated Tool call identifier. */
     private String toolCallId;
+    /** Provider-visible Tool name selected by the model. */
     private String toolName;
+    /** Stable AgentBreaker Tool identity. */
     private String toolKey;
+    /** Stable identifier of the server. */
     private String serverId;
+    /** Redacted JSON arguments delivered to the Tool. */
     private String argumentsJson;
+    /** Durable dispatch state, including uncertain delivery. */
     private ToolDispatchState state;
+    /** UTC instant marking dispatch time. */
     private Instant dispatchTime;
+    /** UTC instant marking result time. */
     private Instant resultTime;
+    /** Stable identifier of the trace. */
     private String traceId;
+    /** Stable identifier of the span. */
     private String spanId;
+    /** Bounded transport diagnostic retained for recovery analysis. */
     private String transportEvidence;
+    /** Explanation for a recovery or retry transition. */
     private String recoveryReason;
 }

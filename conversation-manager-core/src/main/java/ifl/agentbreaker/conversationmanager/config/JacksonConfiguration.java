@@ -10,6 +10,9 @@ import org.springframework.context.annotation.Configuration;
 @Configuration
 public class JacksonConfiguration
 {
+    /** Builds the shared UTC-aware mapper used by Conversation Manager persistence and APIs.
+     * @return configured mapper with Java time support and ISO-8601 timestamps
+     */
     @Bean("conversationManagerObjectMapper")
     public ObjectMapper conversationManagerObjectMapper()
     {

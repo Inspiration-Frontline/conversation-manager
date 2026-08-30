@@ -36,38 +36,49 @@ import java.util.concurrent.TimeUnit;
 @Component
 public class ConversationFileTaskWorker
 {
+    /** Persistence operations for file-resource state transitions. */
     @Autowired
     private FileResourceMapper fileResourceMapper;
 
+    /** Persistence operations for extraction task leases. */
     @Autowired
     private FileProcessingTaskMapper fileProcessingTaskMapper;
 
+    /** Persistence operations for cleanup task leases. */
     @Autowired
     private FileCleanupTaskMapper fileCleanupTaskMapper;
 
+    /** Extracts bounded evidence and typed metadata from file bytes. */
     @Autowired
     private ConversationFileParser conversationFileParser;
 
+    /** Rejects known unsafe upload signatures before parsing. */
     @Autowired
     private FileContentSecurityScanner fileContentSecurityScanner;
 
+    /** Transactional completion and failure transitions for file tasks. */
     @Autowired
     private ConversationFileTaskService conversationFileTaskService;
 
+    /** Poll, lease, byte-limit, and retry settings. */
     @Autowired
     private ConversationFileProperties conversationFileProperties;
 
+    /** OSS client used to read and delete private objects. */
     @Autowired
     private OSS oss;
 
+    /** Bounded executor for parser and cleanup jobs. */
     @Autowired
     @Qualifier("conversationFileTaskExecutor")
     private ExecutorService conversationFileTaskExecutor;
 
+    /** Scheduler that renews task leases during long jobs. */
     @Autowired
     @Qualifier("conversationFileLeaseExecutor")
     private ScheduledExecutorService conversationFileLeaseExecutor;
 
+    /** Lazily initialized semaphore enforcing the worker concurrency limit. */
     private volatile Semaphore concurrency;
 
     /**

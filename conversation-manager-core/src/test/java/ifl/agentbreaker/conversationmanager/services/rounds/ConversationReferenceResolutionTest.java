@@ -34,18 +34,23 @@ import static org.mockito.Mockito.when;
 @ExtendWith(MockitoExtension.class)
 class ConversationReferenceResolutionTest
 {
+    /** Mapper for loading conversations visible to the current user. */
     @Mock
     private ConversationMapper conversationMapper;
 
+    /** Mapper for validating the destination conversation group scope. */
     @Mock
     private ConversationGroupMapper conversationGroupMapper;
 
+    /** Mapper for finding completed rounds that can serve as reference boundaries. */
     @Mock
     private ConversationRoundMapper conversationRoundMapper;
 
+    /** Configuration that limits the number of references resolved per round. */
     @Mock
     private ConversationReferenceProperties conversationReferenceProperties;
 
+    /** Round service under test, with reference resolution collaborators injected. */
     @InjectMocks
     private ConversationRoundService conversationRoundService;
 
@@ -53,7 +58,7 @@ class ConversationReferenceResolutionTest
     void configureReferenceLimit()
     {
         when(conversationReferenceProperties.getMaxCountPerRound()).thenReturn(10);
-        UserContextService.setCurrentUser(new UserInfo(7, "phase10", "Phase 10", Collections.emptyList()));
+        UserContextService.setCurrentUser(new UserInfo(7, "test-user", "Test User", Collections.emptyList()));
     }
 
     @AfterEach

@@ -8,13 +8,18 @@ import org.springframework.transaction.annotation.EnableTransactionManagement;
 
 import java.util.TimeZone;
 
+/** Boots the HTTP, Dubbo, scheduling, and transaction-managed Conversation Manager service. */
 @SpringBootApplication(scanBasePackages = {"ifl.agentbreaker.conversationmanager", "stark.dataworks.boot.autoconfig"})
 @EnableDubbo
 @EnableTransactionManagement
 @EnableScheduling
 public class ConversationManagerMain
 {
-    /** Starts Conversation Manager with scheduling, transactions, and Dubbo enabled. */
+    /**
+     * Starts Conversation Manager after fixing the process default timezone to UTC.
+     *
+     * @param args Spring Boot command-line arguments
+     */
     public static void main(String[] args)
     {
         TimeZone.setDefault(TimeZone.getTimeZone("UTC"));

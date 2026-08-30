@@ -4,6 +4,7 @@ import lombok.Data;
 
 import java.time.Instant;
 
+/** Result returned after creating an authenticated immutable Conversation share. */
 @Data
 public class ConversationSharingResult
 {
@@ -17,7 +18,9 @@ public class ConversationSharingResult
      */
     private String sharedConversationId;
 
+    /** Inclusive completed-Round boundary frozen into the share. */
     private long endRoundNumber;
 
+    /** UTC expiry instant, or {@code null} when the share does not expire automatically. */
     private Instant expiresAt;
 }

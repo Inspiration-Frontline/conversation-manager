@@ -1,6 +1,7 @@
 package ifl.agentbreaker.conversationmanager.domain.entities.pg;
 
 import ifl.agentbreaker.conversationmanager.domain.constants.ToolCallExecutionStatus;
+import ifl.agentbreaker.conversationmanager.domain.constants.ToolCallType;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
 
@@ -18,21 +19,36 @@ public class ConversationToolCallExecution extends EntityBase
      */
     private long turnId;
 
+    /**
+     * Database ID of the containing Round, retained for direct diagnostics.
+     */
     private long roundId;
 
+    /**
+     * Zero-based position of the emitted Tool call in the model response.
+     */
     private int callOrder;
 
+    /**
+     * Provider-generated Tool call identifier.
+     */
     private String toolCallId;
 
-    private String type;
-
-    private String toolName;
-
-    private String arguments;
+    /**
+     * Provider protocol shape of the emitted Tool call.
+     */
+    private ToolCallType type;
 
     /**
-     * Zero-based reporting order among Tool executions in the Turn.
+     * Provider-visible function name used by the model response.
      */
+    private String toolName;
+
+    /**
+     * Exact JSON arguments emitted for the Tool call.
+     */
+    private String arguments;
+
     /**
      * Globally unique and permanently stable identity of the executed Tool.
      */

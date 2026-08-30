@@ -11,7 +11,10 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class ConversationGroupRequestValidationTest
 {
+    /** Validator factory shared by the request constraint assertions. */
     private static final ValidatorFactory VALIDATOR_FACTORY = Validation.buildDefaultValidatorFactory();
+
+    /** Validator used to inspect required and optional group identifier constraints. */
     private static final Validator VALIDATOR = VALIDATOR_FACTORY.getValidator();
 
     @AfterAll
