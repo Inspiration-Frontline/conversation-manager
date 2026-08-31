@@ -5,6 +5,7 @@ import ifl.agentbreaker.conversationmanager.domain.dtos.responses.ConversationRo
 import ifl.agentbreaker.conversationmanager.domain.dtos.responses.ConversationReplayResult;
 import ifl.agentbreaker.conversationmanager.domain.entities.pg.ConversationRound;
 import ifl.agentbreaker.conversationmanager.domain.entities.pg.FileResource;
+import ifl.agentbreaker.conversationmanager.domain.entities.pg.FileResourceVariant;
 import ifl.agentbreaker.conversationmanager.config.ConversationFileProperties;
 import ifl.agentbreaker.conversationmanager.dao.ConversationMapper;
 import ifl.agentbreaker.conversationmanager.rpc.AssistantAnswer;
@@ -665,7 +666,11 @@ public class ConversationRoundRpcProvider implements ConversationRpcService
         if (fileResource.getStatus() == ifl.agentbreaker.conversationmanager.domain.constants.ConversationFileStatus.READY)
         {
             if (fileResource.getKind() == ifl.agentbreaker.conversationmanager.domain.constants.ConversationFileKind.IMAGE)
-                preparedFile.setDownloadUrl(conversationFileService.createSignedGetUrl(fileResource));
+            {
+                FileResourceVariant modelInput = conversationFileService.getReadyModelInputVariant(fileResource);
+                if (modelInput != null)
+                    preparedFile.setModelInputUrl(conversationFileService.createSignedGetUrl(modelInput));
+            }
             else if (fileResource.getExtractedText() != null)
                 preparedFile.setExtractedText(fileResource.getExtractedText());
         }

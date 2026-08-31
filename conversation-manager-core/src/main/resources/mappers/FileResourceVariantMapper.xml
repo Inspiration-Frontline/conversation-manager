@@ -1,0 +1,76 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="ifl.agentbreaker.conversationmanager.dao.FileResourceVariantMapper">
+    <resultMap id="VariantResultMap" type="ifl.agentbreaker.conversationmanager.domain.entities.pg.FileResourceVariant">
+        <id column="id" property="id"/>
+        <result column="creator_id" property="creatorId"/>
+        <result column="modifier_id" property="modifierId"/>
+        <result column="creation_time" property="creationTime"/>
+        <result column="modification_time" property="modificationTime"/>
+        <result column="file_resource_id" property="fileResourceId"/>
+        <result column="variant_type" property="variantType"/>
+        <result column="status" property="status"/>
+        <result column="bucket_name" property="bucketName"/>
+        <result column="object_key" property="objectKey"/>
+        <result column="mime_type" property="mimeType"/>
+        <result column="file_size" property="fileSize"/>
+        <result column="sha256" property="sha256"/>
+        <result column="width" property="width"/>
+        <result column="height" property="height"/>
+    </resultMap>
+
+    <sql id="VariantColumns">
+        "id", "creator_id", "modifier_id", "creation_time", "modification_time",
+        "file_resource_id", "variant_type", "status", "bucket_name", "object_key",
+        "mime_type", "file_size", "sha256", "width", "height"
+    </sql>
+
+    <insert id="upsertPending">
+        INSERT INTO "file_resource_variant" (
+            "creator_id", "modifier_id", "file_resource_id", "variant_type", "status",
+            "bucket_name", "object_key"
+        ) VALUES (
+            #{userId}, #{userId}, #{fileResourceId}, #{variantType}, 'PENDING', #{bucketName}, #{objectKey}
+        )
+        ON CONFLICT ("file_resource_id", "variant_type") DO UPDATE SET
+            "modifier_id" = EXCLUDED."modifier_id",
+            "status" = 'PENDING',
+            "bucket_name" = EXCLUDED."bucket_name",
+            "object_key" = EXCLUDED."object_key",
+            "mime_type" = NULL,
+            "file_size" = NULL,
+            "sha256" = NULL,
+            "width" = NULL,
+            "height" = NULL
+    </insert>
+
+    <update id="markReady">
+        UPDATE "file_resource_variant"
+        SET "modifier_id" = #{userId}, "status" = 'READY', "mime_type" = #{mimeType},
+            "file_size" = #{fileSize}, "sha256" = #{sha256}, "width" = #{width}, "height" = #{height}
+        WHERE "file_resource_id" = #{fileResourceId} AND "variant_type" = #{variantType} AND "status" = 'PENDING'
+    </update>
+
+    <select id="getReadyVariant" resultMap="VariantResultMap">
+        SELECT <include refid="VariantColumns"/>
+        FROM "file_resource_variant"
+        WHERE "file_resource_id" = #{fileResourceId} AND "variant_type" = #{variantType} AND "status" = 'READY'
+    </select>
+
+    <select id="listReadyVariants" resultMap="VariantResultMap">
+        SELECT <include refid="VariantColumns"/>
+        FROM "file_resource_variant"
+        WHERE "variant_type" = #{variantType} AND "status" = 'READY' AND "file_resource_id" IN
+        <foreach collection="fileResourceIds" item="fileResourceId" open="(" separator="," close=")">
+            #{fileResourceId}
+        </foreach>
+    </select>
+
+    <select id="listVariants" resultMap="VariantResultMap">
+        SELECT <include refid="VariantColumns"/> FROM "file_resource_variant" WHERE "file_resource_id" = #{fileResourceId}
+    </select>
+
+    <delete id="deleteByFileResourceId">
+        DELETE FROM "file_resource_variant" WHERE "file_resource_id" = #{fileResourceId}
+    </delete>
+</mapper>

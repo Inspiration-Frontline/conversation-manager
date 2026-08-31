@@ -53,6 +53,16 @@ public interface ConversationRoundFileMapper
                                         @Param("endRoundNumber") long endRoundNumber,
                                         @Param("fileId") String fileId);
 
+    /** Resolves an ordered file batch only inside completed Rounds of a shared snapshot.
+     * @param conversationId stable source Conversation identifier
+     * @param endRoundNumber inclusive frozen share boundary
+     * @param fileIds requested stable file identifiers
+     * @return authorized attachment summaries
+     */
+    List<RoundFileHistory> listSharedRoundFiles(@Param("conversationId") String conversationId,
+                                               @Param("endRoundNumber") long endRoundNumber,
+                                               @Param("fileIds") Collection<String> fileIds);
+
     /**
      * Deletes links before the owning Conversations are logically deleted.
      *

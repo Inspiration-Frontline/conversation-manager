@@ -28,8 +28,6 @@ import org.apache.tika.Tika;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
-import javax.imageio.ImageIO;
-import java.awt.image.BufferedImage;
 import java.io.ByteArrayInputStream;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
@@ -89,25 +87,12 @@ public class ConversationFileParser
             metadata.setKind(fileResource.getKind());
             metadata.setDetectedMimeType(detectedMimeType);
 
-            // Images keep dimensions and are sent to a vision-capable model through a signed URL.
-            // Document families instead produce stable text with explicit page/sheet/slide markers.
+            // Image raster validation and dimensions are owned by ConversationImageSanitizer so
+            // every READY image necessarily has a verified MODEL_INPUT derivative.
             String extractedText = "";
             Integer width = null;
             Integer height = null;
-            if (fileResource.getKind() == ConversationFileKind.IMAGE)
-            {
-                BufferedImage image = ImageIO.read(new ByteArrayInputStream(bytes));
-                if (image != null)
-                {
-                    width = image.getWidth();
-                    height = image.getHeight();
-                    metadata.setWidth(width);
-                    metadata.setHeight(height);
-                }
-                else if (!"image/webp".equalsIgnoreCase(detectedMimeType))
-                    throw new FileProcessingException("INVALID_IMAGE", "The uploaded image cannot be decoded.");
-            }
-            else
+            if (fileResource.getKind() != ConversationFileKind.IMAGE)
                 extractedText = extractText(fileResource, bytes, metadata);
 
             // This is deliberately bounded context for chat-time analysis. Large documents are not

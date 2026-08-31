@@ -110,6 +110,29 @@
             ], "file_id")
     </select>
 
+    <select id="listConversationReferencedFileResources" resultMap="FileResourceResultMap">
+        SELECT <include refid="FileResourceColumns"/>
+        FROM "file_resource" file
+        WHERE file."deleted" = FALSE
+          AND file."file_id" IN
+        <foreach collection="fileIds" item="fileId" open="(" separator="," close=")">
+            #{fileId}
+        </foreach>
+          AND (
+            file."creator_id" = #{userId}
+            OR EXISTS (
+                SELECT 1
+                FROM "conversation_round_file" relation
+                INNER JOIN "conversation_round" round ON round."id" = relation."round_id"
+                INNER JOIN "conversation" conversation ON conversation."conversation_id" = round."conversation_id"
+                WHERE relation."file_resource_id" = file."id"
+                  AND conversation."creator_id" = #{userId}
+                  AND conversation."deleted" = FALSE
+                  AND round."deleted" = FALSE
+            )
+          )
+    </select>
+
     <select id="confirmUpload" resultMap="FileResourceResultMap" affectData="true">
         UPDATE "file_resource"
         SET "status" = 'VALIDATING',

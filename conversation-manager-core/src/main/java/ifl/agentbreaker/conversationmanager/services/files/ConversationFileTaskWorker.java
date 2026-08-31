@@ -2,10 +2,14 @@ package ifl.agentbreaker.conversationmanager.services.files;
 
 import com.aliyun.oss.OSS;
 import com.aliyun.oss.model.OSSObject;
+import com.aliyun.oss.model.ObjectMetadata;
 import ifl.agentbreaker.conversationmanager.config.ConversationFileProperties;
 import ifl.agentbreaker.conversationmanager.dao.FileCleanupTaskMapper;
 import ifl.agentbreaker.conversationmanager.dao.FileProcessingTaskMapper;
 import ifl.agentbreaker.conversationmanager.dao.FileResourceMapper;
+import ifl.agentbreaker.conversationmanager.dao.FileResourceVariantMapper;
+import ifl.agentbreaker.conversationmanager.domain.constants.ConversationFileKind;
+import ifl.agentbreaker.conversationmanager.domain.entities.pg.FileResourceVariant;
 import ifl.agentbreaker.conversationmanager.domain.constants.ConversationFileStatus;
 import ifl.agentbreaker.conversationmanager.domain.constants.FileCleanupReason;
 import ifl.agentbreaker.conversationmanager.domain.entities.pg.FileCleanupTask;
@@ -18,6 +22,7 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
 import java.io.InputStream;
+import java.io.ByteArrayInputStream;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
@@ -48,9 +53,17 @@ public class ConversationFileTaskWorker
     @Autowired
     private FileCleanupTaskMapper fileCleanupTaskMapper;
 
+    /** Persistence operations for deterministic derivative objects. */
+    @Autowired
+    private FileResourceVariantMapper fileResourceVariantMapper;
+
     /** Extracts bounded evidence and typed metadata from file bytes. */
     @Autowired
     private ConversationFileParser conversationFileParser;
+
+    /** Validates and re-encodes supported still images. */
+    @Autowired
+    private ConversationImageSanitizer conversationImageSanitizer;
 
     /** Rejects known unsafe upload signatures before parsing. */
     @Autowired
@@ -155,7 +168,22 @@ public class ConversationFileTaskWorker
                 byte[] bytes = readObject(fileResource);
                 fileContentSecurityScanner.scan(bytes);
                 FileExtractionResult extractionResult = conversationFileParser.parse(fileResource, bytes);
-                conversationFileTaskService.completeProcessing(task.getId(), task.getLeaseToken(), fileResource, extractionResult);
+                SanitizedImage sanitizedImage = null;
+                if (fileResource.getKind() == ConversationFileKind.IMAGE)
+                {
+                    sanitizedImage = conversationImageSanitizer.sanitize(fileResource, bytes);
+                    extractionResult.metadata().setWidth(sanitizedImage.sourceWidth());
+                    extractionResult.metadata().setHeight(sanitizedImage.sourceHeight());
+                    extractionResult = new FileExtractionResult(
+                        extractionResult.detectedMimeType(), extractionResult.sha256(), extractionResult.extractedText(),
+                        extractionResult.metadata(), extractionResult.truncated(),
+                        sanitizedImage.sourceWidth(), sanitizedImage.sourceHeight());
+                    String derivativeKey = buildDerivativeKey(fileResource, sanitizedImage.extension());
+                    conversationFileTaskService.prepareImageVariant(fileResource, derivativeKey);
+                    putDerivative(fileResource.getBucketName(), derivativeKey, sanitizedImage);
+                }
+                conversationFileTaskService.completeProcessing(
+                    task.getId(), task.getLeaseToken(), fileResource, extractionResult, sanitizedImage);
             }
             catch (FileProcessingException e)
             {
@@ -211,6 +239,14 @@ public class ConversationFileTaskWorker
 
             try
             {
+                List<FileResourceVariant> variants = fileResourceVariantMapper.listVariants(fileResource.getId());
+                for (FileResourceVariant variant : variants)
+                {
+                    if (oss.doesObjectExist(variant.getBucketName(), variant.getObjectKey()))
+                        oss.deleteObject(variant.getBucketName(), variant.getObjectKey());
+                }
+                deleteCrashLeftDerivative(fileResource, "png");
+                deleteCrashLeftDerivative(fileResource, "jpg");
                 if (oss.doesObjectExist(fileResource.getBucketName(), fileResource.getObjectKey()))
                     oss.deleteObject(fileResource.getBucketName(), fileResource.getObjectKey());
                 conversationFileTaskService.completeCleanup(task.getId(), task.getLeaseToken(), fileResource);
@@ -232,6 +268,31 @@ public class ConversationFileTaskWorker
     static boolean isReferenceProtectedCleanup(FileCleanupReason reason)
     {
         return reason != FileCleanupReason.USER_REMOVED;
+    }
+
+    /** Uploads one verified derivative with an explicit response content type. */
+    private void putDerivative(String bucketName, String objectKey, SanitizedImage image)
+    {
+        ObjectMetadata metadata = new ObjectMetadata();
+        metadata.setContentType(image.mimeType());
+        metadata.setContentLength(image.bytes().length);
+        oss.putObject(bucketName, objectKey, new ByteArrayInputStream(image.bytes()), metadata);
+    }
+
+    /** Builds a deterministic key adjacent to the immutable source object. */
+    static String buildDerivativeKey(FileResource fileResource, String extension)
+    {
+        int separator = fileResource.getObjectKey().lastIndexOf('/');
+        String parent = separator < 0 ? fileResource.getObjectKey() : fileResource.getObjectKey().substring(0, separator);
+        return parent + "/derived/model-input." + extension;
+    }
+
+    /** Deletes a deterministic crash-left key even when no variant row was committed. */
+    private void deleteCrashLeftDerivative(FileResource fileResource, String extension)
+    {
+        String objectKey = buildDerivativeKey(fileResource, extension);
+        if (oss.doesObjectExist(fileResource.getBucketName(), objectKey))
+            oss.deleteObject(fileResource.getBucketName(), objectKey);
     }
 
     /**

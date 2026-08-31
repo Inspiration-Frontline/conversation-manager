@@ -4,9 +4,11 @@ import ifl.agentbreaker.conversationmanager.domain.dtos.requests.ConfirmFileUplo
 import ifl.agentbreaker.conversationmanager.domain.dtos.requests.CreateFileUploadSessionRequest;
 import ifl.agentbreaker.conversationmanager.domain.dtos.requests.DeleteFileResourceRequest;
 import ifl.agentbreaker.conversationmanager.domain.dtos.requests.RetryFileProcessingRequest;
+import ifl.agentbreaker.conversationmanager.domain.dtos.requests.ResolveFilePreviewsRequest;
 import ifl.agentbreaker.conversationmanager.domain.dtos.responses.FileDownloadUrl;
 import ifl.agentbreaker.conversationmanager.domain.dtos.responses.FileResourceInfo;
 import ifl.agentbreaker.conversationmanager.domain.dtos.responses.FileUploadSession;
+import ifl.agentbreaker.conversationmanager.domain.dtos.responses.FilePreviewUrl;
 import ifl.agentbreaker.conversationmanager.services.files.ConversationFileService;
 import jakarta.validation.Valid;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -122,5 +124,29 @@ public class ConversationFileController
         @PathVariable String sharedConversationId, @PathVariable String fileId)
     {
         return conversationFileService.getSharedFileDownloadUrl(sharedConversationId, fileId);
+    }
+
+    /** Resolves sanitized previews for an owned or referenced image batch.
+     * @param request ordered stable file IDs
+     * @return short-lived inline derivative URLs in request order
+     */
+    @PostMapping("/preview-urls")
+    public ServiceResponse<List<FilePreviewUrl>> getFilePreviewUrls(
+        @Valid @RequestBody ResolveFilePreviewsRequest request)
+    {
+        return conversationFileService.getFilePreviewUrls(request);
+    }
+
+    /** Resolves sanitized previews inside one immutable shared snapshot.
+     * @param sharedConversationId stable share identity
+     * @param request ordered stable file IDs
+     * @return short-lived inline derivative URLs in request order
+     */
+    @PostMapping("/shared/{sharedConversationId}/preview-urls")
+    public ServiceResponse<List<FilePreviewUrl>> getSharedFilePreviewUrls(
+        @PathVariable String sharedConversationId,
+        @Valid @RequestBody ResolveFilePreviewsRequest request)
+    {
+        return conversationFileService.getSharedFilePreviewUrls(sharedConversationId, request);
     }
 }

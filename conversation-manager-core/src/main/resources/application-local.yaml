@@ -38,6 +38,11 @@ agent-breaker:
         task-concurrency: ${AGENT_BREAKER_FILE_TASK_CONCURRENCY:8}
         task-lease-seconds: ${AGENT_BREAKER_FILE_TASK_LEASE_SECONDS:300}
         reservation-seconds: ${AGENT_BREAKER_FILE_RESERVATION_SECONDS:14400}
+        max-source-pixels: ${AGENT_BREAKER_IMAGE_MAX_SOURCE_PIXELS:40000000}
+        max-source-edge-pixels: ${AGENT_BREAKER_IMAGE_MAX_SOURCE_EDGE_PIXELS:32768}
+        max-model-input-edge-pixels: ${AGENT_BREAKER_IMAGE_MAX_MODEL_INPUT_EDGE_PIXELS:2048}
+        image-processing-concurrency: ${AGENT_BREAKER_IMAGE_PROCESSING_CONCURRENCY:2}
+        jpeg-quality: ${AGENT_BREAKER_IMAGE_JPEG_QUALITY:0.92}
         allowed-extensions: ${AGENT_BREAKER_FILE_ALLOWED_EXTENSIONS:docx,pdf,xlsx,pptx,txt,md,log,png,jpg,jpeg,webp,csv,json}
         allowed-mime-types: ${AGENT_BREAKER_FILE_ALLOWED_MIME_TYPES:application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/pdf,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.openxmlformats-officedocument.presentationml.presentation,text/plain,text/markdown,text/csv,application/json,image/png,image/jpeg,image/webp}
     references:

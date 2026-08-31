@@ -47,6 +47,14 @@ public interface FileResourceMapper
     List<FileResource> listOwnedFileResources(@Param("fileIds") Collection<String> fileIds,
                                               @Param("userId") long userId);
 
+    /** Loads a bounded file batch owned by or referenced from the user's active Conversations.
+     * @param fileIds public file identifiers
+     * @param userId trusted owner identity
+     * @return authorized resources
+     */
+    List<FileResource> listConversationReferencedFileResources(@Param("fileIds") Collection<String> fileIds,
+                                                               @Param("userId") long userId);
+
     /** Confirms upload metadata and advances a reserved resource to the uploaded state.
      * @param fileId public file identifier
      * @param userId trusted owner identity

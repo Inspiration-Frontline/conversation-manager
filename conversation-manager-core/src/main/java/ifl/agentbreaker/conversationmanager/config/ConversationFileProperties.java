@@ -31,6 +31,16 @@ public class ConversationFileProperties
     private int taskLeaseSeconds = 300;
     /** Duration for which a prepared file selection remains reserved for one request. */
     private int reservationSeconds = 4 * 60 * 60;
+    /** Maximum decoded source pixels accepted before raster allocation. */
+    private long maxSourcePixels = 40_000_000;
+    /** Maximum source width or height accepted before raster allocation. */
+    private int maxSourceEdgePixels = 32_768;
+    /** Maximum width or height emitted for a model-input derivative. */
+    private int maxModelInputEdgePixels = 2_048;
+    /** Maximum number of image rasters processed concurrently. */
+    private int imageProcessingConcurrency = 2;
+    /** JPEG compression quality used for opaque model-input derivatives. */
+    private float jpegQuality = 0.92F;
     /** Normalized filename extensions allowed at upload time. */
     private Set<String> allowedExtensions = new LinkedHashSet<>();
     /** Normalized declared MIME types allowed at upload time. */
@@ -45,6 +55,9 @@ public class ConversationFileProperties
     @PostConstruct
     public void normalizeConfiguredTypes()
     {
+        if (maxSourcePixels <= 0 || maxSourceEdgePixels <= 0 || maxModelInputEdgePixels <= 0
+            || imageProcessingConcurrency <= 0 || jpegQuality <= 0F || jpegQuality > 1F)
+            throw new IllegalStateException("Image processing limits must be positive and JPEG quality must be in (0, 1].");
         Set<String> normalizedExtensions = new LinkedHashSet<>();
         for (String extension : allowedExtensions)
         {

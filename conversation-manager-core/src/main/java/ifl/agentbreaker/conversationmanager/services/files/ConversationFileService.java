@@ -11,21 +11,26 @@ import ifl.agentbreaker.conversationmanager.config.OssStorageProperties;
 import ifl.agentbreaker.conversationmanager.dao.FileCleanupTaskMapper;
 import ifl.agentbreaker.conversationmanager.dao.FileProcessingTaskMapper;
 import ifl.agentbreaker.conversationmanager.dao.FileResourceMapper;
+import ifl.agentbreaker.conversationmanager.dao.FileResourceVariantMapper;
 import ifl.agentbreaker.conversationmanager.dao.ConversationRoundFileMapper;
 import ifl.agentbreaker.conversationmanager.dao.ConversationSharingMapper;
 import ifl.agentbreaker.conversationmanager.domain.constants.ConversationFileKind;
 import ifl.agentbreaker.conversationmanager.domain.constants.ConversationFileStatus;
 import ifl.agentbreaker.conversationmanager.domain.constants.FileCleanupReason;
+import ifl.agentbreaker.conversationmanager.domain.constants.FileVariantType;
 import ifl.agentbreaker.conversationmanager.domain.dtos.requests.ConfirmFileUploadRequest;
 import ifl.agentbreaker.conversationmanager.domain.dtos.requests.ConfirmFileUploadItem;
 import ifl.agentbreaker.conversationmanager.domain.dtos.requests.CreateFileUploadSessionRequest;
 import ifl.agentbreaker.conversationmanager.domain.dtos.requests.DeleteFileResourceRequest;
 import ifl.agentbreaker.conversationmanager.domain.dtos.requests.RetryFileProcessingRequest;
+import ifl.agentbreaker.conversationmanager.domain.dtos.requests.ResolveFilePreviewsRequest;
 import ifl.agentbreaker.conversationmanager.domain.dtos.responses.FileDownloadUrl;
 import ifl.agentbreaker.conversationmanager.domain.dtos.responses.FileResourceInfo;
 import ifl.agentbreaker.conversationmanager.domain.dtos.responses.FileUploadSession;
+import ifl.agentbreaker.conversationmanager.domain.dtos.responses.FilePreviewUrl;
 import ifl.agentbreaker.conversationmanager.domain.dtos.responses.RoundFileHistory;
 import ifl.agentbreaker.conversationmanager.domain.entities.pg.FileResource;
+import ifl.agentbreaker.conversationmanager.domain.entities.pg.FileResourceVariant;
 import ifl.agentbreaker.conversationmanager.domain.entities.pg.ConversationSharing;
 import ifl.agentbreaker.conversationmanager.exceptions.ServiceResponseException;
 import ifl.agentbreaker.conversationmanager.support.BusinessIdManager;
@@ -51,6 +56,8 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.HashSet;
+import java.util.Set;
 
 /**
  * Coordinates the user-file lifecycle across PostgreSQL and private OSS. The service owns stable
@@ -82,6 +89,10 @@ public class ConversationFileService
     /** Persistence operations for asynchronous extraction tasks. */
     @Autowired
     private FileProcessingTaskMapper fileProcessingTaskMapper;
+
+    /** Persistence operations for sanitized image derivatives. */
+    @Autowired
+    private FileResourceVariantMapper fileResourceVariantMapper;
 
     /** Persistence operations for asynchronous OSS cleanup tasks. */
     @Autowired
@@ -365,6 +376,73 @@ public class ConversationFileService
         return getSharedFileDownloadUrl(sharing.getParentConversationId(), sharing.getEndRoundNumber(), fileId);
     }
 
+    /** Resolves sanitized previews for files owned by or referenced from the current user's Conversations.
+     * @param request ordered stable file IDs
+     * @return signed inline derivative URLs in request order
+     */
+    public ServiceResponse<List<FilePreviewUrl>> getFilePreviewUrls(ResolveFilePreviewsRequest request)
+    {
+        validatePreviewIds(request.getFileIds());
+        long userId = UserContextService.getCurrentUserId();
+        List<FileResource> resources = fileResourceMapper.listConversationReferencedFileResources(
+            request.getFileIds(), userId);
+        if (resources.size() != request.getFileIds().size())
+            throw new ServiceResponseException(ERROR_FILE_NOT_FOUND, "One or more images do not exist or are not accessible.");
+        Map<String, FileResource> resourcesByFileId = new LinkedHashMap<>();
+        for (FileResource resource : resources)
+        {
+            if (resource.getKind() != ConversationFileKind.IMAGE || resource.getStatus() != ConversationFileStatus.READY)
+                throw new ServiceResponseException(ERROR_INVALID_FILE, "Every preview file must be a ready image.");
+            resourcesByFileId.put(resource.getFileId(), resource);
+        }
+        List<Long> resourceIds = resources.stream().map(FileResource::getId).toList();
+        Map<Long, FileResourceVariant> variants = indexReadyVariants(resourceIds);
+        Instant expiresAt = Instant.now().plusSeconds(ossStorageProperties.getPresignedUrlTtlSeconds());
+        List<FilePreviewUrl> results = new ArrayList<>();
+        for (String fileId : request.getFileIds())
+        {
+            FileResource resource = resourcesByFileId.get(fileId);
+            results.add(toPreviewUrl(fileId, requireVariant(variants, resource.getId()), expiresAt));
+        }
+        return ServiceResponse.buildSuccessResponse(results);
+    }
+
+    /** Resolves sanitized previews only inside an active immutable shared snapshot.
+     * @param sharedConversationId stable share identity
+     * @param request ordered stable file IDs
+     * @return signed inline derivative URLs in request order
+     */
+    public ServiceResponse<List<FilePreviewUrl>> getSharedFilePreviewUrls(
+        String sharedConversationId, ResolveFilePreviewsRequest request)
+    {
+        validatePreviewIds(request.getFileIds());
+        ConversationSharing sharing = conversationSharingMapper.getActiveConversationSharingBySharedId(sharedConversationId);
+        if (sharing == null)
+            throw new ServiceResponseException(ERROR_FILE_NOT_FOUND, "Shared conversation does not exist or has expired.");
+        List<RoundFileHistory> files = conversationRoundFileMapper.listSharedRoundFiles(
+            sharing.getParentConversationId(), sharing.getEndRoundNumber(), request.getFileIds());
+        if (files.size() != request.getFileIds().size())
+            throw new ServiceResponseException(ERROR_FILE_NOT_FOUND, "One or more images do not exist in the shared snapshot.");
+        Map<String, RoundFileHistory> filesById = new LinkedHashMap<>();
+        for (RoundFileHistory file : files)
+        {
+            if (!ConversationFileKind.IMAGE.name().equals(file.kind())
+                || !ConversationFileStatus.READY.name().equals(file.status()))
+                throw new ServiceResponseException(ERROR_INVALID_FILE, "Every preview file must be a ready image.");
+            filesById.put(file.fileId(), file);
+        }
+        List<Long> resourceIds = files.stream().map(RoundFileHistory::fileResourceId).toList();
+        Map<Long, FileResourceVariant> variants = indexReadyVariants(resourceIds);
+        Instant expiresAt = Instant.now().plusSeconds(ossStorageProperties.getPresignedUrlTtlSeconds());
+        List<FilePreviewUrl> results = new ArrayList<>();
+        for (String fileId : request.getFileIds())
+        {
+            RoundFileHistory file = filesById.get(fileId);
+            results.add(toPreviewUrl(fileId, requireVariant(variants, file.fileResourceId()), expiresAt));
+        }
+        return ServiceResponse.buildSuccessResponse(results);
+    }
+
     /**
      * Batch-loads owned files for Runner's preparation RPC and restores caller order. A short
      * result signals that at least one stable ID is missing or unauthorized, allowing the caller to
@@ -468,6 +546,25 @@ public class ConversationFileService
         return createSignedGetUrl(fileResource, expiresAt);
     }
 
+    /** Signs one verified model-input derivative for the current Runner request.
+     * @param variant authorized ready derivative
+     * @return short-lived signed URL
+     */
+    public String createSignedGetUrl(FileResourceVariant variant)
+    {
+        Instant expiresAt = Instant.now().plusSeconds(ossStorageProperties.getPresignedUrlTtlSeconds());
+        return createVariantUrl(variant, expiresAt, false);
+    }
+
+    /** Loads the only model-consumable derivative for a ready image.
+     * @param fileResource authorized original resource
+     * @return verified model-input derivative, or {@code null} when missing
+     */
+    public FileResourceVariant getReadyModelInputVariant(FileResource fileResource)
+    {
+        return fileResourceVariantMapper.getReadyVariant(fileResource.getId(), FileVariantType.MODEL_INPUT);
+    }
+
     /**
      * Maps internal file state to the public metadata response while selecting detected MIME over
      * the user-declared value after content inspection.
@@ -566,6 +663,63 @@ public class ConversationFileService
             fileResource.getBucketName(), fileResource.getObjectKey(), HttpMethod.GET);
         request.setExpiration(Date.from(expiresAt));
         return oss.generatePresignedUrl(request).toString();
+    }
+
+    /** Creates a short-lived signature for a server-owned derivative. */
+    private String createVariantUrl(FileResourceVariant variant, Instant expiresAt, boolean inline)
+    {
+        GeneratePresignedUrlRequest request = new GeneratePresignedUrlRequest(
+            variant.getBucketName(), variant.getObjectKey(), HttpMethod.GET);
+        request.setExpiration(Date.from(expiresAt));
+        if (inline)
+        {
+            ResponseHeaderOverrides responseHeaders = new ResponseHeaderOverrides();
+            responseHeaders.setContentDisposition("inline");
+            request.setResponseHeaders(responseHeaders);
+        }
+        return oss.generatePresignedUrl(request).toString();
+    }
+
+    /** Validates batch count, blanks, and duplicates before any authorization query. */
+    private void validatePreviewIds(List<String> fileIds)
+    {
+        if (fileIds == null || fileIds.isEmpty() || fileIds.size() > conversationFileProperties.getMaxCountPerMessage())
+            throw new ServiceResponseException(ERROR_INVALID_FILE, "The preview request is invalid.");
+        Set<String> unique = new HashSet<>(fileIds);
+        if (unique.size() != fileIds.size() || unique.stream().anyMatch(id -> !StringUtils.hasText(id)))
+            throw new ServiceResponseException(ERROR_INVALID_FILE, "Preview file IDs must be non-empty and unique.");
+    }
+
+    /** Indexes one set-based derivative query by original resource identity. */
+    private Map<Long, FileResourceVariant> indexReadyVariants(List<Long> resourceIds)
+    {
+        Map<Long, FileResourceVariant> variants = new LinkedHashMap<>();
+        for (FileResourceVariant variant : fileResourceVariantMapper.listReadyVariants(
+            resourceIds, FileVariantType.MODEL_INPUT))
+            variants.put(variant.getFileResourceId(), variant);
+        return variants;
+    }
+
+    /** Requires one ready derivative without falling back to the original object. */
+    private FileResourceVariant requireVariant(Map<Long, FileResourceVariant> variants, long resourceId)
+    {
+        FileResourceVariant variant = variants.get(resourceId);
+        if (variant == null)
+            throw new ServiceResponseException(ERROR_INVALID_FILE, "The sanitized image preview is not ready.");
+        return variant;
+    }
+
+    /** Projects a verified derivative to the public preview contract. */
+    private FilePreviewUrl toPreviewUrl(String fileId, FileResourceVariant variant, Instant expiresAt)
+    {
+        FilePreviewUrl result = new FilePreviewUrl();
+        result.setFileId(fileId);
+        result.setUrl(createVariantUrl(variant, expiresAt, true));
+        result.setExpiresAt(expiresAt);
+        result.setMimeType(variant.getMimeType());
+        result.setWidth(variant.getWidth());
+        result.setHeight(variant.getHeight());
+        return result;
     }
 
     /** Creates a browser download signature whose response restores the original filename. */
