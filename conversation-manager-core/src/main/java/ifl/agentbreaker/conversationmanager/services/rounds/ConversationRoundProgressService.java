@@ -8,6 +8,7 @@ import ifl.agentbreaker.conversationmanager.dao.ConversationToolDispatchMapper;
 import ifl.agentbreaker.conversationmanager.dao.ConversationTurnMapper;
 import ifl.agentbreaker.conversationmanager.domain.constants.ConversationRoundStatus;
 import ifl.agentbreaker.conversationmanager.domain.entities.pg.Conversation;
+import ifl.agentbreaker.conversationmanager.domain.entities.pg.FileResource;
 import ifl.agentbreaker.conversationmanager.domain.entities.pg.ConversationRound;
 import ifl.agentbreaker.conversationmanager.domain.entities.pg.ConversationRoundMutation;
 import ifl.agentbreaker.conversationmanager.domain.entities.pg.ConversationToolDispatch;
@@ -17,6 +18,7 @@ import ifl.agentbreaker.conversationmanager.rpc.CreateConversationRoundCheckpoin
 import ifl.agentbreaker.conversationmanager.rpc.FinalizeConversationRoundRequest;
 import ifl.agentbreaker.conversationmanager.rpc.RoundStatus;
 import ifl.agentbreaker.conversationmanager.rpc.SaveConversationRoundRequest;
+import ifl.agentbreaker.conversationmanager.support.ConversationTitleManager;
 import jakarta.annotation.PostConstruct;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -161,13 +163,32 @@ public class ConversationRoundProgressService
         if (round == null)
             throw new IllegalStateException("Checkpoint insert returned no row.");
         SaveConversationRoundRequest legacyRoundSaveRequest = conversationRoundProgressMapper.toLegacyRoundSaveRequest(request);
-        conversationRoundService.persistRoundFiles(legacyRoundSaveRequest, round.getId());
+        List<FileResource> roundFiles = conversationRoundService.persistRoundFiles(
+            legacyRoundSaveRequest, round.getId());
         conversationRoundService.persistRoundReferences(legacyRoundSaveRequest, conversation, round.getId());
+        String automaticTitle = deriveAutomaticTitle(request, roundFiles);
         if (conversationMapper.advanceLatestRoundNumber(request.getConversationId(), request.getUserId(),
-            request.getRoundNumber(), request.getUserRequest().getContent(), "New Conversation") != 1)
+            request.getRoundNumber(), automaticTitle, ConversationTitleManager.DEFAULT_TITLE) != 1)
             throw new IllegalStateException("Failed to advance Conversation high-water mark.");
         recordMutation(round.getId(), request.getUserId(), request.getMutationId(), hash, 0);
         return new MutationOutcome(0, RoundStatus.ROUND_STATUS_IN_PROGRESS, false);
+    }
+
+    /**
+     * Derives the first-Round title from visible text or the first ordered attachment.
+     *
+     * @param request checkpoint containing the frozen user request
+     * @param roundFiles ordered attachment resources persisted for the Round
+     * @return non-blank normalized title
+     */
+    private String deriveAutomaticTitle(
+        CreateConversationRoundCheckpointRequest request, List<FileResource> roundFiles)
+    {
+        if (StringUtils.hasText(request.getUserRequest().getContent()))
+            return ConversationTitleManager.deriveFromFirstUserMessage(request.getUserRequest().getContent());
+        if (!roundFiles.isEmpty())
+            return ConversationTitleManager.deriveFromAttachmentFilename(roundFiles.get(0).getOriginalFilename());
+        return ConversationTitleManager.DEFAULT_TITLE;
     }
 
     /**

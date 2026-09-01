@@ -88,6 +88,35 @@
           AND "status" = 'COMPLETED'
     </select>
 
+    <select id="getLatestTurn" resultMap="TurnResultMap">
+        SELECT "id", "creator_id", "creation_time", "modifier_id", "modification_time", "round_id",
+               "turn_number", "agent_id", "agent_name", "agent_version", "status", "error_message",
+               "start_time", "end_time", "llm_start_time", "llm_end_time", "request_id", "trace_id",
+               "message_storage_mode", "request_messages_snapshot", "request_messages_snapshot_hash",
+               "raw_request", "response_message_present", "response_content", "response_content_parts",
+               "finish_reason", "usage_present", "prompt_tokens", "completion_tokens", "total_tokens",
+               "cached_prompt_tokens", "reasoning_tokens", "raw_response", "response_error_message",
+               "reasoning_content"
+        FROM "conversation_turn"
+        WHERE "round_id" = #{roundId}
+        ORDER BY "turn_number" DESC
+        LIMIT 1
+    </select>
+
+    <select id="listLatestRoundAnswers"
+            resultType="ifl.agentbreaker.conversationmanager.domain.dtos.responses.RoundAssistantAnswerHistory">
+        SELECT DISTINCT ON (round."round_number")
+               round."round_number" AS "roundNumber",
+               turn."response_content" AS "assistantAnswer"
+        FROM "conversation_round" round
+        INNER JOIN "conversation_turn" turn ON turn."round_id" = round."id"
+        WHERE round."conversation_id" = #{conversationId}
+          AND round."deleted" = FALSE
+          AND turn."response_message_present" = TRUE
+          AND BTRIM(turn."response_content") &lt;&gt; ''
+        ORDER BY round."round_number", turn."turn_number" DESC
+    </select>
+
     <select id="countTurns" resultType="long">
         SELECT COUNT(*) FROM "conversation_turn" WHERE "round_id" = #{roundId}
     </select>

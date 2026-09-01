@@ -59,7 +59,10 @@
             resultType="ifl.agentbreaker.conversationmanager.domain.dtos.responses.ConversationShareSummary">
         SELECT sharing."parent_conversation_id" AS "parentConversationId",
                sharing."shared_conversation_id" AS "sharedConversationId",
-               CASE WHEN conversation."deleted" = FALSE THEN conversation."title" ELSE NULL END AS "title",
+               (conversation."id" IS NULL OR conversation."deleted" = TRUE) AS "sourceDeleted",
+               CASE WHEN conversation."deleted" = FALSE
+                    THEN COALESCE(NULLIF(BTRIM(conversation."title"), ''), 'New Conversation')
+                    ELSE '' END AS "title",
                sharing."creation_time" AS "creationTime",
                sharing."end_round_number" AS "endRoundNumber",
                sharing."expires_at" AS "expiresAt",

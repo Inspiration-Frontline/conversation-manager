@@ -6,7 +6,7 @@
             "creator_id", "modifier_id", "round_id", "file_resource_id", "file_order"
         ) VALUES
         <foreach collection="fileResourceIds" item="fileResourceId" index="fileOrder" separator=",">
-            (#{userId}, #{userId}, #{roundId}, #{fileResourceId}, #{fileOrder})
+            (#{userId}, #{userId}, #{roundId}, #{fileResourceId}, #{fileOrder} + 1)
         </foreach>
         ON CONFLICT DO NOTHING
     </insert>

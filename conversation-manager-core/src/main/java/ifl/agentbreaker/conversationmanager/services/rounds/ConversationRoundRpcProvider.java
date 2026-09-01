@@ -3,6 +3,8 @@ package ifl.agentbreaker.conversationmanager.services.rounds;
 import ifl.agentbreaker.commons.api.dto.ResponseBase;
 import ifl.agentbreaker.conversationmanager.domain.dtos.responses.ConversationRoundHistoryResult;
 import ifl.agentbreaker.conversationmanager.domain.dtos.responses.ConversationReplayResult;
+import ifl.agentbreaker.conversationmanager.domain.dtos.responses.RoundDeletionFailure;
+import ifl.agentbreaker.conversationmanager.domain.dtos.responses.RoundDeletionResult;
 import ifl.agentbreaker.conversationmanager.domain.entities.pg.ConversationRound;
 import ifl.agentbreaker.conversationmanager.domain.entities.pg.FileResource;
 import ifl.agentbreaker.conversationmanager.domain.entities.pg.FileResourceVariant;
@@ -28,6 +30,7 @@ import ifl.agentbreaker.conversationmanager.rpc.ConversationFileStatus;
 import ifl.agentbreaker.conversationmanager.rpc.DeleteRoundsRequest;
 import ifl.agentbreaker.conversationmanager.rpc.DeleteRoundsResponse;
 import ifl.agentbreaker.conversationmanager.rpc.DeleteRoundsResult;
+import ifl.agentbreaker.conversationmanager.rpc.DeleteRoundFailure;
 import ifl.agentbreaker.conversationmanager.rpc.GetConversationReplayRequest;
 import ifl.agentbreaker.conversationmanager.rpc.GetConversationReplayResponse;
 import ifl.agentbreaker.conversationmanager.rpc.GetConversationRoundHistoryRequest;
@@ -70,6 +73,10 @@ public class ConversationRoundRpcProvider implements ConversationRpcService
     /** Application service that validates and persists complete Conversation Rounds. */
     @Autowired
     private ConversationRoundService conversationRoundService;
+
+    /** Service implementing validated active-tail Round deletion. */
+    @Autowired
+    private ConversationRoundDeletionService conversationRoundDeletionService;
 
     /** File service that authorizes uploads and prepares attachment metadata for Runner. */
     @Autowired
@@ -431,24 +438,41 @@ public class ConversationRoundRpcProvider implements ConversationRpcService
     }
 
     /**
-     * Keeps Round deletion disabled until the tail-suffix and child-row invariants have a
-     * dedicated implementation; accepting a partial delete would corrupt replay high-water marks.
+     * Logically deletes a validated active Round suffix without reducing the high-water mark.
      *
-     * @param request deletion scope requested by the caller
-     * @return typed unsupported-operation response
+     * @param request authenticated Conversation and requested Round numbers
+     * @return deleted values and partial failure details
      */
     @Override
     public DeleteRoundsResponse deleteRounds(DeleteRoundsRequest request)
     {
-        return DeleteRoundsResponse.newBuilder()
-            .setBase(errorBase(ConversationErrorCode.CONVERSATION_ERROR_CODE_INVALID_REQUEST_VALUE,
-                "Round deletion is not implemented yet."))
-            .setData(DeleteRoundsResult.getDefaultInstance())
-            .build();
+        try
+        {
+            RoundDeletionResult result = conversationRoundDeletionService.deleteRounds(
+                request.getUserId(), request.getConversationId(), request.getRoundNumbersList());
+            DeleteRoundsResult.Builder data = DeleteRoundsResult.newBuilder()
+                .addAllDeletedRoundNumbers(result.deletedRoundNumbers());
+            for (RoundDeletionFailure failure : result.failures())
+                data.addFailures(DeleteRoundFailure.newBuilder()
+                    .setRoundNumber(failure.roundNumber())
+                    .setCodeValue(failure.code())
+                    .setMessage(failure.message()));
+            ResponseBase base = result.failures().isEmpty()
+                ? successBase()
+                : errorBase(result.failures().get(0).code(), result.failures().get(0).message());
+            return DeleteRoundsResponse.newBuilder().setBase(base).setData(data).build();
+        }
+        catch (RoundPersistenceException e)
+        {
+            return DeleteRoundsResponse.newBuilder()
+                .setBase(errorBase(e.getCode(), e.getMessage()))
+                .setData(DeleteRoundsResult.getDefaultInstance())
+                .build();
+        }
     }
 
     /**
-     * Adapts the explicit Round deletion rejection to the asynchronous Dubbo signature.
+     * Adapts Round deletion to the asynchronous Dubbo signature.
      *
      * @param request deletion request
      * @return future containing the typed rejection response

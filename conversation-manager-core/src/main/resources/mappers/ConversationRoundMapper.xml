@@ -117,6 +117,36 @@
         ORDER BY r."round_number" ASC
     </select>
 
+    <select id="listActiveRoundNumbers" resultType="long">
+        SELECT "round_number"
+        FROM "conversation_round"
+        WHERE "conversation_id" = #{conversationId}
+          AND "deleted" = FALSE
+        ORDER BY "round_number"
+    </select>
+
+    <update id="tombstoneRounds">
+        UPDATE "conversation_round" round
+        SET "deleted" = TRUE,
+            "deletion_time" = NOW(),
+            "deleted_by" = #{userId},
+            "modifier_id" = #{userId}
+        WHERE round."conversation_id" = #{conversationId}
+          AND round."round_number" IN
+          <foreach collection="roundNumbers" item="roundNumber" open="(" separator="," close=")">
+              #{roundNumber}
+          </foreach>
+          AND round."deleted" = FALSE
+          AND EXISTS
+          (
+              SELECT 1
+              FROM "conversation" conversation
+              WHERE conversation."conversation_id" = round."conversation_id"
+                AND conversation."creator_id" = #{userId}
+                AND conversation."deleted" = FALSE
+          )
+    </update>
+
     <select id="listCompletedRoundsAtOrBefore" resultMap="RoundResultMap">
         SELECT <include refid="RoundColumns"/>,
                (SELECT COUNT(*) FROM "conversation_turn" turn WHERE turn."round_id" = r."id") AS "turn_count"

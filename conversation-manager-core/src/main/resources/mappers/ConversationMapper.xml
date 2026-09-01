@@ -338,7 +338,8 @@
             "last_round_updated_time" = NOW(),
             "modifier_id" = #{userId},
             "title" = CASE
-                WHEN "latest_round_number" = 0 AND "title" = #{defaultTitle} THEN #{automaticTitle}
+                WHEN "latest_round_number" = 0
+                     AND ("title" = #{defaultTitle} OR BTRIM("title") = '') THEN #{automaticTitle}
                 ELSE "title"
             END
         WHERE "conversation_id" = #{conversationId}

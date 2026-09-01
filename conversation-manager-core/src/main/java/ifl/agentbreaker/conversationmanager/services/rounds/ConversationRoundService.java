@@ -30,6 +30,7 @@ import ifl.agentbreaker.conversationmanager.domain.dtos.responses.ConversationRo
 import ifl.agentbreaker.conversationmanager.domain.dtos.responses.ResolvedConversationReference;
 import ifl.agentbreaker.conversationmanager.domain.dtos.responses.RoundHistoryView;
 import ifl.agentbreaker.conversationmanager.domain.dtos.responses.RoundFileHistory;
+import ifl.agentbreaker.conversationmanager.domain.dtos.responses.RoundAssistantAnswerHistory;
 import ifl.agentbreaker.conversationmanager.domain.dtos.responses.RoundToolActivityHistory;
 import ifl.agentbreaker.conversationmanager.domain.dtos.responses.SharedRoundHistoryView;
 import ifl.agentbreaker.conversationmanager.domain.entities.pg.Conversation;
@@ -209,11 +210,18 @@ public class ConversationRoundService
                 .stream()
                 .collect(Collectors.groupingBy(RoundToolActivityHistory::roundNumber));
             Map<Long, List<ConversationRoundReference>> referencesByRound = listReferencesByRound(history.rounds());
+            Map<Long, String> assistantAnswersByRound = conversationTurnMapper
+                .listLatestRoundAnswers(conversationId)
+                .stream()
+                .collect(Collectors.toMap(
+                    RoundAssistantAnswerHistory::roundNumber,
+                    RoundAssistantAnswerHistory::assistantAnswer));
             return ServiceResponse.buildSuccessResponse(new RoundHistoryView(
                 conversationId,
                 history.latestRoundNumber(),
                 history.rounds().stream()
-                    .map(round -> toRoundView(round, toolActivitiesByRound, filesByRound, referencesByRound))
+                    .map(round -> toRoundView(
+                        round, toolActivitiesByRound, filesByRound, referencesByRound, assistantAnswersByRound))
                     .toList()));
         }
         catch (RoundPersistenceException e)
@@ -233,10 +241,14 @@ public class ConversationRoundService
         ConversationRound round,
         Map<Long, List<RoundToolActivityHistory>> toolActivitiesByRound,
         Map<Long, List<RoundFileHistory>> filesByRound,
-        Map<Long, List<ConversationRoundReference>> referencesByRound)
+        Map<Long, List<ConversationRoundReference>> referencesByRound,
+        Map<Long, String> assistantAnswersByRound)
     {
         return new RoundHistoryView.RoundView(
-            round.getRoundNumber(), extractTextContent(round), round.getFinalAnswerContent(),
+            round.getRoundNumber(), extractTextContent(round),
+            round.getFinalAnswerContent() == null
+                ? assistantAnswersByRound.get(round.getRoundNumber())
+                : round.getFinalAnswerContent(),
             round.getStatus().name(), round.getErrorMessage(), round.getTurnCount(),
             round.getStartTime().toEpochMilli(), getRoundEndTime(round),
             toolActivitiesByRound.getOrDefault(round.getRoundNumber(), List.of()).stream()
@@ -522,31 +534,60 @@ public class ConversationRoundService
                 ConversationErrorCode.CONVERSATION_ERROR_CODE_ROUND_NOT_FOUND_VALUE,
                 "Replay boundary round does not exist.");
 
-        ConversationRound completedRound = conversationRoundMapper.getLatestCompletedRoundAtOrBefore(
-            conversationId, endRoundNumber);
-        if (completedRound == null)
+        ReplayTurnBoundary replayBoundary = resolveReplayTurnBoundary(
+            conversationId, endRoundNumber, boundaryRound);
+        if (replayBoundary == null)
             return new ConversationReplayResult(conversationId, List.of());
 
-        ConversationTurn conversationTurn = conversationTurnMapper.getCompletedTurn(
-            completedRound.getId(), completedRound.getFinalSourceTurnNumber());
-        if (conversationTurn == null)
-            throw new IllegalStateException("Completed replay round has no source turn.");
-        if (!conversationTurn.isResponseMessagePresent())
-            throw new IllegalStateException("Completed replay turn has no LLM response.");
-
         Map<Long, List<ConversationLlmRequestMessageToolCall>> toolCallsByMessageId =
-            conversationLlmRequestMessageToolCallMapper.listRequestMessageToolCallsForRound(completedRound.getId())
+            conversationLlmRequestMessageToolCallMapper
+                .listRequestMessageToolCallsForRound(replayBoundary.round().getId())
                 .stream().collect(Collectors.groupingBy(
                     ConversationLlmRequestMessageToolCall::getRequestMessageId));
         List<LlmConversationMessage> contextMessages = conversationLlmRequestMessageMapper
-            .listRequestMessagesForRound(completedRound.getId()).stream()
+            .listRequestMessagesForRound(replayBoundary.round().getId()).stream()
             .map(message -> toProtoMessage(message, toolCallsByMessageId.getOrDefault(message.getId(), List.of())))
             .collect(Collectors.toCollection(ArrayList::new));
         contextMessages.add(LlmConversationMessage.newBuilder()
             .setRole(MessageRole.MESSAGE_ROLE_ASSISTANT)
-            .setContent(conversationTurn.getResponseContent())
+            .setContent(replayBoundary.turn().getResponseContent())
             .build());
         return new ConversationReplayResult(conversationId, List.copyOf(contextMessages));
+    }
+
+    /**
+     * Selects the latest durable model response eligible for subsequent Conversation context.
+     *
+     * <p>A cancelled boundary with visible model text remains part of the conversation. Failed
+     * boundaries and cancellations without a model response fall back to the latest completed
+     * Round so provider errors never become prompt history.</p>
+     *
+     * @param conversationId stable owned Conversation identifier
+     * @param endRoundNumber inclusive active replay boundary
+     * @param boundaryRound active Round at the requested boundary
+     * @return replayable Round and Turn, or {@code null} when no model response exists
+     */
+    private ReplayTurnBoundary resolveReplayTurnBoundary(
+        String conversationId, long endRoundNumber, ConversationRound boundaryRound)
+    {
+        if (boundaryRound.getStatus() == ConversationRoundStatus.CANCELLED)
+        {
+            ConversationTurn cancelledTurn = conversationTurnMapper.getLatestTurn(boundaryRound.getId());
+            if (cancelledTurn != null
+                && cancelledTurn.isResponseMessagePresent()
+                && StringUtils.hasText(cancelledTurn.getResponseContent()))
+                return new ReplayTurnBoundary(boundaryRound, cancelledTurn);
+        }
+
+        ConversationRound completedRound = conversationRoundMapper.getLatestCompletedRoundAtOrBefore(
+            conversationId, endRoundNumber);
+        if (completedRound == null)
+            return null;
+        ConversationTurn completedTurn = conversationTurnMapper.getCompletedTurn(
+            completedRound.getId(), completedRound.getFinalSourceTurnNumber());
+        if (completedTurn == null || !completedTurn.isResponseMessagePresent())
+            throw new IllegalStateException("Completed replay Round has no response Turn.");
+        return new ReplayTurnBoundary(completedRound, completedTurn);
     }
 
     /**
@@ -1577,6 +1618,14 @@ public class ConversationRoundService
      * @param toolCallId Provider-generated Tool call identifier.
      */
     private record ResponseToolCallKey(long turnId, String toolCallId)
+    {
+    }
+
+    /** Durable Round and model Turn selected for provider-neutral replay.
+     * @param round active Round owning the stored request snapshot
+     * @param turn response Turn appended after that request snapshot
+     */
+    private record ReplayTurnBoundary(ConversationRound round, ConversationTurn turn)
     {
     }
 

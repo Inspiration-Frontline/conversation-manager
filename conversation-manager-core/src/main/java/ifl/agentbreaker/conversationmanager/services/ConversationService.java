@@ -260,6 +260,7 @@ public class ConversationService implements IConversationRpcService
             .listConversationSharingsByParentId(conversationId, userId).stream()
             .map(sharing -> new ConversationShareSummary(
                 sharing.getParentConversationId(), sharing.getSharedConversationId(),
+                false,
                 parent == null ? "" : parent.getTitle(),
                 sharing.getCreationTime(), sharing.getEndRoundNumber(),
                 sharing.getExpiresAt(), sharing.isRevoked(), sharing.getRevokedAt()))

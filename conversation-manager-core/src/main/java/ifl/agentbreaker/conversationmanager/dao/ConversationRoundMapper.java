@@ -83,6 +83,26 @@ public interface ConversationRoundMapper
     List<ConversationRound> listActiveRounds(@Param("conversationId") String conversationId);
 
     /**
+     * Lists active Round numbers used to validate a requested tail suffix.
+     *
+     * @param conversationId stable Conversation identifier
+     * @return active Round numbers in ascending order
+     */
+    List<Long> listActiveRoundNumbers(@Param("conversationId") String conversationId);
+
+    /**
+     * Logically deletes an active Round suffix after owner validation.
+     *
+     * @param conversationId stable Conversation identifier
+     * @param roundNumbers Round numbers being retired
+     * @param userId authenticated owner recorded in audit fields
+     * @return number of active Rounds tombstoned by the set-based update
+     */
+    int tombstoneRounds(@Param("conversationId") String conversationId,
+                        @Param("roundNumbers") Collection<Long> roundNumbers,
+                        @Param("userId") long userId);
+
+    /**
      * Lists completed model-context Rounds up to an inclusive snapshot boundary.
      *
      * @param conversationId stable Conversation identifier
