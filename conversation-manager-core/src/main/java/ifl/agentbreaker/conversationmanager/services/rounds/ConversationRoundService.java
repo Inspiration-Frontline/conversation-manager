@@ -558,7 +558,7 @@ public class ConversationRoundService
     /**
      * Selects the latest durable model response eligible for subsequent Conversation context.
      *
-     * <p>A cancelled boundary with visible model text remains part of the conversation. Failed
+     * <p>A canceled boundary with visible model text remains part of the conversation. Failed
      * boundaries and cancellations without a model response fall back to the latest completed
      * Round so provider errors never become prompt history.</p>
      *

@@ -62,6 +62,7 @@ public class ConversationFileTaskService
             sanitizedImage.mimeType(), sanitizedImage.bytes().length, sanitizedImage.sha256(),
             sanitizedImage.width(), sanitizedImage.height()) != 1)
             throw new IllegalStateException("The image variant was not in PENDING state.");
+
         int updated = fileResourceMapper.markReady(
             fileResource.getId(),
             fileResource.getCreatorId(),
@@ -72,8 +73,10 @@ public class ConversationFileTaskService
             extractionResult.truncated(),
             extractionResult.width(),
             extractionResult.height());
+
         if (updated != 1)
             throw new IllegalStateException("The file resource was not in PROCESSING state.");
+
         if (fileProcessingTaskMapper.markCompleted(taskId, leaseToken) != 1)
             throw new IllegalStateException("The file processing task lease was lost.");
     }
