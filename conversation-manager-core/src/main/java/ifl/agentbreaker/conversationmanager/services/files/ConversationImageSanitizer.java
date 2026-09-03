@@ -66,7 +66,15 @@ public class ConversationImageSanitizer
         }
     }
 
-    /** Reads dimensions/frame count before allocating the source raster, then re-encodes pixels only. */
+    /**
+     * Reads dimensions and frame count before allocating the source raster, then re-encodes pixels
+     * without source metadata.
+     *
+     * @param fileResource verified original metadata
+     * @param bytes immutable original bytes
+     * @return verified sanitized derivative and source/output dimensions
+     * @throws FileProcessingException when decoding, validation, or encoding fails
+     */
     private SanitizedImage decodeAndEncode(FileResource fileResource, byte[] bytes) throws FileProcessingException
     {
         try (ImageInputStream input = ImageIO.createImageInputStream(new ByteArrayInputStream(bytes)))
@@ -124,7 +132,13 @@ public class ConversationImageSanitizer
         }
     }
 
-    /** Rejects dimensions that could allocate an excessive decoded raster. */
+    /**
+     * Rejects dimensions that could allocate an excessive decoded raster.
+     *
+     * @param width decoder-reported source width
+     * @param height decoder-reported source height
+     * @throws FileProcessingException when an edge or total-pixel limit is exceeded
+     */
     private void validateDimensions(int width, int height) throws FileProcessingException
     {
         long pixels = (long) width * height;
@@ -136,7 +150,13 @@ public class ConversationImageSanitizer
                 "IMAGE_DIMENSIONS_EXCEEDED", "The image dimensions exceed the configured limit.");
     }
 
-    /** Reads decoder frame count and treats unsupported counting as a single-frame format. */
+    /**
+     * Reads decoder frame count and treats unsupported counting as a single-frame format.
+     *
+     * @param reader initialized decoder for the source image
+     * @return decoder-reported frame count, or one when counting is unsupported
+     * @throws Exception when the decoder cannot inspect the source
+     */
     private int readFrameCount(ImageReader reader) throws Exception
     {
         try
@@ -149,7 +169,14 @@ public class ConversationImageSanitizer
         }
     }
 
-    /** Reads JPEG EXIF orientation without retaining any source metadata in the output. */
+    /**
+     * Reads JPEG EXIF orientation without retaining any source metadata in the output.
+     *
+     * @param fileResource verified original metadata selecting JPEG handling
+     * @param bytes immutable original bytes
+     * @return EXIF orientation from one through eight, defaulting to one
+     * @throws FileProcessingException when present orientation metadata is invalid or unreadable
+     */
     private int readOrientation(FileResource fileResource, byte[] bytes) throws FileProcessingException
     {
         if (!"jpg".equals(fileResource.getFileExtension()) && !"jpeg".equals(fileResource.getFileExtension()))
@@ -177,7 +204,13 @@ public class ConversationImageSanitizer
         }
     }
 
-    /** Applies all eight EXIF orientation transforms to pixels. */
+    /**
+     * Applies all eight EXIF orientation transforms to pixels.
+     *
+     * @param source decoded source raster
+     * @param orientation verified EXIF orientation from one through eight
+     * @return oriented pixel raster with axes swapped when required
+     */
     private BufferedImage applyOrientation(BufferedImage source, int orientation)
     {
         int width = source.getWidth();
@@ -210,7 +243,12 @@ public class ConversationImageSanitizer
         return target;
     }
 
-    /** Scales down with bicubic interpolation and never enlarges an image. */
+    /**
+     * Scales down with bicubic interpolation and never enlarges an image.
+     *
+     * @param source oriented source raster
+     * @return original raster within the limit, otherwise a bounded derivative raster
+     */
     private BufferedImage scaleDown(BufferedImage source)
     {
         int limit = conversationFileProperties.getMaxModelInputEdgePixels();
@@ -236,13 +274,26 @@ public class ConversationImageSanitizer
         return target;
     }
 
-    /** Preserves PNG encoding and alpha while converting opaque WebP to JPEG. */
+    /**
+     * Selects PNG when the source contract or alpha channel requires lossless transparency.
+     *
+     * @param fileResource verified source metadata
+     * @param image oriented and bounded raster
+     * @return {@code true} for PNG output, otherwise JPEG output
+     */
     private boolean shouldUsePng(FileResource fileResource, BufferedImage image)
     {
         return "png".equals(fileResource.getFileExtension()) || image.getColorModel().hasAlpha();
     }
 
-    /** Encodes pixels without source metadata, applying configured JPEG quality when applicable. */
+    /**
+     * Encodes pixels without source metadata, applying configured JPEG quality when applicable.
+     *
+     * @param image oriented and bounded raster
+     * @param pngOutput whether to encode PNG instead of JPEG
+     * @return encoded metadata-free derivative bytes
+     * @throws Exception when no suitable writer exists or encoding fails
+     */
     private byte[] encode(BufferedImage image, boolean pngOutput) throws Exception
     {
         ByteArrayOutputStream output = new ByteArrayOutputStream();
@@ -271,7 +322,13 @@ public class ConversationImageSanitizer
         return output.toByteArray();
     }
 
-    /** Rejects APNG and animated WebP chunks before decoder allocation. */
+    /**
+     * Rejects APNG and animated WebP chunks before decoder allocation.
+     *
+     * @param bytes immutable original bytes
+     * @param extension normalized source extension
+     * @throws FileProcessingException when an animation control or frame chunk is present
+     */
     private void rejectKnownAnimation(byte[] bytes, String extension) throws FileProcessingException
     {
         if ("png".equals(extension) && containsPngChunk(bytes, "acTL"))
@@ -282,7 +339,13 @@ public class ConversationImageSanitizer
                 "ANIMATED_IMAGE_UNSUPPORTED", "Animated images are not supported. Upload a still image.");
     }
 
-    /** Traverses validated PNG chunk boundaries without scanning compressed pixel bytes. */
+    /**
+     * Traverses validated PNG chunk boundaries without scanning compressed pixel bytes.
+     *
+     * @param bytes immutable PNG bytes
+     * @param marker four-character chunk marker
+     * @return whether the structural marker exists
+     */
     private boolean containsPngChunk(byte[] bytes, String marker)
     {
         int offset = 8;
@@ -299,7 +362,13 @@ public class ConversationImageSanitizer
         return false;
     }
 
-    /** Traverses RIFF WebP chunk boundaries, including each chunk's even-byte padding. */
+    /**
+     * Traverses RIFF WebP chunk boundaries, including each chunk's even-byte padding.
+     *
+     * @param bytes immutable WebP bytes
+     * @param marker four-character chunk marker
+     * @return whether the structural marker exists
+     */
     private boolean containsWebpChunk(byte[] bytes, String marker)
     {
         int offset = 12;
@@ -316,7 +385,14 @@ public class ConversationImageSanitizer
         return false;
     }
 
-    /** Compares one four-byte ASCII chunk identifier at a known structural offset. */
+    /**
+     * Compares one four-byte ASCII chunk identifier at a known structural offset.
+     *
+     * @param bytes immutable container bytes
+     * @param offset structural byte offset
+     * @param marker four-character ASCII marker
+     * @return whether all four marker bytes match within bounds
+     */
     private boolean matchesAscii(byte[] bytes, int offset, String marker)
     {
         if (marker.length() != 4 || offset < 0 || offset > bytes.length - 4)
@@ -329,7 +405,13 @@ public class ConversationImageSanitizer
         return true;
     }
 
-    /** Reads an unsigned PNG chunk length. */
+    /**
+     * Reads an unsigned big-endian PNG chunk length.
+     *
+     * @param bytes immutable PNG bytes
+     * @param offset structural length-field offset
+     * @return unsigned 32-bit length represented as a long
+     */
     private long readUnsignedIntBigEndian(byte[] bytes, int offset)
     {
         return ((long) bytes[offset] & 0xFF) << 24
@@ -338,7 +420,13 @@ public class ConversationImageSanitizer
             | (long) bytes[offset + 3] & 0xFF;
     }
 
-    /** Reads an unsigned RIFF chunk length. */
+    /**
+     * Reads an unsigned little-endian RIFF chunk length.
+     *
+     * @param bytes immutable RIFF bytes
+     * @param offset structural length-field offset
+     * @return unsigned 32-bit length represented as a long
+     */
     private long readUnsignedIntLittleEndian(byte[] bytes, int offset)
     {
         return (long) bytes[offset] & 0xFF
@@ -347,7 +435,11 @@ public class ConversationImageSanitizer
             | ((long) bytes[offset + 3] & 0xFF) << 24;
     }
 
-    /** Creates the configured image semaphore after Spring property binding completes. */
+    /**
+     * Creates the configured image semaphore after Spring property binding completes.
+     *
+     * @return process-local concurrency guard for decoded image rasters
+     */
     private Semaphore getConcurrency()
     {
         Semaphore current = concurrency;

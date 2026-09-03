@@ -59,6 +59,8 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 
+import static ifl.agentbreaker.conversationmanager.domain.constants.ConversationFileKind.IMAGE;
+import static ifl.agentbreaker.conversationmanager.domain.constants.ConversationFileStatus.READY;
 import static ifl.agentbreaker.conversationmanager.rpc.ConversationRound.getDefaultInstance;
 
 /**
@@ -73,10 +75,6 @@ public class ConversationRoundRpcProvider implements ConversationRpcService
     /** Application service that validates and persists complete Conversation Rounds. */
     @Autowired
     private ConversationRoundService conversationRoundService;
-
-    /** Service implementing validated active-tail Round deletion. */
-    @Autowired
-    private ConversationRoundDeletionService conversationRoundDeletionService;
 
     /** File service that authorizes uploads and prepares attachment metadata for Runner. */
     @Autowired
@@ -448,7 +446,7 @@ public class ConversationRoundRpcProvider implements ConversationRpcService
     {
         try
         {
-            RoundDeletionResult result = conversationRoundDeletionService.deleteRounds(
+            RoundDeletionResult result = conversationRoundService.deleteRounds(
                 request.getUserId(), request.getConversationId(), request.getRoundNumbersList());
             DeleteRoundsResult.Builder data = DeleteRoundsResult.newBuilder()
                 .addAllDeletedRoundNumbers(result.deletedRoundNumbers());
@@ -570,7 +568,12 @@ public class ConversationRoundRpcProvider implements ConversationRpcService
         return CompletableFuture.completedFuture(prepareConversationFiles(request));
     }
 
-    /** Authorizes and resolves a frozen batch of same-Group Conversation references. */
+    /**
+     * Authorizes and resolves a frozen batch of same-Group Conversation references.
+     *
+     * @param request destination Conversation and frozen source boundaries
+     * @return prepared reference projections or a typed business error
+     */
     @Override
     public PrepareConversationReferencesResponse prepareConversationReferences(
         PrepareConversationReferencesRequest request)
@@ -602,7 +605,12 @@ public class ConversationRoundRpcProvider implements ConversationRpcService
         }
     }
 
-    /** Adapts Conversation reference preparation to Dubbo's asynchronous signature. */
+    /**
+     * Adapts Conversation reference preparation to Dubbo's asynchronous signature.
+     *
+     * @param request destination Conversation and frozen source boundaries
+     * @return completed future containing the synchronous preparation result
+     */
     @Override
     public CompletableFuture<PrepareConversationReferencesResponse> prepareConversationReferencesAsync(
         PrepareConversationReferencesRequest request)
@@ -687,9 +695,9 @@ public class ConversationRoundRpcProvider implements ConversationRpcService
             .setExtractionTruncated(fileResource.isExtractionTruncated());
         if (fileResource.getSha256() != null)
             preparedFile.setSha256(fileResource.getSha256());
-        if (fileResource.getStatus() == ifl.agentbreaker.conversationmanager.domain.constants.ConversationFileStatus.READY)
+        if (fileResource.getStatus() == READY)
         {
-            if (fileResource.getKind() == ifl.agentbreaker.conversationmanager.domain.constants.ConversationFileKind.IMAGE)
+            if (fileResource.getKind() == IMAGE)
             {
                 FileResourceVariant modelInput = conversationFileService.getReadyModelInputVariant(fileResource);
                 if (modelInput != null)

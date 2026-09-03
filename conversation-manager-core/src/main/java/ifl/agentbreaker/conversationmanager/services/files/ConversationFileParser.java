@@ -90,8 +90,6 @@ public class ConversationFileParser
             // Image raster validation and dimensions are owned by ConversationImageSanitizer so
             // every READY image necessarily has a verified MODEL_INPUT derivative.
             String extractedText = "";
-            Integer width = null;
-            Integer height = null;
             if (fileResource.getKind() != ConversationFileKind.IMAGE)
                 extractedText = extractText(fileResource, bytes, metadata);
 
@@ -109,9 +107,7 @@ public class ConversationFileParser
                 sha256,
                 truncatedText.text(),
                 metadata,
-                truncatedText.truncated(),
-                width,
-                height);
+                truncatedText.truncated());
         }
         catch (FileProcessingException e)
         {

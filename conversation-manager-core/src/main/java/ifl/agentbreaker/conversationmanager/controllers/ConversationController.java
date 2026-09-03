@@ -10,9 +10,7 @@ import ifl.agentbreaker.conversationmanager.domain.dtos.responses.ConversationSh
 import ifl.agentbreaker.conversationmanager.domain.dtos.responses.ResolvedConversationReference;
 import ifl.agentbreaker.conversationmanager.domain.dtos.responses.SharedConversationView;
 import ifl.agentbreaker.conversationmanager.domain.dtos.responses.RoundHistoryView;
-import ifl.agentbreaker.conversationmanager.domain.dtos.responses.RoundDeletionResult;
 import ifl.agentbreaker.conversationmanager.services.ConversationService;
-import ifl.agentbreaker.conversationmanager.services.rounds.ConversationRoundDeletionService;
 import ifl.agentbreaker.conversationmanager.services.rounds.ConversationRoundService;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
@@ -37,10 +35,6 @@ public class ConversationController
     /** Service owning durable Round history and reference resolution. */
     @Autowired
     private ConversationRoundService conversationRoundService;
-
-    /** Service owning tail-safe Round logical deletion. */
-    @Autowired
-    private ConversationRoundDeletionService conversationRoundDeletionService;
 
     /**
      * Creates the durable Conversation shell used before the first Agent Runner request.
@@ -92,26 +86,6 @@ public class ConversationController
     public ServiceResponse<RoundHistoryView> getConversationRounds(@PathVariable String conversationId)
     {
         return conversationRoundService.getHttpHistory(UserContextService.getCurrentUserId(), conversationId);
-    }
-
-    /**
-     * Logically deletes one active contiguous Round suffix before regeneration.
-     *
-     * @param request owned Conversation and positive tail Round numbers
-     * @return deleted Round numbers in descending order
-     */
-    @PostMapping("/rounds/delete")
-    public ServiceResponse<RoundDeletionResult> deleteConversationRounds(
-        @Valid @RequestBody DeleteConversationRoundsRequest request)
-    {
-        RoundDeletionResult result = conversationRoundDeletionService.deleteRounds(
-            UserContextService.getCurrentUserId(), request.getConversationId(), request.getRoundNumbers());
-        if (!result.failures().isEmpty())
-        {
-            int code = result.failures().get(0).code();
-            return ServiceResponse.buildErrorResponse(code, result.failures().get(0).message());
-        }
-        return ServiceResponse.buildSuccessResponse(result);
     }
 
     /**

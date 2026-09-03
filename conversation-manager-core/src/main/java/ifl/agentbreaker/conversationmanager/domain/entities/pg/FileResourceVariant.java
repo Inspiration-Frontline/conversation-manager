@@ -27,7 +27,7 @@ public class FileResourceVariant extends EntityBase
     /** Lowercase SHA-256 digest of the encoded derivative. */
     private String sha256;
     /** Verified derivative width in pixels. */
-    private Integer width;
+    private int width;
     /** Verified derivative height in pixels. */
-    private Integer height;
+    private int height;
 }

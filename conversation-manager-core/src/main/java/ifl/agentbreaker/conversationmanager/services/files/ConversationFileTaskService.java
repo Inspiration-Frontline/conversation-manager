@@ -71,8 +71,8 @@ public class ConversationFileTaskService
             extractionResult.extractedText(),
             extractionResult.metadata(),
             extractionResult.truncated(),
-            extractionResult.width(),
-            extractionResult.height());
+            sanitizedImage == null ? null : sanitizedImage.sourceWidth(),
+            sanitizedImage == null ? null : sanitizedImage.sourceHeight());
 
         if (updated != 1)
             throw new IllegalStateException("The file resource was not in PROCESSING state.");

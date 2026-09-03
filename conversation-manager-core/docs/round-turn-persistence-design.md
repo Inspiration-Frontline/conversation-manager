@@ -435,12 +435,10 @@ return `RESPONSE_TOO_LARGE`; do not silently truncate or move the replay boundar
 Create one Mapper interface and XML file per new primary table. Do not create a single aggregate
 Mapper containing unrelated CRUD.
 
-Recommended service split:
+Implemented service split:
 
-- `ConversationRoundCommandService`: create/save validation and transaction orchestration.
-- `ConversationRoundService`: Round persistence, history, and replay reads.
-- `ConversationRoundDeletionService`: lock-held suffix orchestration.
-- `ConversationRoundDeletionTransaction`: one `REQUIRES_NEW` tombstone operation.
+- `ConversationRoundService`: Round persistence, history, replay reads, and lock-held transactional
+  suffix tombstoning for internal retry preparation.
 - `ConversationMutationLock`: Redis token/lease lifecycle.
 - `ConversationRoundValidator`: transport-independent cross-field validation.
 - `ConversationRoundPayloadHasher`: versioned canonical hashing.
@@ -469,7 +467,8 @@ The coordinated cutover was accepted after verifying:
 - Raw purge leaves normalized replay and retry identity intact.
 - Round summary avoids loading child/raw data.
 - Model-context replay handles multiple Turns and a zero-Turn failed Round deterministically.
-- Tail deletion commits prior successes, stops after the first failure, and preserves high-water.
+- Tail deletion validates before mutation, tombstones the exact suffix with one set-based write, and
+  preserves high-water.
 - Existing HTTP list, pin, group, share, and fork behavior remains unchanged. History and export
   use normalized Round/Turn data; the legacy message endpoint and table are removed.
 

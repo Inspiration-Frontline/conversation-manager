@@ -26,9 +26,9 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-/** Verifies tail-only Round deletion and its single set-based persistence operation. */
+/** Verifies tail-only retry deletion inside the consolidated Round service. */
 @ExtendWith(MockitoExtension.class)
-class ConversationRoundDeletionServiceTest
+class ConversationRoundServiceDeletionTest
 {
     /** Stable owner used by every deletion assertion. */
     private static final long USER_ID = 7L;
@@ -37,13 +37,9 @@ class ConversationRoundDeletionServiceTest
     @Mock
     private ConversationMapper conversationMapper;
 
-    /** Round mapper used to load the complete active number set. */
+    /** Round mapper used for the active suffix read and set-based tombstone. */
     @Mock
     private ConversationRoundMapper conversationRoundMapper;
-
-    /** Atomic suffix tombstone boundary. */
-    @Mock
-    private ConversationRoundDeletionTransactionService conversationRoundDeletionTransactionService;
 
     /** Aggregate mutation lock shared with persistence. */
     @Mock
@@ -53,15 +49,15 @@ class ConversationRoundDeletionServiceTest
     @Mock
     private ConversationMutationLock.LockHandle lockHandle;
 
-    /** Read transaction used by the ownership check. */
+    /** Transaction enclosing ownership, suffix validation, and tombstoning. */
     @Mock
     private TransactionTemplate transactionTemplate;
 
-    /** Service under test. */
+    /** Consolidated Round service under test. */
     @InjectMocks
-    private ConversationRoundDeletionService conversationRoundDeletionService;
+    private ConversationRoundService conversationRoundService;
 
-    /** Configures the aggregate lock and executes read callbacks synchronously. */
+    /** Configures the aggregate lock and executes transaction callbacks synchronously. */
     @BeforeEach
     void configureTransactionBoundary()
     {
@@ -81,19 +77,18 @@ class ConversationRoundDeletionServiceTest
     {
         when(conversationRoundMapper.listActiveRoundNumbers("conv_delete"))
             .thenReturn(List.of(1L, 2L, 3L));
-        when(conversationRoundDeletionTransactionService.tombstoneRounds(
-            "conv_delete", List.of(3L, 2L), USER_ID)).thenReturn(true);
+        when(conversationRoundMapper.tombstoneRounds("conv_delete", List.of(3L, 2L), USER_ID))
+            .thenReturn(2);
 
-        RoundDeletionResult result = conversationRoundDeletionService.deleteRounds(
+        RoundDeletionResult result = conversationRoundService.deleteRounds(
             USER_ID, "conv_delete", List.of(2L, 3L));
 
         assertEquals(List.of(3L, 2L), result.deletedRoundNumbers());
         assertEquals(List.of(), result.failures());
-        verify(conversationRoundDeletionTransactionService)
-            .tombstoneRounds("conv_delete", List.of(3L, 2L), USER_ID);
+        verify(conversationRoundMapper).tombstoneRounds("conv_delete", List.of(3L, 2L), USER_ID);
     }
 
-    /** Confirms deleting a non-tail Round is rejected before any write. */
+    /** Confirms deleting a non-tail Round is rejected before the set-based write. */
     @Test
     void rejectsDeletionThatDoesNotEndAtTheLatestActiveRound()
     {
@@ -102,11 +97,11 @@ class ConversationRoundDeletionServiceTest
 
         RoundPersistenceException error = assertThrows(
             RoundPersistenceException.class,
-            () -> conversationRoundDeletionService.deleteRounds(USER_ID, "conv_delete", List.of(2L)));
+            () -> conversationRoundService.deleteRounds(USER_ID, "conv_delete", List.of(2L)));
 
         assertEquals(
             ConversationErrorCode.CONVERSATION_ERROR_CODE_DELETE_REQUIRES_TAIL_SUFFIX_VALUE,
             error.getCode());
-        verify(conversationRoundDeletionTransactionService, never()).tombstoneRounds(any(), any(), anyLong());
+        verify(conversationRoundMapper, never()).tombstoneRounds(any(), any(), anyLong());
     }
 }

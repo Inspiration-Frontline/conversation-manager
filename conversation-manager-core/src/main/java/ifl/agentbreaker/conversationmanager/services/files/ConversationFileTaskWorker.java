@@ -99,7 +99,7 @@ public class ConversationFileTaskWorker
      * Processing is claimed first so parser latency cannot starve newly uploaded files behind old
      * physical-cleanup work.
      */
-    @Scheduled(fixedDelayString = "${agent-breaker.files.task-poll-milliseconds:500}")
+    @Scheduled(fixedDelayString = "${agent-breaker.files.task-poll-milliseconds}")
     public void dispatchTasks()
     {
         Semaphore taskConcurrency = getConcurrency();
@@ -174,10 +174,6 @@ public class ConversationFileTaskWorker
                     sanitizedImage = conversationImageSanitizer.sanitize(fileResource, bytes);
                     extractionResult.metadata().setWidth(sanitizedImage.sourceWidth());
                     extractionResult.metadata().setHeight(sanitizedImage.sourceHeight());
-                    extractionResult = new FileExtractionResult(
-                        extractionResult.detectedMimeType(), extractionResult.sha256(), extractionResult.extractedText(),
-                        extractionResult.metadata(), extractionResult.truncated(),
-                        sanitizedImage.sourceWidth(), sanitizedImage.sourceHeight());
                     String derivativeKey = buildDerivativeKey(fileResource, sanitizedImage.extension());
                     conversationFileTaskService.prepareImageVariant(fileResource, derivativeKey);
                     putDerivative(fileResource.getBucketName(), derivativeKey, sanitizedImage);
@@ -265,12 +261,24 @@ public class ConversationFileTaskWorker
         }
     }
 
+    /**
+     * Identifies cleanup reasons that must retain files while a Round still references them.
+     *
+     * @param reason durable cleanup reason
+     * @return {@code true} unless the owner explicitly removed the file
+     */
     static boolean isReferenceProtectedCleanup(FileCleanupReason reason)
     {
         return reason != FileCleanupReason.USER_REMOVED;
     }
 
-    /** Uploads one verified derivative with an explicit response content type. */
+    /**
+     * Uploads one verified derivative with an explicit response content type.
+     *
+     * @param bucketName private OSS bucket receiving the derivative
+     * @param objectKey deterministic derivative object key
+     * @param image verified sanitized image payload
+     */
     private void putDerivative(String bucketName, String objectKey, SanitizedImage image)
     {
         ObjectMetadata metadata = new ObjectMetadata();
@@ -279,7 +287,13 @@ public class ConversationFileTaskWorker
         oss.putObject(bucketName, objectKey, new ByteArrayInputStream(image.bytes()), metadata);
     }
 
-    /** Builds a deterministic key adjacent to the immutable source object. */
+    /**
+     * Builds a deterministic key adjacent to the immutable source object.
+     *
+     * @param fileResource original resource defining the parent object path
+     * @param extension normalized derivative extension without a leading dot
+     * @return deterministic model-input object key
+     */
     static String buildDerivativeKey(FileResource fileResource, String extension)
     {
         int separator = fileResource.getObjectKey().lastIndexOf('/');
@@ -287,7 +301,12 @@ public class ConversationFileTaskWorker
         return parent + "/derived/model-input." + extension;
     }
 
-    /** Deletes a deterministic crash-left key even when no variant row was committed. */
+    /**
+     * Deletes a deterministic crash-left key even when no variant row was committed.
+     *
+     * @param fileResource original resource defining the parent object path and bucket
+     * @param extension possible derivative extension without a leading dot
+     */
     private void deleteCrashLeftDerivative(FileResource fileResource, String extension)
     {
         String objectKey = buildDerivativeKey(fileResource, extension);

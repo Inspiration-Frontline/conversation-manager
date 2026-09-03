@@ -1,5 +1,17 @@
-ALTER FUNCTION fork_conversation_history(VARCHAR, VARCHAR, BIGINT, BIGINT)
-    RENAME TO fork_conversation_history_without_files;
+DO $$
+BEGIN
+    IF TO_REGPROCEDURE(
+        'fork_conversation_history_without_files(character varying,character varying,bigint,bigint)') IS NULL THEN
+        IF TO_REGPROCEDURE(
+            'fork_conversation_history(character varying,character varying,bigint,bigint)') IS NULL THEN
+            RAISE EXCEPTION 'fork_conversation_history is missing';
+        END IF;
+
+        ALTER FUNCTION fork_conversation_history(VARCHAR, VARCHAR, BIGINT, BIGINT)
+            RENAME TO fork_conversation_history_without_files;
+    END IF;
+END;
+$$;
 
 CREATE OR REPLACE FUNCTION fork_conversation_history(
     p_source_conversation_id VARCHAR,

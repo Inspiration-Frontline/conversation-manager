@@ -8,7 +8,9 @@ import org.springframework.test.util.ReflectionTestUtils;
 
 import javax.imageio.ImageIO;
 import java.awt.Color;
+import java.awt.Graphics2D;
 import java.awt.image.BufferedImage;
+import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.nio.charset.StandardCharsets;
 
@@ -47,7 +49,7 @@ public class ConversationImageSanitizerTest
         source.setRGB(0, 0, new Color(20, 40, 60, 80).getRGB());
 
         SanitizedImage result = sanitizer.sanitize(file("png"), encode(source, "png"));
-        BufferedImage decoded = ImageIO.read(new java.io.ByteArrayInputStream(result.bytes()));
+        BufferedImage decoded = ImageIO.read(new ByteArrayInputStream(result.bytes()));
 
         assertEquals("image/png", result.mimeType());
         assertEquals(8, result.sourceWidth());
@@ -63,7 +65,7 @@ public class ConversationImageSanitizerTest
     public void appliesJpegExifOrientationAndRemovesMetadata() throws Exception
     {
         BufferedImage source = new BufferedImage(4, 2, BufferedImage.TYPE_INT_RGB);
-        java.awt.Graphics2D graphics = source.createGraphics();
+        Graphics2D graphics = source.createGraphics();
         try
         {
             graphics.fillRect(0, 0, 4, 2);
@@ -95,7 +97,7 @@ public class ConversationImageSanitizerTest
 
         assertEquals("image/jpeg", result.mimeType());
         assertEquals("jpg", result.extension());
-        assertNotNull(ImageIO.read(new java.io.ByteArrayInputStream(result.bytes())));
+        assertNotNull(ImageIO.read(new ByteArrayInputStream(result.bytes())));
     }
 
     @Test

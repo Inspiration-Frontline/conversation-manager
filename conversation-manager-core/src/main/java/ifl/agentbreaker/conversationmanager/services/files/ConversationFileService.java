@@ -665,7 +665,15 @@ public class ConversationFileService
         return oss.generatePresignedUrl(request).toString();
     }
 
-    /** Creates a short-lived signature for a server-owned derivative. */
+    /**
+     * Creates a short-lived signature for a server-owned derivative. Preview URLs request inline
+     * content disposition so browsers render the sanitized image instead of downloading it.
+     *
+     * @param variant authorized derivative whose object key is signed
+     * @param expiresAt exact signature expiry
+     * @param inline whether OSS should override content disposition to inline rendering
+     * @return signed OSS URL for the derivative
+     */
     private String createVariantUrl(FileResourceVariant variant, Instant expiresAt, boolean inline)
     {
         GeneratePresignedUrlRequest request = new GeneratePresignedUrlRequest(
@@ -680,7 +688,12 @@ public class ConversationFileService
         return oss.generatePresignedUrl(request).toString();
     }
 
-    /** Validates batch count, blanks, and duplicates before any authorization query. */
+    /**
+     * Validates batch count, blanks, and duplicates before any authorization query.
+     *
+     * @param fileIds browser-selected stable file identifiers
+     * @throws ServiceResponseException when the selection is empty, excessive, blank, or duplicated
+     */
     private void validatePreviewIds(List<String> fileIds)
     {
         if (fileIds == null || fileIds.isEmpty() || fileIds.size() > conversationFileProperties.getMaxCountPerMessage())
@@ -690,7 +703,12 @@ public class ConversationFileService
             throw new ServiceResponseException(ERROR_INVALID_FILE, "Preview file IDs must be non-empty and unique.");
     }
 
-    /** Indexes one set-based derivative query by original resource identity. */
+    /**
+     * Indexes one set-based derivative query by original resource identity.
+     *
+     * @param resourceIds database identities authorized for preview
+     * @return ready derivatives keyed by original file-resource identity
+     */
     private Map<Long, FileResourceVariant> indexReadyVariants(List<Long> resourceIds)
     {
         Map<Long, FileResourceVariant> variants = new LinkedHashMap<>();
@@ -700,7 +718,14 @@ public class ConversationFileService
         return variants;
     }
 
-    /** Requires one ready derivative without falling back to the original object. */
+    /**
+     * Requires one ready derivative without falling back to the original object.
+     *
+     * @param variants ready derivatives keyed by original resource identity
+     * @param resourceId original resource whose derivative is required
+     * @return authorized ready derivative
+     * @throws ServiceResponseException when the sanitized derivative is not ready
+     */
     private FileResourceVariant requireVariant(Map<Long, FileResourceVariant> variants, long resourceId)
     {
         FileResourceVariant variant = variants.get(resourceId);
@@ -709,7 +734,14 @@ public class ConversationFileService
         return variant;
     }
 
-    /** Projects a verified derivative to the public preview contract. */
+    /**
+     * Projects a verified derivative to the public preview contract.
+     *
+     * @param fileId public stable file identifier
+     * @param variant authorized ready derivative
+     * @param expiresAt exact preview URL expiry
+     * @return browser preview contract containing dimensions and a signed inline URL
+     */
     private FilePreviewUrl toPreviewUrl(String fileId, FileResourceVariant variant, Instant expiresAt)
     {
         FilePreviewUrl result = new FilePreviewUrl();
@@ -722,7 +754,13 @@ public class ConversationFileService
         return result;
     }
 
-    /** Creates a browser download signature whose response restores the original filename. */
+    /**
+     * Creates a browser download signature whose response restores the original filename.
+     *
+     * @param fileResource authorized original resource
+     * @param expiresAt exact download URL expiry
+     * @return signed original-object URL with attachment response headers
+     */
     private String createDownloadUrl(FileResource fileResource, Instant expiresAt)
     {
         GeneratePresignedUrlRequest request = new GeneratePresignedUrlRequest(
@@ -734,6 +772,12 @@ public class ConversationFileService
         return oss.generatePresignedUrl(request).toString();
     }
 
+    /**
+     * Builds an injection-safe attachment disposition with ASCII and RFC 5987 filename forms.
+     *
+     * @param filename original user-visible filename
+     * @return response header value preserving Unicode names without CR/LF injection
+     */
     static String buildAttachmentContentDisposition(String filename)
     {
         String normalized = StringUtils.hasText(filename) ? filename.trim() : "download";

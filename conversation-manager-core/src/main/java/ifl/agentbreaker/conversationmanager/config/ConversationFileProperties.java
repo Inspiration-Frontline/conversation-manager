@@ -27,6 +27,8 @@ public class ConversationFileProperties
     private int maxExtractedCharacters = 300_000;
     /** Maximum concurrent background file tasks owned by this process. */
     private int taskConcurrency = 8;
+    /** Delay in milliseconds between durable task-queue polls. */
+    private int taskPollMilliseconds = 500;
     /** Duration of a processing or cleanup task lease before another worker may recover it. */
     private int taskLeaseSeconds = 300;
     /** Duration for which a prepared file selection remains reserved for one request. */
@@ -55,7 +57,7 @@ public class ConversationFileProperties
     @PostConstruct
     public void normalizeConfiguredTypes()
     {
-        if (maxSourcePixels <= 0 || maxSourceEdgePixels <= 0 || maxModelInputEdgePixels <= 0
+        if (taskPollMilliseconds <= 0 || maxSourcePixels <= 0 || maxSourceEdgePixels <= 0 || maxModelInputEdgePixels <= 0
             || imageProcessingConcurrency <= 0 || jpegQuality <= 0F || jpegQuality > 1F)
             throw new IllegalStateException("Image processing limits must be positive and JPEG quality must be in (0, 1].");
         Set<String> normalizedExtensions = new LinkedHashSet<>();

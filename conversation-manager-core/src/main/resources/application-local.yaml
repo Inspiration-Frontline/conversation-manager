@@ -36,6 +36,7 @@ agent-breaker:
         orphan-ttl-seconds: ${AGENT_BREAKER_FILE_ORPHAN_TTL_SECONDS:86400}
         max-extracted-characters: ${AGENT_BREAKER_FILE_MAX_EXTRACTED_CHARACTERS:300000}
         task-concurrency: ${AGENT_BREAKER_FILE_TASK_CONCURRENCY:8}
+        task-poll-milliseconds: ${AGENT_BREAKER_FILE_TASK_POLL_MILLISECONDS:500}
         task-lease-seconds: ${AGENT_BREAKER_FILE_TASK_LEASE_SECONDS:300}
         reservation-seconds: ${AGENT_BREAKER_FILE_RESERVATION_SECONDS:14400}
         max-source-pixels: ${AGENT_BREAKER_IMAGE_MAX_SOURCE_PIXELS:40000000}
