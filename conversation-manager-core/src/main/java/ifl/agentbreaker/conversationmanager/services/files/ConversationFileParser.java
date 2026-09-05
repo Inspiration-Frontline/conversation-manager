@@ -71,15 +71,15 @@ public class ConversationFileParser
             // Detection uses file bytes plus the original filename; the declared browser MIME type
             // is not trusted because it is supplied by the client.
             String detectedMimeType = tika.detect(bytes, fileResource.getOriginalFilename());
+
             if (!ConversationFileTypeResolver.isMimeTypeCompatible(
                 fileResource.getFileExtension(), detectedMimeType))
-                throw new FileProcessingException(
-                    "FILE_TYPE_MISMATCH",
-                    "The uploaded file content does not match its filename extension.");
+                throw new FileProcessingException("FILE_TYPE_MISMATCH", "The uploaded file content does not match its filename extension.");
 
             // Recompute SHA-256 from the OSS bytes so confirmation and asynchronous processing are
             // tied to exactly the same immutable payload.
             String sha256 = HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(bytes));
+
             if (fileResource.getSha256() != null && !fileResource.getSha256().equalsIgnoreCase(sha256))
                 throw new FileProcessingException("CHECKSUM_MISMATCH", "The uploaded file checksum does not match.");
 
@@ -90,6 +90,7 @@ public class ConversationFileParser
             // Image raster validation and dimensions are owned by ConversationImageSanitizer so
             // every READY image necessarily has a verified MODEL_INPUT derivative.
             String extractedText = "";
+
             if (fileResource.getKind() != ConversationFileKind.IMAGE)
                 extractedText = extractText(fileResource, bytes, metadata);
 
@@ -102,6 +103,7 @@ public class ConversationFileParser
             metadata.setTextExtractionStrategy(truncatedText.truncated()
                 ? FileTextExtractionStrategy.BALANCED_EXCERPTS
                 : FileTextExtractionStrategy.FULL_TEXT);
+
             return new FileExtractionResult(
                 detectedMimeType,
                 sha256,
@@ -161,18 +163,22 @@ public class ConversationFileParser
             metadata.setPageCount(document.getNumberOfPages());
             PDFTextStripper stripper = new PDFTextStripper();
             StringBuilder builder = new StringBuilder();
+
             for (int page = 1; page <= document.getNumberOfPages(); page++)
             {
                 stripper.setStartPage(page);
                 stripper.setEndPage(page);
                 String pageText = stripper.getText(document).trim();
+
                 if (!pageText.isEmpty())
                     builder.append("\n\n[Page ").append(page).append("]\n").append(pageText);
             }
+
             if (builder.toString().isBlank())
                 throw new FileProcessingException(
                     "SCANNED_PDF_UNSUPPORTED",
                     "Scanned PDFs without a readable text layer are not supported in the current version.");
+
             return builder.toString().trim();
         }
     }
@@ -188,17 +194,21 @@ public class ConversationFileParser
     private String extractDocx(byte[] bytes, FileExtractionMetadata metadata) throws Exception
     {
         configureZipSafety();
+
         try (XWPFDocument document = new XWPFDocument(new ByteArrayInputStream(bytes)))
         {
             metadata.setParagraphCount(document.getParagraphs().size());
             metadata.setTableCount(document.getTables().size());
             StringBuilder builder = new StringBuilder();
+
             for (XWPFParagraph paragraph : document.getParagraphs())
             {
                 String text = paragraph.getText().trim();
+
                 if (!text.isEmpty())
                 {
                     String style = paragraph.getStyle();
+
                     if (style != null && style.toLowerCase().startsWith("heading"))
                         builder.append('[').append(style).append("] ");
                     else if (paragraph.getNumID() != null)
@@ -206,6 +216,7 @@ public class ConversationFileParser
                     builder.append(text).append('\n');
                 }
             }
+
             int tableNumber = 0;
             for (XWPFTable table : document.getTables())
             {
@@ -215,6 +226,7 @@ public class ConversationFileParser
                     String.join(" | ", row.getTableCells().stream().map(cell -> cell.getText().trim()).toList()))
                     .append('\n'));
             }
+
             return builder.toString().trim();
         }
     }
@@ -231,15 +243,18 @@ public class ConversationFileParser
     private String extractXlsx(byte[] bytes, FileExtractionMetadata metadata) throws Exception
     {
         configureZipSafety();
+
         try (Workbook workbook = WorkbookFactory.create(new ByteArrayInputStream(bytes)))
         {
             metadata.setSheetCount(workbook.getNumberOfSheets());
             DataFormatter formatter = new DataFormatter();
             formatter.setUseCachedValuesForFormulaCells(true);
             StringBuilder builder = new StringBuilder();
+
             for (Sheet sheet : workbook)
             {
                 builder.append("\n\n[Sheet: ").append(sheet.getSheetName()).append("]\n");
+
                 for (Row row : sheet)
                 {
                     for (Cell cell : row)
@@ -248,13 +263,16 @@ public class ConversationFileParser
                         if (!value.isBlank())
                         {
                             builder.append(cell.getAddress().formatAsString()).append(": ").append(value);
+
                             if (cell.getCellType() == CellType.FORMULA)
                                 builder.append(" [formula: ").append(cell.getCellFormula()).append(']');
+
                             builder.append('\n');
                         }
                     }
                 }
             }
+
             return builder.toString().trim();
         }
     }
@@ -271,17 +289,20 @@ public class ConversationFileParser
     private String extractPptx(byte[] bytes, FileExtractionMetadata metadata) throws Exception
     {
         configureZipSafety();
+
         try (XMLSlideShow slideShow = new XMLSlideShow(new ByteArrayInputStream(bytes)))
         {
             metadata.setSlideCount(slideShow.getSlides().size());
             metadata.setEmbeddedImageCount(slideShow.getPictureData().size());
             StringBuilder builder = new StringBuilder();
             int slideNumber = 0;
+
             for (XSLFSlide slide : slideShow.getSlides())
             {
                 slideNumber++;
                 builder.append("\n\n[Slide ").append(slideNumber).append("]\n");
                 appendTextShapes(builder, slide.getShapes());
+
                 if (slide.getNotes() != null)
                 {
                     builder.append("[Notes]\n");
@@ -291,12 +312,14 @@ public class ConversationFileParser
             if (!slideShow.getPictureData().isEmpty())
             {
                 builder.append("\n\n[Embedded images]\n");
+
                 for (XSLFPictureData pictureData : slideShow.getPictureData())
                     builder.append(pictureData.getFileName())
                         .append(" (")
                         .append(pictureData.getContentType())
                         .append(")\n");
             }
+
             return builder.toString().trim();
         }
     }
@@ -315,6 +338,7 @@ public class ConversationFileParser
             if (shape instanceof XSLFTextShape textShape)
             {
                 String text = textShape.getText().trim();
+
                 if (!text.isEmpty())
                     builder.append(text).append('\n');
             }
@@ -356,10 +380,12 @@ public class ConversationFileParser
     private TruncatedText retainTextWithinLimit(String text)
     {
         int maximum = conversationFileProperties.getMaxExtractedCharacters();
+
         if (text.length() <= maximum)
             return new TruncatedText(text, false);
 
         int markerCharacters = TRUNCATION_MARKER.length() * 2;
+
         if (maximum <= markerCharacters + 3)
             return new TruncatedText(text.substring(0, maximum) + TRUNCATION_MARKER, true);
 
@@ -369,6 +395,7 @@ public class ConversationFileParser
         int tailLength = retainedCharacters - headLength - middleLength;
         int middleStart = Math.max(headLength, (text.length() - middleLength) / 2);
         int tailStart = text.length() - tailLength;
+
         return new TruncatedText(
             text.substring(0, headLength)
                 + TRUNCATION_MARKER

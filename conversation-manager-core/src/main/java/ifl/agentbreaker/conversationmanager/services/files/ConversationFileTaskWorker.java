@@ -104,22 +104,26 @@ public class ConversationFileTaskWorker
     {
         Semaphore taskConcurrency = getConcurrency();
         int available = taskConcurrency.availablePermits();
+
         if (available <= 0)
             return;
 
         String processingLeaseToken = UUID.randomUUID().toString();
         List<FileProcessingTask> processingTasks = fileProcessingTaskMapper.claimTasks(
             processingLeaseToken, conversationFileProperties.getTaskLeaseSeconds(), available);
+
         for (FileProcessingTask task : processingTasks)
             submit(taskConcurrency, () -> processFile(task));
 
         available = taskConcurrency.availablePermits();
+
         if (available <= 0)
             return;
 
         String cleanupLeaseToken = UUID.randomUUID().toString();
         List<FileCleanupTask> cleanupTasks = fileCleanupTaskMapper.claimTasks(
             cleanupLeaseToken, conversationFileProperties.getTaskLeaseSeconds(), available);
+
         for (FileCleanupTask task : cleanupTasks)
             submit(taskConcurrency, () -> cleanupFile(task));
     }
@@ -136,28 +140,34 @@ public class ConversationFileTaskWorker
         // A renewable lease makes processing restart-safe: another instance can reclaim the task if
         // this worker dies, while a healthy worker prevents duplicate parsing during long documents.
         ScheduledFuture<?> leaseRenewal = renewProcessingLease(task);
+
         try
         {
             // Recheck the durable resource state after claiming the task. A retry, deletion, or a
             // competing worker may have changed it between polling and execution.
             FileResource fileResource = fileResourceMapper.getFileResourceById(task.getFileResourceId());
+
             if (fileResource == null)
             {
                 fileProcessingTaskMapper.markFailed(task.getId(), task.getLeaseToken(), "File resource does not exist.");
                 return;
             }
+
             if (fileResource.getStatus() == ConversationFileStatus.VALIDATING
                 && fileResourceMapper.markProcessing(fileResource.getId(), fileResource.getCreatorId()) != 1)
             {
                 fileProcessingTaskMapper.markCompleted(task.getId(), task.getLeaseToken());
                 return;
             }
+
             if (fileResource.getStatus() != ConversationFileStatus.VALIDATING
                 && fileResource.getStatus() != ConversationFileStatus.PROCESSING)
             {
                 fileProcessingTaskMapper.markCompleted(task.getId(), task.getLeaseToken());
+
                 return;
             }
+
             fileResource.setStatus(ConversationFileStatus.PROCESSING);
 
             try
@@ -169,6 +179,7 @@ public class ConversationFileTaskWorker
                 fileContentSecurityScanner.scan(bytes);
                 FileExtractionResult extractionResult = conversationFileParser.parse(fileResource, bytes);
                 SanitizedImage sanitizedImage = null;
+
                 if (fileResource.getKind() == ConversationFileKind.IMAGE)
                 {
                     sanitizedImage = conversationImageSanitizer.sanitize(fileResource, bytes);
@@ -210,19 +221,22 @@ public class ConversationFileTaskWorker
     private void cleanupFile(FileCleanupTask task)
     {
         ScheduledFuture<?> leaseRenewal = renewCleanupLease(task);
+
         try
         {
             FileResource fileResource = fileResourceMapper.getFileResourceById(task.getFileResourceId());
+
             if (fileResource == null || fileResource.isDeleted())
             {
                 fileCleanupTaskMapper.markCompleted(task.getId(), task.getLeaseToken());
+
                 return;
             }
 
             Instant now = Instant.now();
-            boolean activelyReserved = fileResource.getReservedUntil() != null
-                && fileResource.getReservedUntil().isAfter(now);
+            boolean activelyReserved = fileResource.getReservedUntil() != null && fileResource.getReservedUntil().isAfter(now);
             boolean referenceProtected = isReferenceProtectedCleanup(task.getReason());
+
             if (activelyReserved || (referenceProtected && fileResourceMapper.hasRoundReferences(fileResource.getId())))
             {
                 fileCleanupTaskMapper.reschedule(
@@ -230,19 +244,23 @@ public class ConversationFileTaskWorker
                     task.getLeaseToken(),
                     conversationFileProperties.getOrphanTtlSeconds(),
                     "Cleanup deferred because the file is referenced.");
+
                 return;
             }
 
             try
             {
                 List<FileResourceVariant> variants = fileResourceVariantMapper.listVariants(fileResource.getId());
+
                 for (FileResourceVariant variant : variants)
                 {
                     if (oss.doesObjectExist(variant.getBucketName(), variant.getObjectKey()))
                         oss.deleteObject(variant.getBucketName(), variant.getObjectKey());
                 }
+
                 deleteCrashLeftDerivative(fileResource, "png");
                 deleteCrashLeftDerivative(fileResource, "jpg");
+
                 if (oss.doesObjectExist(fileResource.getBucketName(), fileResource.getObjectKey()))
                     oss.deleteObject(fileResource.getBucketName(), fileResource.getObjectKey());
                 conversationFileTaskService.completeCleanup(task.getId(), task.getLeaseToken(), fileResource);
@@ -251,8 +269,7 @@ public class ConversationFileTaskWorker
             {
                 log.warn("File cleanup failed for {}.", fileResource.getFileId(), e);
                 long retryDelay = Math.min(300, Math.max(5, 1L << Math.min(task.getAttempt(), 8)));
-                fileCleanupTaskMapper.reschedule(
-                    task.getId(), task.getLeaseToken(), retryDelay, "OSS cleanup failed; retry scheduled.");
+                fileCleanupTaskMapper.reschedule(task.getId(), task.getLeaseToken(), retryDelay, "OSS cleanup failed; retry scheduled.");
             }
         }
         finally
@@ -298,6 +315,7 @@ public class ConversationFileTaskWorker
     {
         int separator = fileResource.getObjectKey().lastIndexOf('/');
         String parent = separator < 0 ? fileResource.getObjectKey() : fileResource.getObjectKey().substring(0, separator);
+
         return parent + "/derived/model-input." + extension;
     }
 
@@ -310,6 +328,7 @@ public class ConversationFileTaskWorker
     private void deleteCrashLeftDerivative(FileResource fileResource, String extension)
     {
         String objectKey = buildDerivativeKey(fileResource, extension);
+
         if (oss.doesObjectExist(fileResource.getBucketName(), objectKey))
             oss.deleteObject(fileResource.getBucketName(), objectKey);
     }
@@ -324,6 +343,7 @@ public class ConversationFileTaskWorker
     private ScheduledFuture<?> renewProcessingLease(FileProcessingTask task)
     {
         long intervalSeconds = Math.max(1, conversationFileProperties.getTaskLeaseSeconds() / 3L);
+
         return conversationFileLeaseExecutor.scheduleAtFixedRate(() ->
         {
             try
@@ -348,6 +368,7 @@ public class ConversationFileTaskWorker
     private ScheduledFuture<?> renewCleanupLease(FileCleanupTask task)
     {
         long intervalSeconds = Math.max(1, conversationFileProperties.getTaskLeaseSeconds() / 3L);
+
         return conversationFileLeaseExecutor.scheduleAtFixedRate(() ->
         {
             try
@@ -374,12 +395,15 @@ public class ConversationFileTaskWorker
     private byte[] readObject(FileResource fileResource) throws FileProcessingException
     {
         int maximumBytes = Math.toIntExact(conversationFileProperties.getMaxBytes());
+
         try (OSSObject object = oss.getObject(fileResource.getBucketName(), fileResource.getObjectKey());
              InputStream input = object.getObjectContent())
         {
             byte[] bytes = input.readNBytes(maximumBytes + 1);
+
             if (bytes.length > maximumBytes)
                 throw new FileProcessingException("FILE_TOO_LARGE", "The uploaded file exceeds the configured size limit.");
+
             return bytes;
         }
         catch (FileProcessingException e)
@@ -403,6 +427,7 @@ public class ConversationFileTaskWorker
     {
         if (!taskConcurrency.tryAcquire())
             return;
+
         conversationFileTaskExecutor.submit(() ->
         {
             try
@@ -425,11 +450,13 @@ public class ConversationFileTaskWorker
     private Semaphore getConcurrency()
     {
         Semaphore current = concurrency;
+
         if (current == null)
         {
             synchronized (this)
             {
                 current = concurrency;
+
                 if (current == null)
                 {
                     current = new Semaphore(Math.max(1, conversationFileProperties.getTaskConcurrency()));
@@ -437,6 +464,7 @@ public class ConversationFileTaskWorker
                 }
             }
         }
+
         return current;
     }
 }

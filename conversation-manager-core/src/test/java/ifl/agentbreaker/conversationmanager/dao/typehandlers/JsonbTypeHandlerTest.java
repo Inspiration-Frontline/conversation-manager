@@ -14,11 +14,8 @@ import java.sql.ResultSet;
 import java.sql.PreparedStatement;
 import java.util.List;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNull;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
+import org.junit.jupiter.api.Assertions;
+import org.mockito.Mockito;
 
 class JsonbTypeHandlerTest
 {
@@ -35,60 +32,60 @@ class JsonbTypeHandlerTest
     void deserializesNonGenericValueFromClassLiteral()
         throws Exception
     {
-        ResultSet resultSet = mock(ResultSet.class);
-        when(resultSet.getString("metadata")).thenReturn("{\"kind\":\"TEXT\",\"pageCount\":3}");
+        ResultSet resultSet = Mockito.mock(ResultSet.class);
+        Mockito.when(resultSet.getString("metadata")).thenReturn("{\"kind\":\"TEXT\",\"pageCount\":3}");
 
         FileExtractionMetadata value = new FileExtractionMetadataTypeHandler()
             .getNullableResult(resultSet, "metadata");
 
-        assertEquals(ConversationFileKind.TEXT, value.getKind());
-        assertEquals(3, value.getPageCount());
+        Assertions.assertEquals(ConversationFileKind.TEXT, value.getKind());
+        Assertions.assertEquals(3, value.getPageCount());
     }
 
     @Test
     void deserializesGenericCollectionFromTypeReference()
         throws Exception
     {
-        ResultSet resultSet = mock(ResultSet.class);
-        when(resultSet.getString("bindings"))
+        ResultSet resultSet = Mockito.mock(ResultSet.class);
+        Mockito.when(resultSet.getString("bindings"))
             .thenReturn("[{\"serverId\":\"deepwiki\",\"required\":true}]");
 
         List<McpServerBinding> values = new McpServerBindingsTypeHandler()
             .getNullableResult(resultSet, "bindings");
 
-        assertEquals(List.of(new McpServerBinding("deepwiki", true)), values);
+        Assertions.assertEquals(List.of(new McpServerBinding("deepwiki", true)), values);
     }
 
     @Test
     void preservesEachHandlersNullColumnSemantics()
         throws Exception
     {
-        ResultSet resultSet = mock(ResultSet.class);
+        ResultSet resultSet = Mockito.mock(ResultSet.class);
 
-        assertNull(new FileExtractionMetadataTypeHandler().getNullableResult(resultSet, "metadata"));
-        assertEquals(List.of(), new McpServerBindingsTypeHandler().getNullableResult(resultSet, "bindings"));
+        Assertions.assertNull(new FileExtractionMetadataTypeHandler().getNullableResult(resultSet, "metadata"));
+        Assertions.assertEquals(List.of(), new McpServerBindingsTypeHandler().getNullableResult(resultSet, "bindings"));
     }
 
     @Test
     void mapsToolCallTypeToItsProviderWireValue()
         throws Exception
     {
-        PreparedStatement statement = mock(PreparedStatement.class);
+        PreparedStatement statement = Mockito.mock(PreparedStatement.class);
         ToolCallTypeTypeHandler handler = new ToolCallTypeTypeHandler();
 
         handler.setNonNullParameter(statement, 1, ToolCallType.FUNCTION, null);
 
-        verify(statement).setString(1, "function");
+        Mockito.verify(statement).setString(1, "function");
     }
 
     @Test
     void parsesToolCallTypeFromItsProviderWireValue()
         throws Exception
     {
-        ResultSet resultSet = mock(ResultSet.class);
-        when(resultSet.getString("type")).thenReturn("function");
+        ResultSet resultSet = Mockito.mock(ResultSet.class);
+        Mockito.when(resultSet.getString("type")).thenReturn("function");
 
-        assertEquals(ToolCallType.FUNCTION,
+        Assertions.assertEquals(ToolCallType.FUNCTION,
             new ToolCallTypeTypeHandler().getNullableResult(resultSet, "type"));
     }
 }

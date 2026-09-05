@@ -27,16 +27,9 @@ import org.springframework.transaction.support.TransactionTemplate;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyLong;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.times;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
+import org.junit.jupiter.api.Assertions;
+import org.mockito.ArgumentMatchers;
+import org.mockito.Mockito;
 
 @ExtendWith(MockitoExtension.class)
 class ConversationRoundProgressServiceTest
@@ -58,11 +51,12 @@ class ConversationRoundProgressServiceTest
     @BeforeEach
     void executeTransactionCallbacks()
     {
-        when(mutationLock.acquire("conv_progress")).thenReturn(lockHandle);
-        when(transactionTemplate.execute(any())).thenAnswer(invocation ->
+        Mockito.when(mutationLock.acquire("conv_progress")).thenReturn(lockHandle);
+        Mockito.when(transactionTemplate.execute(ArgumentMatchers.any())).thenAnswer(invocation ->
         {
             TransactionCallback<?> callback = invocation.getArgument(0);
-            return callback.doInTransaction(mock(TransactionStatus.class));
+
+            return callback.doInTransaction(Mockito.mock(TransactionStatus.class));
         });
     }
 
@@ -74,27 +68,28 @@ class ConversationRoundProgressServiceTest
         ConversationToolDispatch dispatch = new ConversationToolDispatch();
         AtomicReference<ConversationRoundMutation> recorded = new AtomicReference<>();
 
-        when(conversationMapper.lockConversationByIdAndUser("conv_progress", 7L)).thenReturn(new Conversation());
-        when(roundMapper.getRound("conv_progress", 1L)).thenReturn(round);
-        when(mutationMapper.getMutation(42L, "mutation-1")).thenAnswer(invocation -> recorded.get());
-        when(progressMapper.toDispatches(7L, 42L, request.getDispatchEvidenceList())).thenReturn(List.of(dispatch));
-        when(dispatchMapper.upsertDispatchEvidence(List.of(dispatch))).thenReturn(1);
-        when(roundMapper.advanceRevision(42L, 1L, 7L)).thenReturn(1);
-        when(mutationMapper.insertMutation(any())).thenAnswer(invocation ->
+        Mockito.when(conversationMapper.lockConversationByIdAndUser("conv_progress", 7L)).thenReturn(new Conversation());
+        Mockito.when(roundMapper.getRound("conv_progress", 1L)).thenReturn(round);
+        Mockito.when(mutationMapper.getMutation(42L, "mutation-1")).thenAnswer(invocation -> recorded.get());
+        Mockito.when(progressMapper.toDispatches(7L, 42L, request.getDispatchEvidenceList())).thenReturn(List.of(dispatch));
+        Mockito.when(dispatchMapper.upsertDispatchEvidence(List.of(dispatch))).thenReturn(1);
+        Mockito.when(roundMapper.advanceRevision(42L, 1L, 7L)).thenReturn(1);
+        Mockito.when(mutationMapper.insertMutation(ArgumentMatchers.any())).thenAnswer(invocation ->
         {
             recorded.set(invocation.getArgument(0));
+
             return 1;
         });
 
         ConversationRoundProgressService.MutationOutcome first = progressService.append(request);
         ConversationRoundProgressService.MutationOutcome replay = progressService.append(request);
 
-        assertEquals(2L, first.revision());
-        assertTrue(replay.idempotentReplay());
-        assertEquals(first.revision(), replay.revision());
-        verify(dispatchMapper, times(1)).upsertDispatchEvidence(List.of(dispatch));
-        verify(roundMapper, times(1)).advanceRevision(42L, 1L, 7L);
-        verify(mutationMapper, times(1)).insertMutation(any());
+        Assertions.assertEquals(2L, first.revision());
+        Assertions.assertTrue(replay.idempotentReplay());
+        Assertions.assertEquals(first.revision(), replay.revision());
+        Mockito.verify(dispatchMapper, Mockito.times(1)).upsertDispatchEvidence(List.of(dispatch));
+        Mockito.verify(roundMapper, Mockito.times(1)).advanceRevision(42L, 1L, 7L);
+        Mockito.verify(mutationMapper, Mockito.times(1)).insertMutation(ArgumentMatchers.any());
     }
 
     @Test
@@ -102,17 +97,17 @@ class ConversationRoundProgressServiceTest
     {
         AppendConversationRoundProgressRequest request = dispatchRequest(1L, "mutation-stale");
         ConversationRound round = inProgressRound(42L, 2L);
-        when(conversationMapper.lockConversationByIdAndUser("conv_progress", 7L)).thenReturn(new Conversation());
-        when(roundMapper.getRound("conv_progress", 1L)).thenReturn(round);
+        Mockito.when(conversationMapper.lockConversationByIdAndUser("conv_progress", 7L)).thenReturn(new Conversation());
+        Mockito.when(roundMapper.getRound("conv_progress", 1L)).thenReturn(round);
 
-        RoundPersistenceException error = assertThrows(
+        RoundPersistenceException error = Assertions.assertThrows(
             RoundPersistenceException.class,
             () -> progressService.append(request));
 
-        assertEquals("expected_revision does not match the committed Round revision.", error.getMessage());
-        verify(progressMapper, never()).toDispatches(anyLong(), anyLong(), any());
-        verify(dispatchMapper, never()).upsertDispatchEvidence(any());
-        verify(roundMapper, never()).advanceRevision(anyLong(), anyLong(), anyLong());
+        Assertions.assertEquals("expected_revision does not match the committed Round revision.", error.getMessage());
+        Mockito.verify(progressMapper, Mockito.never()).toDispatches(ArgumentMatchers.anyLong(), ArgumentMatchers.anyLong(), ArgumentMatchers.any());
+        Mockito.verify(dispatchMapper, Mockito.never()).upsertDispatchEvidence(ArgumentMatchers.any());
+        Mockito.verify(roundMapper, Mockito.never()).advanceRevision(ArgumentMatchers.anyLong(), ArgumentMatchers.anyLong(), ArgumentMatchers.anyLong());
     }
 
     private AppendConversationRoundProgressRequest dispatchRequest(long expectedRevision, String mutationId)
@@ -143,6 +138,7 @@ class ConversationRoundProgressServiceTest
         round.setId(roundId);
         round.setStatus(ConversationRoundStatus.IN_PROGRESS);
         round.setRevision(revision);
+
         return round;
     }
 }

@@ -38,8 +38,10 @@ public final class ConversationFileTypeResolver
     {
         String normalized = originalFilename.replace('\\', '/');
         int separator = normalized.lastIndexOf('/');
+
         if (separator >= 0)
             normalized = normalized.substring(separator + 1);
+
         return normalized.trim();
     }
 
@@ -50,8 +52,10 @@ public final class ConversationFileTypeResolver
     public static String getExtension(String filename)
     {
         int dot = filename.lastIndexOf('.');
+
         if (dot < 0 || dot == filename.length() - 1)
             return "";
+
         return filename.substring(dot + 1).toLowerCase(Locale.ROOT);
     }
 
@@ -81,8 +85,10 @@ public final class ConversationFileTypeResolver
     public static boolean isMimeTypeCompatible(String extension, String mimeType)
     {
         Set<String> allowedMimeTypes = MIME_TYPES_BY_EXTENSION.get(extension);
+
         if (allowedMimeTypes == null || mimeType == null)
             return false;
+
         String normalizedMimeType = mimeType.toLowerCase(Locale.ROOT).split(";", 2)[0].trim();
         return allowedMimeTypes.contains(normalizedMimeType);
     }

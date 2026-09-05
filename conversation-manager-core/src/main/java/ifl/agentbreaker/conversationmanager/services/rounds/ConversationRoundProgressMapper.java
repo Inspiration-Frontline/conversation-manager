@@ -36,10 +36,12 @@ class ConversationRoundProgressMapper
         round.setConversationId(request.getConversationId());
         round.setRoundNumber(request.getRoundNumber());
         round.setTraceId(request.getTraceId());
+
         if (request.getUserRequest().getContentPartsCount() > 0)
             round.setUserRequestContentParts(serializeContentParts(request.getUserRequest().getContentPartsList()));
         else
             round.setUserRequestContent(request.getUserRequest().getContent());
+
         round.setStatus(ConversationRoundStatus.IN_PROGRESS);
         round.setErrorMessage("");
         round.setStartTime(Instant.ofEpochMilli(request.getStartTime()));
@@ -49,6 +51,7 @@ class ConversationRoundProgressMapper
         round.setAgentName(request.getAgentIdentity().getName());
         round.setAgentVersion(request.getAgentIdentity().getVersion());
         round.setMcpServerBindings(toMcpServerBindings(request.getMcpServerBindingsList()));
+
         return round;
     }
 
@@ -64,6 +67,7 @@ class ConversationRoundProgressMapper
     List<ConversationToolDispatch> toDispatches(long userId, long roundId, List<ToolDispatchEvidence> evidence)
     {
         List<ConversationToolDispatch> rows = new ArrayList<>();
+
         for (ToolDispatchEvidence item : evidence)
         {
             ConversationToolDispatch row = new ConversationToolDispatch();
@@ -92,10 +96,12 @@ class ConversationRoundProgressMapper
     String serializeContentParts(List<ContentPart> contentParts)
     {
         List<Map<String, Object>> values = new ArrayList<>();
+
         for (ContentPart contentPart : contentParts)
         {
             Map<String, Object> value = new LinkedHashMap<>();
             value.put("type", contentPart.getType());
+
             if (contentPart.getType().equals("text"))
                 value.put("text", contentPart.getText());
             else
@@ -105,16 +111,20 @@ class ConversationRoundProgressMapper
                 file.put("detail", contentPart.getFileUrl().getDetail());
                 value.put("file_url", file);
             }
+
             values.add(value);
         }
+
         return jsonSerializer.serialize(values, "Round content parts");
     }
 
     List<McpServerBinding> toMcpServerBindings(List<McpServerBindingSnapshot> bindings)
     {
         List<McpServerBinding> values = new ArrayList<>();
+
         for (McpServerBindingSnapshot binding : bindings)
             values.add(new McpServerBinding(binding.getServerId(), binding.getRequired()));
+
         return List.copyOf(values);
     }
 }

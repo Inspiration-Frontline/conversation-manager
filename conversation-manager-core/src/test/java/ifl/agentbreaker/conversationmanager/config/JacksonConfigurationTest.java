@@ -4,7 +4,7 @@ import org.junit.jupiter.api.Test;
 
 import java.time.Instant;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
+import org.junit.jupiter.api.Assertions;
 
 class JacksonConfigurationTest
 {
@@ -16,6 +16,6 @@ class JacksonConfigurationTest
             .conversationManagerObjectMapper()
             .writeValueAsString(Instant.parse("2026-07-20T15:30:45.123Z"));
 
-        assertEquals("\"2026-07-20T15:30:45.123Z\"", serialized);
+        Assertions.assertEquals("\"2026-07-20T15:30:45.123Z\"", serialized);
     }
 }

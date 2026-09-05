@@ -34,6 +34,7 @@ public enum ShareExpiry
     {
         if (value == null || value.isBlank())
             return SEVEN_DAYS;
+
         return ShareExpiry.valueOf(value.trim().toUpperCase().replace('-', '_'));
     }
 }

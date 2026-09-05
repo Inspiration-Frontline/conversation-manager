@@ -3,22 +3,21 @@ package ifl.agentbreaker.conversationmanager.services.files;
 import ifl.agentbreaker.conversationmanager.domain.constants.FileCleanupReason;
 import org.junit.jupiter.api.Test;
 
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import org.junit.jupiter.api.Assertions;
 
 class ConversationFileTaskWorkerTest
 {
     @Test
     void explicitOwnerRemovalOverridesHistoricalRoundReferences()
     {
-        assertFalse(ConversationFileTaskWorker.isReferenceProtectedCleanup(FileCleanupReason.USER_REMOVED));
+        Assertions.assertFalse(ConversationFileTaskWorker.isReferenceProtectedCleanup(FileCleanupReason.USER_REMOVED));
     }
 
     @Test
     void automaticCleanupRetainsReferencedFiles()
     {
-        assertTrue(ConversationFileTaskWorker.isReferenceProtectedCleanup(FileCleanupReason.UPLOAD_EXPIRED));
-        assertTrue(ConversationFileTaskWorker.isReferenceProtectedCleanup(FileCleanupReason.ORPHANED));
-        assertTrue(ConversationFileTaskWorker.isReferenceProtectedCleanup(FileCleanupReason.CONVERSATION_DELETED));
+        Assertions.assertTrue(ConversationFileTaskWorker.isReferenceProtectedCleanup(FileCleanupReason.UPLOAD_EXPIRED));
+        Assertions.assertTrue(ConversationFileTaskWorker.isReferenceProtectedCleanup(FileCleanupReason.ORPHANED));
+        Assertions.assertTrue(ConversationFileTaskWorker.isReferenceProtectedCleanup(FileCleanupReason.CONVERSATION_DELETED));
     }
 }

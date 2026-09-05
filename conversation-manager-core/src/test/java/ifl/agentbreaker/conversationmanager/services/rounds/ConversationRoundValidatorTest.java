@@ -28,10 +28,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.test.util.ReflectionTestUtils;
 
-import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNotEquals;
-import static org.junit.jupiter.api.Assertions.assertThrows;
+import org.junit.jupiter.api.Assertions;
 
 class ConversationRoundValidatorTest
 {
@@ -58,13 +55,13 @@ class ConversationRoundValidatorTest
     @Test
     void acceptsOneCompletedTextTurn()
     {
-        assertDoesNotThrow(() -> validator.validateRoundRequest(validTextRequest(1, "answer")));
+        Assertions.assertDoesNotThrow(() -> validator.validateRoundRequest(validTextRequest(1, "answer")));
     }
 
     @Test
     void acceptsTwoTurnLoopWithParallelCallsAndPartialToolFailure()
     {
-        assertDoesNotThrow(() -> validator.validateRoundRequest(validToolLoopRequest()));
+        Assertions.assertDoesNotThrow(() -> validator.validateRoundRequest(validToolLoopRequest()));
     }
 
     @Test
@@ -76,7 +73,7 @@ class ConversationRoundValidatorTest
                 .setSourceEndRoundNumber(4))
             .build();
 
-        assertDoesNotThrow(() -> validator.validateRoundRequest(request));
+        Assertions.assertDoesNotThrow(() -> validator.validateRoundRequest(request));
     }
 
     @Test
@@ -96,9 +93,9 @@ class ConversationRoundValidatorTest
                 .setSourceEndRoundNumber(1))
             .build();
 
-        assertThrows(RoundPersistenceException.class,
+        Assertions.assertThrows(RoundPersistenceException.class,
             () -> validator.validateRoundRequest(duplicateRequest));
-        assertThrows(RoundPersistenceException.class,
+        Assertions.assertThrows(RoundPersistenceException.class,
             () -> validator.validateRoundRequest(selfRequest));
     }
 
@@ -113,10 +110,10 @@ class ConversationRoundValidatorTest
             .build();
         SaveConversationRoundRequest invalid = valid.toBuilder().setTurns(1, invalidSecondTurn).build();
 
-        RoundPersistenceException error = assertThrows(
+        RoundPersistenceException error = Assertions.assertThrows(
             RoundPersistenceException.class, () -> validator.validateRoundRequest(invalid));
 
-        assertEquals(ConversationErrorCode.CONVERSATION_ERROR_CODE_INVALID_REQUEST_VALUE, error.getCode());
+        Assertions.assertEquals(ConversationErrorCode.CONVERSATION_ERROR_CODE_INVALID_REQUEST_VALUE, error.getCode());
     }
 
     @Test
@@ -128,7 +125,7 @@ class ConversationRoundValidatorTest
             .build();
         SaveConversationRoundRequest invalid = valid.toBuilder().setTurns(0, invalidFirstTurn).build();
 
-        assertThrows(RoundPersistenceException.class, () -> validator.validateRoundRequest(invalid));
+        Assertions.assertThrows(RoundPersistenceException.class, () -> validator.validateRoundRequest(invalid));
     }
 
     @Test
@@ -162,7 +159,7 @@ class ConversationRoundValidatorTest
             .setEndTime(START + 25)
             .build();
 
-        assertDoesNotThrow(() -> validator.validateRoundRequest(cancelled));
+        Assertions.assertDoesNotThrow(() -> validator.validateRoundRequest(cancelled));
     }
 
     @Test
@@ -180,8 +177,8 @@ class ConversationRoundValidatorTest
             .setErrorMessage("Generation cancelled.")
             .build();
 
-        assertDoesNotThrow(() -> validator.validateRoundRequest(failed));
-        assertDoesNotThrow(() -> validator.validateRoundRequest(cancelled));
+        Assertions.assertDoesNotThrow(() -> validator.validateRoundRequest(failed));
+        Assertions.assertDoesNotThrow(() -> validator.validateRoundRequest(cancelled));
     }
 
     @Test
@@ -191,9 +188,9 @@ class ConversationRoundValidatorTest
         String anotherUser = hasher.hash(validTextRequest(2, "answer"));
         String changedAnswer = hasher.hash(validTextRequest(1, "changed"));
 
-        assertEquals(first, anotherUser);
-        assertNotEquals(first, changedAnswer);
-        assertEquals(64, first.length());
+        Assertions.assertEquals(first, anotherUser);
+        Assertions.assertNotEquals(first, changedAnswer);
+        Assertions.assertEquals(64, first.length());
     }
 
     private SaveConversationRoundRequest validToolLoopRequest()
@@ -278,6 +275,7 @@ class ConversationRoundValidatorTest
             .setLlmStartTime(START)
             .setLlmEndTime(START + 10)
             .build();
+
         return SaveConversationRoundRequest.newBuilder()
             .setUserId(userId)
             .setConversationId("conv_test")
@@ -306,8 +304,10 @@ class ConversationRoundValidatorTest
     private LlmResponse response(String content, String finishReason, ToolCall... calls)
     {
         AssistantMessage.Builder message = AssistantMessage.newBuilder().setContent(content);
+
         for (ToolCall call : calls)
             message.addToolCalls(call);
+
         return LlmResponse.newBuilder()
             .setMessage(message)
             .setFinishReason(finishReason)

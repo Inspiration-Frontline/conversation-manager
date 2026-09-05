@@ -6,8 +6,7 @@ import jakarta.validation.ValidatorFactory;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.Test;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import org.junit.jupiter.api.Assertions;
 
 class ConversationGroupRequestValidationTest
 {
@@ -35,15 +34,15 @@ class ConversationGroupRequestValidationTest
     @Test
     void optionalGroupIdsRemainNullableWrappers() throws NoSuchFieldException
     {
-        assertEquals(Long.class, CreateConversationRequest.class.getDeclaredField("conversationGroupId").getType());
-        assertEquals(Long.class, GetConversationsRequest.class.getDeclaredField("conversationGroupId").getType());
-        assertEquals(Long.class, MoveConversationsRequest.class.getDeclaredField("targetConversationGroupId").getType());
+        Assertions.assertEquals(Long.class, CreateConversationRequest.class.getDeclaredField("conversationGroupId").getType());
+        Assertions.assertEquals(Long.class, GetConversationsRequest.class.getDeclaredField("conversationGroupId").getType());
+        Assertions.assertEquals(Long.class, MoveConversationsRequest.class.getDeclaredField("targetConversationGroupId").getType());
     }
 
     private void assertRequiredPrimitiveId(Object request, String propertyName) throws NoSuchFieldException
     {
-        assertEquals(long.class, request.getClass().getDeclaredField(propertyName).getType());
-        assertTrue(VALIDATOR.validate(request).stream()
+        Assertions.assertEquals(long.class, request.getClass().getDeclaredField(propertyName).getType());
+        Assertions.assertTrue(VALIDATOR.validate(request).stream()
             .anyMatch(violation -> propertyName.equals(violation.getPropertyPath().toString())));
     }
 }

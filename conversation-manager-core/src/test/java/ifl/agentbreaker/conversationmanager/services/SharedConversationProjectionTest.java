@@ -7,8 +7,7 @@ import org.junit.jupiter.api.Test;
 
 import java.util.List;
 
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import org.junit.jupiter.api.Assertions;
 
 class SharedConversationProjectionTest
 {
@@ -23,9 +22,9 @@ class SharedConversationProjectionTest
 
         String json = new ObjectMapper().writeValueAsString(view);
 
-        assertTrue(json.contains("Frozen source"));
-        assertFalse(json.contains("parentConversationId"));
-        assertFalse(json.contains("conversationId"));
-        assertFalse(json.contains("sourceConversationId"));
+        Assertions.assertTrue(json.contains("Frozen source"));
+        Assertions.assertFalse(json.contains("parentConversationId"));
+        Assertions.assertFalse(json.contains("conversationId"));
+        Assertions.assertFalse(json.contains("sourceConversationId"));
     }
 }

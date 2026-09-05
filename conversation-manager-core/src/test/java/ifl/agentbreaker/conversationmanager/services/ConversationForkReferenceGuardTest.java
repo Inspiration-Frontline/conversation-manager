@@ -21,14 +21,9 @@ import stark.dataworks.boot.web.ServiceResponse;
 
 import java.util.Collections;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyLong;
-import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
+import org.junit.jupiter.api.Assertions;
+import org.mockito.ArgumentMatchers;
+import org.mockito.Mockito;
 
 @ExtendWith(MockitoExtension.class)
 class ConversationForkReferenceGuardTest
@@ -75,18 +70,18 @@ class ConversationForkReferenceGuardTest
         sharing.setEndRoundNumber(4);
         Conversation source = new Conversation();
         source.setConversationId("conv_source");
-        when(conversationSharingMapper.getActiveConversationSharingBySharedId("share_reference"))
+        Mockito.when(conversationSharingMapper.getActiveConversationSharingBySharedId("share_reference"))
             .thenReturn(sharing);
-        when(conversationMapper.getConversationById("conv_source")).thenReturn(source);
-        when(conversationRoundReferenceMapper.hasReferencesInCompletedRoundsAtOrBefore(
+        Mockito.when(conversationMapper.getConversationById("conv_source")).thenReturn(source);
+        Mockito.when(conversationRoundReferenceMapper.hasReferencesInCompletedRoundsAtOrBefore(
             "conv_source", 4)).thenReturn(true);
 
         ServiceResponse<ConversationAbstract> response = conversationService.forkConversation(request);
 
-        assertFalse(response.isSuccess());
-        assertEquals("Shared conversations containing references cannot be forked.", response.getMessage());
-        verify(conversationMapper, never()).insertConversation(any());
-        verify(conversationRoundMapper, never()).forkConversationHistory(
-            anyString(), anyString(), anyLong(), anyLong());
+        Assertions.assertFalse(response.isSuccess());
+        Assertions.assertEquals("Shared conversations containing references cannot be forked.", response.getMessage());
+        Mockito.verify(conversationMapper, Mockito.never()).insertConversation(ArgumentMatchers.any());
+        Mockito.verify(conversationRoundMapper, Mockito.never()).forkConversationHistory(
+            ArgumentMatchers.anyString(), ArgumentMatchers.anyString(), ArgumentMatchers.anyLong(), ArgumentMatchers.anyLong());
     }
 }

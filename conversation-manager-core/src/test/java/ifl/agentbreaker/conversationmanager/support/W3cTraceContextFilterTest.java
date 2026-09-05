@@ -23,10 +23,8 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicReference;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertSame;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.when;
+import org.junit.jupiter.api.Assertions;
+import org.mockito.Mockito;
 
 /**
  * Contract tests for {@link W3cTraceContextFilter}. The extraction-correctness cases use an
@@ -71,6 +69,7 @@ class W3cTraceContextFilterTest
     private static Map<String, String> injectFromParent(Span parent)
     {
         Map<String, String> headers = new HashMap<>();
+
         try (Scope ignored = parent.makeCurrent())
         {
             openTelemetrySdk.getPropagators().getTextMapPropagator()
@@ -88,7 +87,7 @@ class W3cTraceContextFilterTest
 
         Context extracted = W3cTraceContextFilter.extractParentContext(headers, openTelemetrySdk);
 
-        assertEquals(parentTraceId, Span.fromContext(extracted).getSpanContext().getTraceId());
+        Assertions.assertEquals(parentTraceId, Span.fromContext(extracted).getSpanContext().getTraceId());
         parent.end();
     }
 
@@ -101,6 +100,7 @@ class W3cTraceContextFilterTest
 
         Context extracted = W3cTraceContextFilter.extractParentContext(headers, openTelemetrySdk);
         AtomicReference<String> childTraceId = new AtomicReference<>();
+
         try (Scope ignored = extracted.makeCurrent())
         {
             Span child = tracer.spanBuilder("child").startSpan();
@@ -108,7 +108,7 @@ class W3cTraceContextFilterTest
             child.end();
         }
 
-        assertEquals(parentTraceId, childTraceId.get());
+        Assertions.assertEquals(parentTraceId, childTraceId.get());
         parent.end();
     }
 
@@ -119,7 +119,7 @@ class W3cTraceContextFilterTest
 
         Context extracted = W3cTraceContextFilter.extractParentContext(Collections.emptyMap(), openTelemetrySdk);
 
-        assertSame(current, extracted);
+        Assertions.assertSame(current, extracted);
     }
 
     @Test
@@ -129,7 +129,7 @@ class W3cTraceContextFilterTest
 
         Context extracted = W3cTraceContextFilter.extractParentContext(null, openTelemetrySdk);
 
-        assertSame(current, extracted);
+        Assertions.assertSame(current, extracted);
     }
 
     @Test
@@ -141,22 +141,22 @@ class W3cTraceContextFilterTest
 
         Context extracted = W3cTraceContextFilter.extractParentContext(headers, openTelemetrySdk);
 
-        assertSame(current, extracted);
+        Assertions.assertSame(current, extracted);
     }
 
     @Test
     void invokeDelegatesToInvokerWhenNoAttachments() throws RpcException
     {
-        Invocation invocation = mock(Invocation.class);
-        when(invocation.getAttachments()).thenReturn(Collections.emptyMap());
-        Invoker<?> invoker = mock(Invoker.class);
-        Result expected = mock(Result.class);
-        when(invoker.invoke(invocation)).thenReturn(expected);
+        Invocation invocation = Mockito.mock(Invocation.class);
+        Mockito.when(invocation.getAttachments()).thenReturn(Collections.emptyMap());
+        Invoker<?> invoker = Mockito.mock(Invoker.class);
+        Result expected = Mockito.mock(Result.class);
+        Mockito.when(invoker.invoke(invocation)).thenReturn(expected);
 
         W3cTraceContextFilter filter = new W3cTraceContextFilter();
         Result actual = filter.invoke(invoker, invocation);
 
-        assertSame(expected, actual);
+        Assertions.assertSame(expected, actual);
     }
 
     @Test
@@ -167,22 +167,23 @@ class W3cTraceContextFilterTest
         Map<String, String> headers = injectFromParent(parent);
         parent.end();
 
-        Invocation invocation = mock(Invocation.class);
-        when(invocation.getAttachments()).thenReturn(headers);
-        Invoker<?> invoker = mock(Invoker.class);
+        Invocation invocation = Mockito.mock(Invocation.class);
+        Mockito.when(invocation.getAttachments()).thenReturn(headers);
+        Invoker<?> invoker = Mockito.mock(Invoker.class);
         AtomicReference<String> childTraceId = new AtomicReference<>();
-        when(invoker.invoke(invocation)).thenAnswer(invocationOnMock ->
+        Mockito.when(invoker.invoke(invocation)).thenAnswer(invocationOnMock ->
         {
             Span child = tracer.spanBuilder("child").startSpan();
             childTraceId.set(child.getSpanContext().getTraceId());
             child.end();
-            return mock(Result.class);
+
+            return Mockito.mock(Result.class);
         });
 
         W3cTraceContextFilter filter = new W3cTraceContextFilter();
         filter.invoke(invoker, invocation);
 
-        assertEquals(parentTraceId, childTraceId.get());
+        Assertions.assertEquals(parentTraceId, childTraceId.get());
     }
 
     @Test
@@ -190,15 +191,15 @@ class W3cTraceContextFilterTest
     {
         Map<String, String> headers = new HashMap<>();
         headers.put("traceparent", "not-a-valid-traceparent");
-        Invocation invocation = mock(Invocation.class);
-        when(invocation.getAttachments()).thenReturn(headers);
-        Invoker<?> invoker = mock(Invoker.class);
-        Result expected = mock(Result.class);
-        when(invoker.invoke(invocation)).thenReturn(expected);
+        Invocation invocation = Mockito.mock(Invocation.class);
+        Mockito.when(invocation.getAttachments()).thenReturn(headers);
+        Invoker<?> invoker = Mockito.mock(Invoker.class);
+        Result expected = Mockito.mock(Result.class);
+        Mockito.when(invoker.invoke(invocation)).thenReturn(expected);
 
         W3cTraceContextFilter filter = new W3cTraceContextFilter();
         Result actual = filter.invoke(invoker, invocation);
 
-        assertSame(expected, actual);
+        Assertions.assertSame(expected, actual);
     }
 }

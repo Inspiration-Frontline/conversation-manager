@@ -18,11 +18,9 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.util.List;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.mockito.ArgumentMatchers.anyCollection;
-import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.when;
+import org.junit.jupiter.api.Assertions;
+import org.mockito.ArgumentMatchers;
+import org.mockito.Mockito;
 
 @ExtendWith(MockitoExtension.class)
 class ConversationReferencePreparationTest
@@ -46,7 +44,7 @@ class ConversationReferencePreparationTest
     @BeforeEach
     void configureReferenceLimit()
     {
-        when(conversationReferenceProperties.getMaxCountPerRound()).thenReturn(10);
+        Mockito.when(conversationReferenceProperties.getMaxCountPerRound()).thenReturn(10);
     }
 
     @Test
@@ -58,13 +56,13 @@ class ConversationReferencePreparationTest
         boundary.setConversationId("conv_source");
         ConversationRound completed = round(3, "Source question", "Source answer");
         completed.setConversationId("conv_source");
-        when(conversationMapper.getConversationByIdAndUser("conv_destination", 1)).thenReturn(destination);
-        when(conversationMapper.listConversationsByIdsAndUser(anyCollection(), eq(1L)))
+        Mockito.when(conversationMapper.getConversationByIdAndUser("conv_destination", 1)).thenReturn(destination);
+        Mockito.when(conversationMapper.listConversationsByIdsAndUser(ArgumentMatchers.anyCollection(), ArgumentMatchers.eq(1L)))
             .thenReturn(List.of(source));
-        when(conversationRoundMapper.listRoundsAtBoundaries(List.of(
+        Mockito.when(conversationRoundMapper.listRoundsAtBoundaries(List.of(
             new ConversationReferenceBoundary("conv_source", 4))))
             .thenReturn(List.of(boundary));
-        when(conversationRoundMapper.listCompletedRoundsAtOrBeforeBoundaries(List.of(
+        Mockito.when(conversationRoundMapper.listCompletedRoundsAtOrBeforeBoundaries(List.of(
             new ConversationReferenceBoundary("conv_source", 4))))
             .thenReturn(List.of(completed));
 
@@ -74,22 +72,22 @@ class ConversationReferencePreparationTest
                 .setSourceEndRoundNumber(4)
                 .build()));
 
-        assertEquals("Source notes", prepared.get(0).getSourceTitle());
-        assertEquals(List.of(MessageRole.MESSAGE_ROLE_USER, MessageRole.MESSAGE_ROLE_ASSISTANT),
+        Assertions.assertEquals("Source notes", prepared.get(0).getSourceTitle());
+        Assertions.assertEquals(List.of(MessageRole.MESSAGE_ROLE_USER, MessageRole.MESSAGE_ROLE_ASSISTANT),
             prepared.get(0).getContextMessagesList().stream().map(message -> message.getRole()).toList());
-        assertEquals(List.of("Source question", "Source answer"),
+        Assertions.assertEquals(List.of("Source question", "Source answer"),
             prepared.get(0).getContextMessagesList().stream().map(message -> message.getContent()).toList());
     }
 
     @Test
     void rejectsAConversationOutsideTheDestinationGroup()
     {
-        when(conversationMapper.getConversationByIdAndUser("conv_destination", 1))
+        Mockito.when(conversationMapper.getConversationByIdAndUser("conv_destination", 1))
             .thenReturn(conversation("conv_destination", "Destination", 1, 1));
-        when(conversationMapper.listConversationsByIdsAndUser(anyCollection(), eq(1L)))
+        Mockito.when(conversationMapper.listConversationsByIdsAndUser(ArgumentMatchers.anyCollection(), ArgumentMatchers.eq(1L)))
             .thenReturn(List.of(conversation("conv_source", "Source", 2, 1)));
 
-        assertThrows(RoundPersistenceException.class, () -> conversationRoundService.prepareReferences(
+        Assertions.assertThrows(RoundPersistenceException.class, () -> conversationRoundService.prepareReferences(
             1, "conv_destination", List.of(ConversationReference.newBuilder()
                 .setSourceConversationId("conv_source")
                 .setSourceEndRoundNumber(1)
@@ -103,17 +101,17 @@ class ConversationReferencePreparationTest
         Conversation source = conversation("conv_source", "Source", 1, 2);
         ConversationRound boundary = round(2, "failed", null);
         boundary.setConversationId("conv_source");
-        when(conversationMapper.getConversationByIdAndUser("conv_destination", 1)).thenReturn(destination);
-        when(conversationMapper.listConversationsByIdsAndUser(anyCollection(), eq(1L)))
+        Mockito.when(conversationMapper.getConversationByIdAndUser("conv_destination", 1)).thenReturn(destination);
+        Mockito.when(conversationMapper.listConversationsByIdsAndUser(ArgumentMatchers.anyCollection(), ArgumentMatchers.eq(1L)))
             .thenReturn(List.of(source));
-        when(conversationRoundMapper.listRoundsAtBoundaries(List.of(
+        Mockito.when(conversationRoundMapper.listRoundsAtBoundaries(List.of(
             new ConversationReferenceBoundary("conv_source", 2))))
             .thenReturn(List.of(boundary));
-        when(conversationRoundMapper.listCompletedRoundsAtOrBeforeBoundaries(List.of(
+        Mockito.when(conversationRoundMapper.listCompletedRoundsAtOrBeforeBoundaries(List.of(
             new ConversationReferenceBoundary("conv_source", 2))))
             .thenReturn(List.of());
 
-        assertThrows(RoundPersistenceException.class, () -> conversationRoundService.prepareReferences(
+        Assertions.assertThrows(RoundPersistenceException.class, () -> conversationRoundService.prepareReferences(
             1, "conv_destination", List.of(ConversationReference.newBuilder()
                 .setSourceConversationId("conv_source")
                 .setSourceEndRoundNumber(2)
@@ -127,6 +125,7 @@ class ConversationReferencePreparationTest
         conversation.setTitle(title);
         conversation.setConversationGroupId(groupId);
         conversation.setLatestRoundNumber(latestRoundNumber);
+
         return conversation;
     }
 
@@ -136,6 +135,7 @@ class ConversationReferencePreparationTest
         round.setRoundNumber(number);
         round.setUserRequestContent(request);
         round.setFinalAnswerContent(answer);
+
         return round;
     }
 }

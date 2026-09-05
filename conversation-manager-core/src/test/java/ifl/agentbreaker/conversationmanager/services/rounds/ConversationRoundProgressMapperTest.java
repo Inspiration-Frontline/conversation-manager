@@ -13,7 +13,7 @@ import org.springframework.test.util.ReflectionTestUtils;
 
 import java.util.List;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
+import org.junit.jupiter.api.Assertions;
 
 class ConversationRoundProgressMapperTest
 {
@@ -51,8 +51,8 @@ class ConversationRoundProgressMapperTest
 
         List<McpServerBinding> bindings = mapper.toCheckpoint(request, "hash").getMcpServerBindings();
 
-        assertEquals(1, bindings.size());
-        assertEquals("fixture", bindings.getFirst().serverId());
-        assertEquals(true, bindings.getFirst().required());
+        Assertions.assertEquals(1, bindings.size());
+        Assertions.assertEquals("fixture", bindings.getFirst().serverId());
+        Assertions.assertEquals(true, bindings.getFirst().required());
     }
 }

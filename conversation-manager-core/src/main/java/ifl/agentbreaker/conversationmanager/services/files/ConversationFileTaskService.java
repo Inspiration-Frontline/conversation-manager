@@ -109,6 +109,7 @@ public class ConversationFileTaskService
     {
         fileResourceVariantMapper.deleteByFileResourceId(fileResource.getId());
         fileResourceMapper.markDeleted(fileResource.getId(), fileResource.getCreatorId());
+
         if (fileCleanupTaskMapper.markCompleted(taskId, leaseToken) != 1)
             throw new IllegalStateException("The file cleanup task lease was lost.");
     }

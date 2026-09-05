@@ -37,8 +37,10 @@ class ConversationRequestSnapshotSerializer
     String serialize(List<LlmConversationMessage> messages)
     {
         List<RequestMessageSnapshot> snapshots = new ArrayList<>();
+
         for (LlmConversationMessage message : messages)
             snapshots.add(toSnapshot(message));
+
         return jsonSerializer.serialize(snapshots, "Request message snapshot");
     }
 
@@ -77,17 +79,22 @@ class ConversationRequestSnapshotSerializer
     {
         if (contentParts.isEmpty())
             return null;
+
         List<ContentPartSnapshot> snapshots = new ArrayList<>();
+
         for (ContentPart contentPart : contentParts)
         {
             FileUrlSnapshot fileUrl = null;
+
             if (!contentPart.getType().equals("text"))
             {
                 FileUrl sourceFileUrl = contentPart.getFileUrl();
                 fileUrl = new FileUrlSnapshot(sourceFileUrl.getUrl(), sourceFileUrl.getDetail());
             }
+
             snapshots.add(new ContentPartSnapshot(contentPart.getType(), contentPart.getText(), fileUrl));
         }
+
         return List.copyOf(snapshots);
     }
 
@@ -98,12 +105,14 @@ class ConversationRequestSnapshotSerializer
     private List<ToolCallSnapshot> toToolCalls(List<ToolCall> toolCalls)
     {
         List<ToolCallSnapshot> snapshots = new ArrayList<>();
+
         for (ToolCall toolCall : toolCalls)
         {
             snapshots.add(new ToolCallSnapshot(
                 toolCall.getId(), toolCall.getType(), toolCall.getFunction().getName(),
                 toolCall.getFunction().getArguments()));
         }
+
         return List.copyOf(snapshots);
     }
 

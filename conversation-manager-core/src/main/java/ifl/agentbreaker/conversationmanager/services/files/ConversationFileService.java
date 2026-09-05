@@ -159,8 +159,10 @@ public class ConversationFileService
         fileResource.setFileSize(request.getFileSize());
         fileResource.setUploadExpiresAt(expiresAt);
         FileResource inserted = fileResourceMapper.insertFileResource(fileResource);
+
         if (inserted == null)
             throw new IllegalStateException("The file resource could not be created.");
+
         fileCleanupTaskMapper.addTask(
             inserted.getId(), userId, FileCleanupReason.UPLOAD_EXPIRED,
             ossStorageProperties.getPresignedUrlTtlSeconds());
@@ -176,6 +178,7 @@ public class ConversationFileService
         session.setMethod("PUT");
         session.setUploadUrl(signedUrl.toString());
         session.setExpiresAt(expiresAt);
+
         return ServiceResponse.buildSuccessResponse(session);
     }
 
@@ -192,8 +195,10 @@ public class ConversationFileService
     {
         long userId = UserContextService.getCurrentUserId();
         List<FileResourceInfo> results = new ArrayList<>();
+
         for (ConfirmFileUploadItem item : request.getFiles())
             results.add(confirmSingleUpload(item, userId));
+
         return ServiceResponse.buildSuccessResponse(results);
     }
 
@@ -209,12 +214,15 @@ public class ConversationFileService
     {
         String fileId = request.getFileId();
         FileResource existing = requireOwnedFile(fileId, userId);
+
         if (existing.getStatus() != ConversationFileStatus.PENDING_UPLOAD)
             return toFileResourceInfo(existing);
+
         if (existing.getUploadExpiresAt().isBefore(Instant.now()))
             throw new ServiceResponseException(ERROR_INVALID_FILE, "The upload session has expired.");
 
         ObjectMetadata metadata;
+
         try
         {
             metadata = oss.getObjectMetadata(existing.getBucketName(), existing.getObjectKey());
@@ -236,13 +244,16 @@ public class ConversationFileService
         FileResource confirmed = transactionTemplate.execute(status -> {
             FileResource updated = fileResourceMapper.confirmUpload(
                 fileId, userId, objectMimeType, metadata.getContentLength(), sha256);
+
             if (updated == null)
                 throw new ServiceResponseException(ERROR_INVALID_FILE, "The upload cannot be confirmed in its current state.");
+
             fileProcessingTaskMapper.upsertPendingTask(updated.getId(), userId);
-            fileCleanupTaskMapper.addTask(
-                updated.getId(), userId, FileCleanupReason.ORPHANED, conversationFileProperties.getOrphanTtlSeconds());
+            fileCleanupTaskMapper.addTask(updated.getId(), userId, FileCleanupReason.ORPHANED, conversationFileProperties.getOrphanTtlSeconds());
+
             return updated;
         });
+
         return toFileResourceInfo(confirmed);
     }
 
@@ -271,16 +282,21 @@ public class ConversationFileService
     {
         long userId = UserContextService.getCurrentUserId();
         List<FileResourceInfo> results = new ArrayList<>();
+
         for (String fileId : request.getFileIds())
         {
             FileResource fileResource = requireOwnedFile(fileId, userId);
+
             if (fileResource.getStatus() != ConversationFileStatus.FAILED)
                 throw new ServiceResponseException(ERROR_INVALID_FILE, "Only a failed file can be retried.");
+
             if (fileResourceMapper.resetFailedForRetry(fileResource.getId(), userId) != 1)
                 throw new ServiceResponseException(ERROR_INVALID_FILE, "The file state changed before retry.");
+
             fileProcessingTaskMapper.upsertPendingTask(fileResource.getId(), userId);
             results.add(toFileResourceInfo(requireOwnedFile(fileId, userId)));
         }
+
         return ServiceResponse.buildSuccessResponse(results);
     }
 
@@ -296,14 +312,18 @@ public class ConversationFileService
     public ServiceResponse<Boolean> deleteFileResource(DeleteFileResourceRequest request)
     {
         long userId = UserContextService.getCurrentUserId();
+
         for (String fileId : request.getFileIds())
         {
             FileResource fileResource = requireOwnedFile(fileId, userId);
+
             if (fileResourceMapper.requestDelete(fileId, userId) != 1)
                 throw new ServiceResponseException(ERROR_FILE_BUSY, "The file is reserved by an active request.");
+
             fileProcessingTaskMapper.cancelByFileResourceId(fileResource.getId());
             fileCleanupTaskMapper.addTask(fileResource.getId(), userId, FileCleanupReason.USER_REMOVED, 0);
         }
+
         return ServiceResponse.buildSuccessResponse(true);
     }
 
@@ -318,8 +338,10 @@ public class ConversationFileService
     {
         long userId = UserContextService.getCurrentUserId();
         FileResource fileResource = fileResourceMapper.getConversationReferencedFileResource(fileId, userId);
+
         if (fileResource == null)
             throw new ServiceResponseException(ERROR_FILE_NOT_FOUND, "File does not exist or is not accessible.");
+
         if (fileResource.getStatus() != ConversationFileStatus.READY)
             throw new ServiceResponseException(ERROR_INVALID_FILE, "The file is not ready for download.");
 
@@ -328,6 +350,7 @@ public class ConversationFileService
         result.setFileId(fileId);
         result.setUrl(createDownloadUrl(fileResource, expiresAt));
         result.setExpiresAt(expiresAt);
+
         return ServiceResponse.buildSuccessResponse(result);
     }
 
@@ -346,10 +369,12 @@ public class ConversationFileService
     {
         RoundFileHistory sharedFile = conversationRoundFileMapper.getSharedRoundFile(
             conversationId, endRoundNumber, fileId);
+
         if (sharedFile == null)
             throw new ServiceResponseException(ERROR_FILE_NOT_FOUND, "File does not exist in the shared snapshot.");
 
         FileResource fileResource = fileResourceMapper.getFileResourceById(sharedFile.fileResourceId());
+
         if (fileResource == null || fileResource.getStatus() != ConversationFileStatus.READY || fileResource.isDeleted())
             throw new ServiceResponseException(ERROR_INVALID_FILE, "The file is not ready for download.");
 
@@ -358,6 +383,7 @@ public class ConversationFileService
         result.setFileId(fileId);
         result.setUrl(createDownloadUrl(fileResource, expiresAt));
         result.setExpiresAt(expiresAt);
+
         return ServiceResponse.buildSuccessResponse(result);
     }
 
@@ -371,8 +397,10 @@ public class ConversationFileService
     public ServiceResponse<FileDownloadUrl> getSharedFileDownloadUrl(String sharedConversationId, String fileId)
     {
         ConversationSharing sharing = conversationSharingMapper.getActiveConversationSharingBySharedId(sharedConversationId);
+
         if (sharing == null)
             throw new ServiceResponseException(ERROR_FILE_NOT_FOUND, "Shared conversation does not exist or has expired.");
+
         return getSharedFileDownloadUrl(sharing.getParentConversationId(), sharing.getEndRoundNumber(), fileId);
     }
 
@@ -386,9 +414,11 @@ public class ConversationFileService
         long userId = UserContextService.getCurrentUserId();
         List<FileResource> resources = fileResourceMapper.listConversationReferencedFileResources(
             request.getFileIds(), userId);
+
         if (resources.size() != request.getFileIds().size())
             throw new ServiceResponseException(ERROR_FILE_NOT_FOUND, "One or more images do not exist or are not accessible.");
         Map<String, FileResource> resourcesByFileId = new LinkedHashMap<>();
+
         for (FileResource resource : resources)
         {
             if (resource.getKind() != ConversationFileKind.IMAGE || resource.getStatus() != ConversationFileStatus.READY)
@@ -399,11 +429,13 @@ public class ConversationFileService
         Map<Long, FileResourceVariant> variants = indexReadyVariants(resourceIds);
         Instant expiresAt = Instant.now().plusSeconds(ossStorageProperties.getPresignedUrlTtlSeconds());
         List<FilePreviewUrl> results = new ArrayList<>();
+
         for (String fileId : request.getFileIds())
         {
             FileResource resource = resourcesByFileId.get(fileId);
             results.add(toPreviewUrl(fileId, requireVariant(variants, resource.getId()), expiresAt));
         }
+
         return ServiceResponse.buildSuccessResponse(results);
     }
 
@@ -416,30 +448,36 @@ public class ConversationFileService
         String sharedConversationId, ResolveFilePreviewsRequest request)
     {
         validatePreviewIds(request.getFileIds());
+
         ConversationSharing sharing = conversationSharingMapper.getActiveConversationSharingBySharedId(sharedConversationId);
         if (sharing == null)
             throw new ServiceResponseException(ERROR_FILE_NOT_FOUND, "Shared conversation does not exist or has expired.");
-        List<RoundFileHistory> files = conversationRoundFileMapper.listSharedRoundFiles(
-            sharing.getParentConversationId(), sharing.getEndRoundNumber(), request.getFileIds());
+
+        List<RoundFileHistory> files = conversationRoundFileMapper.listSharedRoundFiles(sharing.getParentConversationId(), sharing.getEndRoundNumber(), request.getFileIds());
         if (files.size() != request.getFileIds().size())
             throw new ServiceResponseException(ERROR_FILE_NOT_FOUND, "One or more images do not exist in the shared snapshot.");
+
         Map<String, RoundFileHistory> filesById = new LinkedHashMap<>();
         for (RoundFileHistory file : files)
         {
             if (!ConversationFileKind.IMAGE.name().equals(file.kind())
                 || !ConversationFileStatus.READY.name().equals(file.status()))
                 throw new ServiceResponseException(ERROR_INVALID_FILE, "Every preview file must be a ready image.");
+
             filesById.put(file.fileId(), file);
         }
+
         List<Long> resourceIds = files.stream().map(RoundFileHistory::fileResourceId).toList();
         Map<Long, FileResourceVariant> variants = indexReadyVariants(resourceIds);
         Instant expiresAt = Instant.now().plusSeconds(ossStorageProperties.getPresignedUrlTtlSeconds());
+
         List<FilePreviewUrl> results = new ArrayList<>();
         for (String fileId : request.getFileIds())
         {
             RoundFileHistory file = filesById.get(fileId);
             results.add(toPreviewUrl(fileId, requireVariant(variants, file.fileResourceId()), expiresAt));
         }
+
         return ServiceResponse.buildSuccessResponse(results);
     }
 
@@ -456,17 +494,22 @@ public class ConversationFileService
     {
         if (fileIds == null || fileIds.isEmpty())
             return new ArrayList<>();
+
         List<FileResource> resources = fileResourceMapper.listOwnedFileResources(fileIds, userId);
         Map<String, FileResource> resourcesById = new LinkedHashMap<>();
+
         for (FileResource resource : resources)
             resourcesById.put(resource.getFileId(), resource);
+
         List<FileResource> ordered = new ArrayList<>();
         for (String fileId : fileIds)
         {
             FileResource resource = resourcesById.get(fileId);
+
             if (resource != null)
                 ordered.add(resource);
         }
+
         return ordered;
     }
 
@@ -522,6 +565,7 @@ public class ConversationFileService
         List<String> uniqueConversationIds = conversationIds == null
             ? List.of()
             : conversationIds.stream().filter(StringUtils::hasText).distinct().toList();
+
         if (uniqueConversationIds.isEmpty())
             return;
 
@@ -579,6 +623,7 @@ public class ConversationFileService
         info.setMimeType(StringUtils.hasText(fileResource.getDetectedMimeType())
             ? fileResource.getDetectedMimeType()
             : fileResource.getDeclaredMimeType());
+
         return info;
     }
 
@@ -593,8 +638,10 @@ public class ConversationFileService
     private FileResource requireOwnedFile(String fileId, long userId)
     {
         FileResource fileResource = fileResourceMapper.getOwnedFileResource(fileId, userId);
+
         if (fileResource == null)
             throw new ServiceResponseException(ERROR_FILE_NOT_FOUND, "The file does not exist.");
+
         return fileResource;
     }
 
@@ -611,19 +658,25 @@ public class ConversationFileService
     {
         if (!StringUtils.hasText(filename) || !StringUtils.hasText(extension))
             throw new ServiceResponseException(ERROR_INVALID_FILE, "A supported filename extension is required.");
+
         if (!conversationFileProperties.getAllowedExtensions().contains(extension))
             throw new ServiceResponseException(ERROR_INVALID_FILE, "The file extension is not supported.");
+
         if (!conversationFileProperties.getAllowedMimeTypes().contains(mimeType))
             throw new ServiceResponseException(ERROR_INVALID_FILE, "The file MIME type is not supported.");
+
         if (!ConversationFileTypeResolver.isMimeTypeCompatible(extension, mimeType))
             throw new ServiceResponseException(
                 ERROR_INVALID_FILE, "The file MIME type does not match its filename extension.");
+
         if (fileSize <= 0 || fileSize > conversationFileProperties.getMaxBytes())
             throw new ServiceResponseException(ERROR_INVALID_FILE, "The file exceeds the configured size limit.");
+
         if (!StringUtils.hasText(ossStorageProperties.getBucketName())
             || !StringUtils.hasText(ossStorageProperties.getAccessKeyId())
             || !StringUtils.hasText(ossStorageProperties.getAccessKeySecret()))
             throw new IllegalStateException("OSS storage is not configured.");
+
         if (!ossStorageProperties.isPrivateBucket())
             throw new IllegalStateException("Conversation files require a private OSS bucket.");
     }
@@ -640,6 +693,7 @@ public class ConversationFileService
     private String buildObjectKey(long userId, String fileId)
     {
         ZonedDateTime now = ZonedDateTime.now(ZoneOffset.UTC);
+
         return String.format(
             Locale.ROOT,
             OBJECT_KEY_LAYOUT,
@@ -662,6 +716,7 @@ public class ConversationFileService
         GeneratePresignedUrlRequest request = new GeneratePresignedUrlRequest(
             fileResource.getBucketName(), fileResource.getObjectKey(), HttpMethod.GET);
         request.setExpiration(Date.from(expiresAt));
+
         return oss.generatePresignedUrl(request).toString();
     }
 
@@ -679,12 +734,14 @@ public class ConversationFileService
         GeneratePresignedUrlRequest request = new GeneratePresignedUrlRequest(
             variant.getBucketName(), variant.getObjectKey(), HttpMethod.GET);
         request.setExpiration(Date.from(expiresAt));
+
         if (inline)
         {
             ResponseHeaderOverrides responseHeaders = new ResponseHeaderOverrides();
             responseHeaders.setContentDisposition("inline");
             request.setResponseHeaders(responseHeaders);
         }
+
         return oss.generatePresignedUrl(request).toString();
     }
 
@@ -698,7 +755,9 @@ public class ConversationFileService
     {
         if (fileIds == null || fileIds.isEmpty() || fileIds.size() > conversationFileProperties.getMaxCountPerMessage())
             throw new ServiceResponseException(ERROR_INVALID_FILE, "The preview request is invalid.");
+
         Set<String> unique = new HashSet<>(fileIds);
+
         if (unique.size() != fileIds.size() || unique.stream().anyMatch(id -> !StringUtils.hasText(id)))
             throw new ServiceResponseException(ERROR_INVALID_FILE, "Preview file IDs must be non-empty and unique.");
     }
@@ -712,9 +771,11 @@ public class ConversationFileService
     private Map<Long, FileResourceVariant> indexReadyVariants(List<Long> resourceIds)
     {
         Map<Long, FileResourceVariant> variants = new LinkedHashMap<>();
+
         for (FileResourceVariant variant : fileResourceVariantMapper.listReadyVariants(
             resourceIds, FileVariantType.MODEL_INPUT))
             variants.put(variant.getFileResourceId(), variant);
+
         return variants;
     }
 
@@ -729,8 +790,10 @@ public class ConversationFileService
     private FileResourceVariant requireVariant(Map<Long, FileResourceVariant> variants, long resourceId)
     {
         FileResourceVariant variant = variants.get(resourceId);
+
         if (variant == null)
             throw new ServiceResponseException(ERROR_INVALID_FILE, "The sanitized image preview is not ready.");
+
         return variant;
     }
 
@@ -751,6 +814,7 @@ public class ConversationFileService
         result.setMimeType(variant.getMimeType());
         result.setWidth(variant.getWidth());
         result.setHeight(variant.getHeight());
+
         return result;
     }
 
@@ -763,12 +827,13 @@ public class ConversationFileService
      */
     private String createDownloadUrl(FileResource fileResource, Instant expiresAt)
     {
-        GeneratePresignedUrlRequest request = new GeneratePresignedUrlRequest(
-            fileResource.getBucketName(), fileResource.getObjectKey(), HttpMethod.GET);
+        GeneratePresignedUrlRequest request = new GeneratePresignedUrlRequest(fileResource.getBucketName(), fileResource.getObjectKey(), HttpMethod.GET);
         request.setExpiration(Date.from(expiresAt));
+
         ResponseHeaderOverrides responseHeaders = new ResponseHeaderOverrides();
         responseHeaders.setContentDisposition(buildAttachmentContentDisposition(fileResource.getOriginalFilename()));
         request.setResponseHeaders(responseHeaders);
+
         return oss.generatePresignedUrl(request).toString();
     }
 
@@ -784,6 +849,7 @@ public class ConversationFileService
         normalized = normalized.replaceAll("[\\r\\n\\\\\"]+", "_");
         String asciiFallback = normalized.replaceAll("[^\\x20-\\x7E]", "_");
         String encoded = URLEncoder.encode(normalized, StandardCharsets.UTF_8).replace("+", "%20");
+
         return "attachment; filename=\"" + asciiFallback + "\"; filename*=UTF-8''" + encoded;
     }
 

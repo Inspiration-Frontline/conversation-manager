@@ -43,6 +43,7 @@ public class JsonSerializer
     {
         if (sharedObjectMapper == null)
             throw new IllegalStateException("JsonSerializer has not been initialized.");
+
         return sharedObjectMapper;
     }
 

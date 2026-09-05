@@ -51,6 +51,7 @@ public class W3cTraceContextFilter implements Filter
     public Result invoke(Invoker<?> invoker, Invocation invocation) throws RpcException
     {
         Context extracted = extractParentContext(invocation.getAttachments());
+
         try (Scope scope = extracted.makeCurrent())
         {
             return invoker.invoke(invocation);
@@ -95,8 +96,10 @@ public class W3cTraceContextFilter implements Filter
         TextMapPropagator propagator)
     {
         Context current = Context.current();
+
         if (attachments == null || attachments.isEmpty())
             return current;
+
         try
         {
             return propagator.extract(current, attachments, ATTACHMENT_GETTER);
@@ -126,6 +129,7 @@ public class W3cTraceContextFilter implements Filter
         {
             if (carrier == null)
                 return Collections.emptyList();
+
             return carrier.keySet();
         }
 
@@ -141,6 +145,7 @@ public class W3cTraceContextFilter implements Filter
         {
             if (carrier == null)
                 return null;
+
             return carrier.get(key);
         }
     }

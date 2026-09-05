@@ -94,9 +94,11 @@ public final class BusinessIdManager
             return new ArrayList<>();
 
         LinkedHashSet<String> normalizedIds = new LinkedHashSet<>();
+
         for (String id : ids)
         {
             String normalizedId = TextNormalizer.trimToNull(id);
+
             if (normalizedId != null)
                 normalizedIds.add(normalizedId);
         }

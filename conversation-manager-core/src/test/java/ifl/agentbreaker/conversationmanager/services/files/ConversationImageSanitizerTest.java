@@ -14,11 +14,7 @@ import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.nio.charset.StandardCharsets;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import org.junit.jupiter.api.Assertions;
 
 public class ConversationImageSanitizerTest
 {
@@ -51,14 +47,14 @@ public class ConversationImageSanitizerTest
         SanitizedImage result = sanitizer.sanitize(file("png"), encode(source, "png"));
         BufferedImage decoded = ImageIO.read(new ByteArrayInputStream(result.bytes()));
 
-        assertEquals("image/png", result.mimeType());
-        assertEquals(8, result.sourceWidth());
-        assertEquals(4, result.sourceHeight());
-        assertEquals(4, result.width());
-        assertEquals(2, result.height());
-        assertNotNull(decoded);
-        assertTrue(decoded.getColorModel().hasAlpha());
-        assertEquals(64, result.sha256().length());
+        Assertions.assertEquals("image/png", result.mimeType());
+        Assertions.assertEquals(8, result.sourceWidth());
+        Assertions.assertEquals(4, result.sourceHeight());
+        Assertions.assertEquals(4, result.width());
+        Assertions.assertEquals(2, result.height());
+        Assertions.assertNotNull(decoded);
+        Assertions.assertTrue(decoded.getColorModel().hasAlpha());
+        Assertions.assertEquals(64, result.sha256().length());
     }
 
     @Test
@@ -66,6 +62,7 @@ public class ConversationImageSanitizerTest
     {
         BufferedImage source = new BufferedImage(4, 2, BufferedImage.TYPE_INT_RGB);
         Graphics2D graphics = source.createGraphics();
+
         try
         {
             graphics.fillRect(0, 0, 4, 2);
@@ -78,12 +75,12 @@ public class ConversationImageSanitizerTest
 
         SanitizedImage result = sanitizer.sanitize(file("jpg"), orientedJpeg);
 
-        assertEquals("image/jpeg", result.mimeType());
-        assertEquals(2, result.sourceWidth());
-        assertEquals(4, result.sourceHeight());
-        assertEquals(2, result.width());
-        assertEquals(4, result.height());
-        assertFalse(new String(result.bytes(), StandardCharsets.ISO_8859_1).contains("Exif"));
+        Assertions.assertEquals("image/jpeg", result.mimeType());
+        Assertions.assertEquals(2, result.sourceWidth());
+        Assertions.assertEquals(4, result.sourceHeight());
+        Assertions.assertEquals(2, result.width());
+        Assertions.assertEquals(4, result.height());
+        Assertions.assertFalse(new String(result.bytes(), StandardCharsets.ISO_8859_1).contains("Exif"));
     }
 
     @Test
@@ -95,9 +92,9 @@ public class ConversationImageSanitizerTest
 
         SanitizedImage result = sanitizer.sanitize(file("webp"), webp);
 
-        assertEquals("image/jpeg", result.mimeType());
-        assertEquals("jpg", result.extension());
-        assertNotNull(ImageIO.read(new ByteArrayInputStream(result.bytes())));
+        Assertions.assertEquals("image/jpeg", result.mimeType());
+        Assertions.assertEquals("jpg", result.extension());
+        Assertions.assertNotNull(ImageIO.read(new ByteArrayInputStream(result.bytes())));
     }
 
     @Test
@@ -107,24 +104,24 @@ public class ConversationImageSanitizerTest
         System.arraycopy(new byte[] {(byte) 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A}, 0, apng, 0, 8);
         System.arraycopy("acTL".getBytes(StandardCharsets.US_ASCII), 0, apng, 12, 4);
 
-        FileProcessingException error = assertThrows(
+        FileProcessingException error = Assertions.assertThrows(
             FileProcessingException.class, () -> sanitizer.sanitize(file("png"), apng));
 
-        assertEquals("ANIMATED_IMAGE_UNSUPPORTED", error.getErrorCode());
+        Assertions.assertEquals("ANIMATED_IMAGE_UNSUPPORTED", error.getErrorCode());
     }
 
     @Test
     public void rejectsMalformedAndOversizedImages() throws Exception
     {
-        FileProcessingException malformed = assertThrows(
+        FileProcessingException malformed = Assertions.assertThrows(
             FileProcessingException.class, () -> sanitizer.sanitize(file("png"), new byte[] {1, 2, 3}));
-        assertEquals("INVALID_IMAGE", malformed.getErrorCode());
+        Assertions.assertEquals("INVALID_IMAGE", malformed.getErrorCode());
 
         properties.setMaxSourceEdgePixels(3);
         BufferedImage source = new BufferedImage(4, 2, BufferedImage.TYPE_INT_RGB);
-        FileProcessingException oversized = assertThrows(
+        FileProcessingException oversized = Assertions.assertThrows(
             FileProcessingException.class, () -> sanitizer.sanitize(file("png"), encode(source, "png")));
-        assertEquals("IMAGE_DIMENSIONS_EXCEEDED", oversized.getErrorCode());
+        Assertions.assertEquals("IMAGE_DIMENSIONS_EXCEEDED", oversized.getErrorCode());
     }
 
     private FileResource file(String extension)
@@ -132,13 +129,15 @@ public class ConversationImageSanitizerTest
         FileResource fileResource = new FileResource();
         fileResource.setOriginalFilename("image." + extension);
         fileResource.setFileExtension(extension);
+
         return fileResource;
     }
 
     private byte[] encode(BufferedImage image, String format) throws Exception
     {
         ByteArrayOutputStream output = new ByteArrayOutputStream();
-        assertTrue(ImageIO.write(image, format, output), "ImageIO writer must be available for " + format);
+        Assertions.assertTrue(ImageIO.write(image, format, output), "ImageIO writer must be available for " + format);
+
         return output.toByteArray();
     }
 
@@ -156,6 +155,7 @@ public class ConversationImageSanitizerTest
         System.arraycopy(jpeg, 0, result, 0, 2);
         System.arraycopy(exif, 0, result, 2, exif.length);
         System.arraycopy(jpeg, 2, result, 2 + exif.length, jpeg.length - 2);
+
         return result;
     }
 }

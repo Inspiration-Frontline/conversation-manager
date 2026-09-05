@@ -16,12 +16,9 @@ import org.junit.jupiter.api.Test;
 
 import java.util.concurrent.atomic.AtomicInteger;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertSame;
-import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
+import org.junit.jupiter.api.Assertions;
+import org.mockito.ArgumentMatchers;
+import org.mockito.Mockito;
 
 class ConversationRoundTracingTest
 {
@@ -34,13 +31,13 @@ class ConversationRoundTracingTest
     @BeforeEach
     void setUp()
     {
-        Tracer tracer = mock(Tracer.class);
-        span = mock(Span.class);
-        Tracer.SpanInScope scope = mock(Tracer.SpanInScope.class);
-        when(tracer.nextSpan()).thenReturn(span);
-        when(span.name(anyString())).thenReturn(span);
-        when(span.start()).thenReturn(span);
-        when(tracer.withSpan(span)).thenReturn(scope);
+        Tracer tracer = Mockito.mock(Tracer.class);
+        span = Mockito.mock(Span.class);
+        Tracer.SpanInScope scope = Mockito.mock(Tracer.SpanInScope.class);
+        Mockito.when(tracer.nextSpan()).thenReturn(span);
+        Mockito.when(span.name(ArgumentMatchers.anyString())).thenReturn(span);
+        Mockito.when(span.start()).thenReturn(span);
+        Mockito.when(tracer.withSpan(span)).thenReturn(scope);
         roundTracing = new ConversationRoundTracing(new TracingOperations(tracer));
     }
 
@@ -64,16 +61,17 @@ class ConversationRoundTracingTest
 
         SaveConversationRoundResponse actual = roundTracing.traceSaveConversationRound(request, () -> {
             invocationCount.incrementAndGet();
+
             return response;
         });
 
-        assertSame(response, actual);
-        assertEquals(1, invocationCount.get());
-        verify(span).tag("conversation.id", "conv_trace");
-        verify(span).tag("conversation.round_number", "2");
-        verify(span).tag("rpc.success", "true");
-        verify(span).tag("conversation.persisted_status", "ROUND_STATUS_COMPLETED");
-        verify(span).end();
+        Assertions.assertSame(response, actual);
+        Assertions.assertEquals(1, invocationCount.get());
+        Mockito.verify(span).tag("conversation.id", "conv_trace");
+        Mockito.verify(span).tag("conversation.round_number", "2");
+        Mockito.verify(span).tag("rpc.success", "true");
+        Mockito.verify(span).tag("conversation.persisted_status", "ROUND_STATUS_COMPLETED");
+        Mockito.verify(span).end();
     }
 
     @Test
@@ -89,11 +87,11 @@ class ConversationRoundTracingTest
         GetConversationRoundHistoryResponse actual = roundTracing.traceConversationRoundHistory(
             request, () -> response);
 
-        assertSame(response, actual);
-        verify(span).tag("conversation.id", "conv_missing");
-        verify(span).tag("rpc.success", "false");
-        verify(span).tag("rpc.code", "404");
-        verify(span).end();
+        Assertions.assertSame(response, actual);
+        Mockito.verify(span).tag("conversation.id", "conv_missing");
+        Mockito.verify(span).tag("rpc.success", "false");
+        Mockito.verify(span).tag("rpc.code", "404");
+        Mockito.verify(span).end();
     }
 
     private static ResponseBase successBase()

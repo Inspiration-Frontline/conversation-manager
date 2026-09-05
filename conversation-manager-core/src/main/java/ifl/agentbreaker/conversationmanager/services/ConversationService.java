@@ -138,9 +138,9 @@ public class ConversationService implements IConversationRpcService
         conversation.setDeleted(false);
 
         Long groupId = request == null ? null : request.getConversationGroupId();
+
         if (!setGroupId(conversation, groupId, userId))
-            return ServiceResponse.buildErrorResponse(
-                ERROR_INVALID_CONVERSATION, "Conversation Group does not exist.");
+            return ServiceResponse.buildErrorResponse(ERROR_INVALID_CONVERSATION, "Conversation Group does not exist.");
 
         Conversation createdConversation = conversationMapper.insertConversation(conversation);
 
@@ -158,6 +158,7 @@ public class ConversationService implements IConversationRpcService
         long userId = UserContextService.getCurrentUserId();
 
         Conversation conversation = conversationMapper.getConversationByIdAndUser(conversationId, userId);
+
         if (conversation == null)
             return ServiceResponse.buildErrorResponse(ERROR_CONVERSATION_NOT_FOUND, "Conversation does not exist.");
 
@@ -180,10 +181,12 @@ public class ConversationService implements IConversationRpcService
         long userId = UserContextService.getCurrentUserId();
 
         Conversation conversation = conversationMapper.getConversationByIdAndUser(request.getConversationId(), userId);
+
         if (conversation == null)
             return ServiceResponse.buildErrorResponse(ERROR_CONVERSATION_NOT_FOUND, "Conversation does not exist.");
 
         ShareExpiry expiry;
+
         try
         {
             expiry = ShareExpiry.parse(request.getExpiry());
@@ -208,6 +211,7 @@ public class ConversationService implements IConversationRpcService
         result.setSharedConversationId(sharing.getSharedConversationId());
         result.setEndRoundNumber(sharing.getEndRoundNumber());
         result.setExpiresAt(sharing.getExpiresAt());
+
         return ServiceResponse.buildSuccessResponse(result);
     }
 
@@ -224,10 +228,12 @@ public class ConversationService implements IConversationRpcService
     public ServiceResponse<SharedConversationView> getSharedConversation(String sharedConversationId)
     {
         ConversationSharing sharing = conversationSharingMapper.getActiveConversationSharingBySharedId(sharedConversationId);
+
         if (sharing == null)
             return ServiceResponse.buildErrorResponse(ERROR_SHARE_NOT_FOUND, "Shared conversation does not exist or has expired.");
 
         Conversation source = conversationMapper.getConversationById(sharing.getParentConversationId());
+
         if (source == null || source.isDeleted())
             return ServiceResponse.buildErrorResponse(ERROR_CONVERSATION_NOT_FOUND, "Conversation does not exist.");
 
@@ -303,18 +309,18 @@ public class ConversationService implements IConversationRpcService
         long userId = UserContextService.getCurrentUserId();
 
         ConversationSharing sharing = conversationSharingMapper.getActiveConversationSharingBySharedId(request.getSharedConversationId());
+
         if (sharing == null)
             return ServiceResponse.buildErrorResponse(ERROR_SHARE_NOT_FOUND, "Shared conversation does not exist.");
 
         Conversation source = conversationMapper.getConversationById(sharing.getParentConversationId());
+
         if (source == null || source.isDeleted())
             return ServiceResponse.buildErrorResponse(ERROR_CONVERSATION_NOT_FOUND, "Conversation does not exist.");
 
         if (conversationRoundReferenceMapper.hasReferencesInCompletedRoundsAtOrBefore(
             source.getConversationId(), sharing.getEndRoundNumber()))
-            return ServiceResponse.buildErrorResponse(
-                ERROR_INVALID_CONVERSATION,
-                "Shared conversations containing references cannot be forked.");
+            return ServiceResponse.buildErrorResponse(ERROR_INVALID_CONVERSATION, "Shared conversations containing references cannot be forked.");
 
         Conversation forked = new Conversation();
         forked.setCreatorId(userId);
@@ -324,14 +330,14 @@ public class ConversationService implements IConversationRpcService
         forked.setPinned(false);
         forked.setDeleted(false);
         Conversation createdConversation = conversationMapper.insertConversation(forked);
-        int copiedRounds = conversationRoundMapper.forkConversationHistory(
-            source.getConversationId(), forked.getConversationId(), userId, sharing.getEndRoundNumber());
-        int correlatedRounds = conversationRoundMapper.copyForkedRoundTraceIds(
-            source.getConversationId(), forked.getConversationId(), sharing.getEndRoundNumber());
+        int copiedRounds = conversationRoundMapper.forkConversationHistory(source.getConversationId(), forked.getConversationId(), userId, sharing.getEndRoundNumber());
+        int correlatedRounds = conversationRoundMapper.copyForkedRoundTraceIds(source.getConversationId(), forked.getConversationId(), sharing.getEndRoundNumber());
+
         if (correlatedRounds != copiedRounds)
             throw new IllegalStateException("Forked Round trace correlation row count does not match copied history.");
-        conversationMapper.updateLatestRoundNumber(
-            forked.getConversationId(), userId, sharing.getEndRoundNumber());
+
+        conversationMapper.updateLatestRoundNumber(forked.getConversationId(), userId, sharing.getEndRoundNumber());
+
         return ServiceResponse.buildSuccessResponse(toConversationAbstract(createdConversation == null ? forked : createdConversation));
     }
 
@@ -368,6 +374,7 @@ public class ConversationService implements IConversationRpcService
         page.setTotal(total);
         page.setPageCount((total + pageSize - 1) / pageSize);
         page.setData(conversationAbstracts);
+
         return ServiceResponse.buildSuccessResponse(page);
     }
 
@@ -379,6 +386,7 @@ public class ConversationService implements IConversationRpcService
     public ServiceResponse<List<String>> getAcceptableExportFormats()
     {
         List<String> exportFormats = new ArrayList<>();
+
         for (ExportFormat exportFormat : ExportFormat.values())
             exportFormats.add(exportFormat.name());
 
@@ -399,6 +407,7 @@ public class ConversationService implements IConversationRpcService
         long userId = UserContextService.getCurrentUserId();
 
         Conversation conversation = conversationMapper.getConversationByIdAndUser(request.getConversationId(), userId);
+
         if (conversation == null)
         {
             sendError(response, HttpServletResponse.SC_NOT_FOUND, "Conversation does not exist.");
@@ -407,15 +416,15 @@ public class ConversationService implements IConversationRpcService
 
         try
         {
-            ServiceResponse<RoundHistoryView> historyResponse = conversationRoundService.getHttpHistory(
-                userId, request.getConversationId());
+            ServiceResponse<RoundHistoryView> historyResponse = conversationRoundService.getHttpHistory(userId, request.getConversationId());
+
             if (!historyResponse.isSuccess())
             {
                 sendError(response, HttpServletResponse.SC_NOT_FOUND, "Conversation does not exist.");
                 return;
             }
-            ExportPayload payload = buildExportPayload(
-                conversation.getTitle(), historyResponse.getData(), request.getExportFormat());
+
+            ExportPayload payload = buildExportPayload(conversation.getTitle(), historyResponse.getData(), request.getExportFormat());
             response.setCharacterEncoding(StandardCharsets.UTF_8.name());
             response.setContentType(payload.contentType());
             response.setHeader("Content-Disposition", "attachment; filename=\"" + payload.filename() + "\"");
@@ -441,6 +450,7 @@ public class ConversationService implements IConversationRpcService
 
         String title = ConversationTitleManager.normalize(request.getTitle());
         Conversation conversation = conversationMapper.updateConversationTitle(request.getConversationId(), userId, title);
+
         if (conversation == null)
             return ServiceResponse.buildErrorResponse(ERROR_CONVERSATION_NOT_FOUND, "Conversation does not exist.");
 
@@ -457,8 +467,10 @@ public class ConversationService implements IConversationRpcService
     public ServiceResponse<Boolean> deleteConversation(String conversationId)
     {
         long userId = UserContextService.getCurrentUserId();
+
         if (!deleteSingleConversation(conversationId, userId))
             return ServiceResponse.buildErrorResponse(ERROR_CONVERSATION_NOT_FOUND, "Conversation does not exist.");
+
         return ServiceResponse.buildSuccessResponse(true);
     }
 
@@ -472,10 +484,13 @@ public class ConversationService implements IConversationRpcService
     private boolean deleteSingleConversation(String conversationId, long userId)
     {
         int updated = conversationMapper.deleteConversation(conversationId, userId);
+
         if (updated <= 0)
             return false;
+
         conversationSharingMapper.revokeByParentConversationIds(List.of(conversationId), userId);
         conversationFileService.releaseConversationReferences(conversationId, userId);
+
         return true;
     }
 
@@ -493,13 +508,17 @@ public class ConversationService implements IConversationRpcService
     {
         if (conversationIds == null || conversationIds.isEmpty())
             return ServiceResponse.buildErrorResponse(ERROR_CONVERSATION_NOT_FOUND, "At least one conversation is required.");
+
         long userId = UserContextService.getCurrentUserId();
         List<String> uniqueIds = BusinessIdManager.normalizeIds(conversationIds);
+
         if (uniqueIds.isEmpty() || !conversationMapper.allOwnedConversationsExist(userId, uniqueIds))
             return ServiceResponse.buildErrorResponse(ERROR_CONVERSATION_NOT_FOUND, "Conversation does not exist.");
+
         conversationMapper.deleteConversations(uniqueIds, userId);
         conversationSharingMapper.revokeByParentConversationIds(uniqueIds, userId);
         conversationFileService.releaseConversationReferences(uniqueIds, userId);
+
         return ServiceResponse.buildSuccessResponse(true);
     }
 
@@ -524,6 +543,7 @@ public class ConversationService implements IConversationRpcService
         {
             if (!pinned)
                 conversationMapper.clearConversationPinned(userId);
+
             return ServiceResponse.buildSuccessResponse(true);
         }
 
@@ -566,6 +586,7 @@ public class ConversationService implements IConversationRpcService
             return true;
 
         ConversationGroup group = conversationGroupMapper.getConversationGroupByIdForUser(groupId, userId);
+
         if (group == null)
             return false;
 
@@ -585,6 +606,7 @@ public class ConversationService implements IConversationRpcService
     {
         ConversationAbstract conversationAbstract = new ConversationAbstract();
         BeanUtils.copyProperties(conversation, conversationAbstract);
+
         return conversationAbstract;
     }
 
@@ -600,10 +622,10 @@ public class ConversationService implements IConversationRpcService
         String title, RoundHistoryView history, ExportFormat exportFormat) throws IOException
     {
         String baseFilename = history.conversationId() + "." + exportFormat.name().toLowerCase(Locale.ROOT);
+
         return switch (exportFormat)
         {
-            case JSON -> new ExportPayload(baseFilename, MediaType.APPLICATION_JSON_VALUE,
-                jsonSerializer.serialize(new ExportView(title, history), "Conversation export"));
+            case JSON -> new ExportPayload(baseFilename, MediaType.APPLICATION_JSON_VALUE, jsonSerializer.serialize(new ExportView(title, history), "Conversation export"));
             case HTML -> new ExportPayload(baseFilename, MediaType.TEXT_HTML_VALUE, toHtml(title, history));
             case MARKDOWN -> new ExportPayload(baseFilename, "text/markdown;charset=UTF-8", toMarkdown(title, history));
             case TXT -> new ExportPayload(baseFilename, MediaType.TEXT_PLAIN_VALUE, toPlainText(title, history));
@@ -620,6 +642,7 @@ public class ConversationService implements IConversationRpcService
     {
         StringBuilder builder = new StringBuilder();
         builder.append(title).append(System.lineSeparator()).append(System.lineSeparator());
+
         for (RoundHistoryView.RoundView round : history.rounds())
         {
             builder.append("User: ").append(TextNormalizer.trimToEmpty(round.userMessage()))
@@ -641,6 +664,7 @@ public class ConversationService implements IConversationRpcService
     {
         StringBuilder builder = new StringBuilder();
         builder.append("# ").append(title).append(System.lineSeparator()).append(System.lineSeparator());
+
         for (RoundHistoryView.RoundView round : history.rounds())
         {
             builder.append("## Round ").append(round.roundNumber()).append(System.lineSeparator())
@@ -668,6 +692,7 @@ public class ConversationService implements IConversationRpcService
             .append("</title></head><body><h1>")
             .append(escapeHtml(title))
             .append("</h1>");
+
         for (RoundHistoryView.RoundView round : history.rounds())
         {
             builder.append("<section><h2>Round ").append(round.roundNumber()).append("</h2><h3>User</h3><p>")
@@ -677,6 +702,7 @@ public class ConversationService implements IConversationRpcService
                 .append("</p></section>");
         }
         builder.append("</body></html>");
+
         return builder.toString();
     }
 

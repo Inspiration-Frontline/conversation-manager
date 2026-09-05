@@ -98,16 +98,19 @@ public class ConversationGroupService
     {
         long userId = UserContextService.getCurrentUserId();
         ConversationGroup group = conversationGroupMapper.lockConversationGroupByIdForUser(request.getGroupId(), userId);
+
         if (group == null)
             return ServiceResponse.buildErrorResponse(ERROR_GROUP_NOT_FOUND, "Conversation group does not exist.");
 
         if (StringUtils.hasText(request.getName()))
             group.setName(TextNormalizer.trimToMaxLength(request.getName(), MAX_GROUP_NAME_LENGTH));
+
         if (request.getDescription() != null)
             group.setDescription(TextNormalizer.trimToNull(request.getDescription()));
 
         group.setModifierId(userId);
         conversationGroupMapper.updateConversationGroupAbstract(group);
+
         return ServiceResponse.buildSuccessResponse(toConversationGroupAbstract(group));
     }
 
@@ -164,6 +167,7 @@ public class ConversationGroupService
         long userId = UserContextService.getCurrentUserId();
         conversationGroupMapper.acquireUserGroupLock(userId);
         ConversationGroup group = conversationGroupMapper.lockConversationGroupByIdForUser(request.getGroupId(), userId);
+
         if (group == null)
             return ServiceResponse.buildErrorResponse(ERROR_GROUP_NOT_FOUND, "Conversation group does not exist.");
 
@@ -177,6 +181,7 @@ public class ConversationGroupService
             conversationMapper.clearConversationGroupByGroupId(request.getGroupId(), userId);
 
         conversationGroupMapper.deleteConversationGroup(request.getGroupId(), userId);
+
         return ServiceResponse.buildSuccessResponse(true);
     }
 
@@ -206,16 +211,19 @@ public class ConversationGroupService
         conversationGroupMapper.acquireUserGroupLock(userId);
 
         Long targetGroupId = request.getTargetConversationGroupId();
+
         if (targetGroupId != null
             && conversationGroupMapper.lockConversationGroupByIdForUser(targetGroupId, userId) == null)
             return ServiceResponse.buildErrorResponse(ERROR_GROUP_NOT_FOUND, "Conversation group does not exist.");
 
         List<String> conversationIds = BusinessIdManager.normalizeIds(request.getConversationIds());
+
         if (CollectionUtils.isEmpty(conversationIds)
             || !conversationMapper.allOwnedConversationsExist(userId, conversationIds))
             return ServiceResponse.buildErrorResponse(ERROR_INVALID_CONVERSATION, "Some conversations do not exist.");
 
         conversationMapper.moveConversations(userId, conversationIds, targetGroupId);
+
         return ServiceResponse.buildSuccessResponse(true);
     }
 
@@ -231,6 +239,7 @@ public class ConversationGroupService
         MoveConversationsRequest moveRequest = new MoveConversationsRequest();
         moveRequest.setConversationIds(request.getConversationIds());
         moveRequest.setTargetConversationGroupId(request.getConversationGroupId());
+
         return moveConversations(moveRequest);
     }
 
@@ -244,16 +253,19 @@ public class ConversationGroupService
     public ServiceResponse<Boolean> removeConversationsFromGroup(@Valid RemoveConversationFromGroupRequest request)
     {
         long userId = UserContextService.getCurrentUserId();
+
         if (conversationGroupMapper.lockConversationGroupByIdForUser(request.getConversationGroupId(), userId) == null)
             return ServiceResponse.buildErrorResponse(ERROR_GROUP_NOT_FOUND, "Conversation group does not exist.");
 
         List<String> conversationIds = BusinessIdManager.normalizeIds(request.getConversationIds());
+
         if (CollectionUtils.isEmpty(conversationIds)
             || !conversationMapper.allOwnedConversationsBelongToGroup(
                 userId, request.getConversationGroupId(), conversationIds))
             return ServiceResponse.buildErrorResponse(ERROR_INVALID_CONVERSATION, "Some conversations are not in this group.");
 
         conversationMapper.removeConversationsFromGroup(userId, request.getConversationGroupId(), conversationIds);
+
         return ServiceResponse.buildSuccessResponse(true);
     }
 

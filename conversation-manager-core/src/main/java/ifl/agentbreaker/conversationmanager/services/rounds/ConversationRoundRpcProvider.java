@@ -59,9 +59,6 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 
-import static ifl.agentbreaker.conversationmanager.domain.constants.ConversationFileKind.IMAGE;
-import static ifl.agentbreaker.conversationmanager.domain.constants.ConversationFileStatus.READY;
-import static ifl.agentbreaker.conversationmanager.rpc.ConversationRound.getDefaultInstance;
 
 /**
  * Dubbo boundary owned by Conversation Manager for Runner's history, replay, persistence, and
@@ -151,6 +148,7 @@ public class ConversationRoundRpcProvider implements ConversationRpcService
         try
         {
             SaveConversationRoundRequest savedRequest = conversationRoundService.save(request);
+
             return SaveConversationRoundResponse.newBuilder()
                 .setBase(successBase())
                 .setData(toProtoRound(savedRequest))
@@ -160,7 +158,7 @@ public class ConversationRoundRpcProvider implements ConversationRpcService
         {
             return SaveConversationRoundResponse.newBuilder()
                 .setBase(errorBase(e.getCode(), e.getMessage()))
-                .setData(getDefaultInstance())
+                .setData(ifl.agentbreaker.conversationmanager.rpc.ConversationRound.getDefaultInstance())
                 .build();
         }
     }
@@ -190,6 +188,7 @@ public class ConversationRoundRpcProvider implements ConversationRpcService
         try
         {
             ConversationRoundProgressService.MutationOutcome outcome = conversationRoundProgressService.create(request);
+
             return CreateConversationRoundCheckpointResponse.newBuilder()
                 .setBase(successBase()).setData(toMutationResult(request.getConversationId(),
                     request.getRoundNumber(), outcome)).build();
@@ -223,6 +222,7 @@ public class ConversationRoundRpcProvider implements ConversationRpcService
         try
         {
             ConversationRoundProgressService.MutationOutcome outcome = conversationRoundProgressService.append(request);
+
             return AppendConversationRoundProgressResponse.newBuilder()
                 .setBase(successBase()).setData(toMutationResult(request.getConversationId(),
                     request.getRoundNumber(), outcome)).build();
@@ -256,6 +256,7 @@ public class ConversationRoundRpcProvider implements ConversationRpcService
         {
             ConversationRoundProgressService.MutationOutcome outcome =
                 conversationRoundProgressService.finalizeRound(request);
+
             return FinalizeConversationRoundResponse.newBuilder()
                 .setBase(successBase()).setData(toMutationResult(request.getConversationId(),
                     request.getRoundNumber(), outcome)).build();
@@ -319,8 +320,10 @@ public class ConversationRoundRpcProvider implements ConversationRpcService
             ConversationRoundHistory.Builder data = ConversationRoundHistory.newBuilder()
                 .setConversationId(request.getConversationId())
                 .setLatestRoundNumber(conversationRoundHistoryResult.latestRoundNumber());
+
             for (ConversationRound round : conversationRoundHistoryResult.rounds())
                 data.addRounds(toSummary(round));
+
             return GetConversationRoundHistoryResponse.newBuilder().setBase(successBase()).setData(data).build();
         }
         catch (RoundPersistenceException e)
@@ -406,6 +409,7 @@ public class ConversationRoundRpcProvider implements ConversationRpcService
                     "Only MODEL_CONTEXT replay is implemented.");
             ConversationReplayResult conversationReplayResult = conversationRoundService.getModelContext(
                 request.getUserId(), request.getConversationId(), request.getEndRoundNumber());
+
             return GetConversationReplayResponse.newBuilder()
                 .setBase(successBase())
                 .setData(ConversationReplay.newBuilder()
@@ -448,8 +452,10 @@ public class ConversationRoundRpcProvider implements ConversationRpcService
         {
             RoundDeletionResult result = conversationRoundService.deleteRounds(
                 request.getUserId(), request.getConversationId(), request.getRoundNumbersList());
+
             DeleteRoundsResult.Builder data = DeleteRoundsResult.newBuilder()
                 .addAllDeletedRoundNumbers(result.deletedRoundNumbers());
+
             for (RoundDeletionFailure failure : result.failures())
                 data.addFailures(DeleteRoundFailure.newBuilder()
                     .setRoundNumber(failure.roundNumber())
@@ -458,6 +464,7 @@ public class ConversationRoundRpcProvider implements ConversationRpcService
             ResponseBase base = result.failures().isEmpty()
                 ? successBase()
                 : errorBase(result.failures().get(0).code(), result.failures().get(0).message());
+
             return DeleteRoundsResponse.newBuilder().setBase(base).setData(data).build();
         }
         catch (RoundPersistenceException e)
@@ -507,16 +514,19 @@ public class ConversationRoundRpcProvider implements ConversationRpcService
     {
         PrepareConversationFilesResult.Builder data = PrepareConversationFilesResult.newBuilder()
             .setRequestId(request.getRequestId());
+
         try
         {
             validatePrepareConversationFiles(request);
             List<FileResource> fileResources = conversationFileService.listOwnedFiles(
                 request.getFileIdsList(), request.getUserId());
+
             if (fileResources.size() != request.getFileIdsCount())
                 return prepareFilesError(data, ConversationErrorCode.CONVERSATION_ERROR_CODE_FILE_NOT_FOUND,
                     "One or more files do not exist.");
 
             long totalBytes = 0;
+
             for (FileResource fileResource : fileResources)
             {
                 if (fileResource.getConfirmedTime() == null)
@@ -527,25 +537,30 @@ public class ConversationRoundRpcProvider implements ConversationRpcService
             if (totalBytes > conversationFileProperties.getMaxTotalBytesPerMessage())
                 return prepareFilesError(data, ConversationErrorCode.CONVERSATION_ERROR_CODE_INVALID_FILE_SELECTION,
                     "The selected files exceed the total size limit.");
+
             if (!conversationFileService.reserveFilesForRequest(
                 request.getFileIdsList(),
                 request.getUserId(),
                 request.getConversationId(),
                 request.getRequestId()))
                 return prepareFilesError(data, ConversationErrorCode.CONVERSATION_ERROR_CODE_INVALID_FILE_SELECTION,
-                    "One or more files are reserved by another request.");
+                    "One or more files are no longer available for this request.");
 
             boolean allReady = true;
             boolean anyFailed = false;
+
             for (FileResource fileResource : fileResources)
             {
                 PreparedConversationFile preparedFile = toPreparedFile(fileResource);
+
                 data.addFiles(preparedFile);
                 allReady &= preparedFile.getStatus() == ConversationFileStatus.CONVERSATION_FILE_STATUS_READY;
                 anyFailed |= isTerminalFileFailure(preparedFile.getStatus());
             }
+
             data.setAllReady(allReady);
             data.setAnyFailed(anyFailed);
+
             return PrepareConversationFilesResponse.newBuilder().setBase(successBase()).setData(data).build();
         }
         catch (IllegalArgumentException e)
@@ -639,8 +654,10 @@ public class ConversationRoundRpcProvider implements ConversationRpcService
             .setErrorMessage(request.getErrorMessage())
             .setStartTime(request.getStartTime())
             .setEndTime(request.getEndTime());
+
         if (request.hasFinalAnswer())
             conversationRound.setFinalAnswer(request.getFinalAnswer());
+
         return conversationRound.build();
     }
 
@@ -659,10 +676,13 @@ public class ConversationRoundRpcProvider implements ConversationRpcService
             || request.getRequestId().isBlank()
             || request.getFileIdsCount() <= 0
             || request.getFileIdsCount() > conversationFileProperties.getMaxCountPerMessage())
+
             throw new IllegalArgumentException("The file preparation request is invalid.");
         Set<String> uniqueFileIds = new HashSet<>(request.getFileIdsList());
+
         if (uniqueFileIds.size() != request.getFileIdsCount() || uniqueFileIds.stream().anyMatch(String::isBlank))
             throw new IllegalArgumentException("File IDs must be non-empty and unique.");
+
         if (!conversationMapper.existsByIdAndUser(request.getConversationId(), request.getUserId()))
             throw new IllegalArgumentException("The conversation does not exist.");
     }
@@ -693,19 +713,23 @@ public class ConversationRoundRpcProvider implements ConversationRpcService
             .setErrorCode(fileResource.getErrorCode())
             .setErrorMessage(fileResource.getErrorMessage())
             .setExtractionTruncated(fileResource.isExtractionTruncated());
+
         if (fileResource.getSha256() != null)
             preparedFile.setSha256(fileResource.getSha256());
-        if (fileResource.getStatus() == READY)
+
+        if (fileResource.getStatus() == ifl.agentbreaker.conversationmanager.domain.constants.ConversationFileStatus.READY)
         {
-            if (fileResource.getKind() == IMAGE)
+            if (fileResource.getKind() == ifl.agentbreaker.conversationmanager.domain.constants.ConversationFileKind.IMAGE)
             {
                 FileResourceVariant modelInput = conversationFileService.getReadyModelInputVariant(fileResource);
+
                 if (modelInput != null)
                     preparedFile.setModelInputUrl(conversationFileService.createSignedGetUrl(modelInput));
             }
             else if (fileResource.getExtractedText() != null)
                 preparedFile.setExtractedText(fileResource.getExtractedText());
         }
+
         return preparedFile.build();
     }
 
@@ -768,10 +792,12 @@ public class ConversationRoundRpcProvider implements ConversationRpcService
             .setErrorMessage(round.getErrorMessage())
             .setStartTime(round.getStartTime().toEpochMilli())
             .setEndTime(round.getEndTime() == null ? 0 : round.getEndTime().toEpochMilli());
+
         if (round.getFinalAnswerContent() != null)
             summary.setFinalAnswer(AssistantAnswer.newBuilder()
                 .setContent(round.getFinalAnswerContent())
                 .setSourceTurnNumber(round.getFinalSourceTurnNumber()));
+
         return summary.build();
     }
 

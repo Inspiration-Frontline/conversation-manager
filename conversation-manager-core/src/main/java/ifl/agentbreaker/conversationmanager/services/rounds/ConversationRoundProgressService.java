@@ -95,11 +95,14 @@ public class ConversationRoundProgressService
     {
         conversationRoundProgressValidator.validateCreate(request);
         String hash = hash(request);
+
         try (ConversationMutationLock.LockHandle ignored = conversationMutationLock.acquire(request.getConversationId()))
         {
             MutationOutcome outcome = transactionTemplate.execute(status -> createInTransaction(request, hash));
+
             if (outcome == null)
                 throw new IllegalStateException("Checkpoint transaction returned no result.");
+
             return outcome;
         }
     }
@@ -114,11 +117,14 @@ public class ConversationRoundProgressService
     {
         conversationRoundProgressValidator.validateAppend(request);
         String hash = hash(request);
+
         try (ConversationMutationLock.LockHandle ignored = conversationMutationLock.acquire(request.getConversationId()))
         {
             MutationOutcome outcome = transactionTemplate.execute(status -> appendInTransaction(request, hash));
+
             if (outcome == null)
                 throw new IllegalStateException("Progress transaction returned no result.");
+
             return outcome;
         }
     }
@@ -133,11 +139,14 @@ public class ConversationRoundProgressService
     {
         conversationRoundProgressValidator.validateFinalize(request);
         String hash = hash(request);
+
         try (ConversationMutationLock.LockHandle ignored = conversationMutationLock.acquire(request.getConversationId()))
         {
             MutationOutcome outcome = transactionTemplate.execute(status -> finalizeInTransaction(request, hash));
+
             if (outcome == null)
                 throw new IllegalStateException("Finalize transaction returned no result.");
+
             return outcome;
         }
     }
@@ -154,12 +163,15 @@ public class ConversationRoundProgressService
     {
         Conversation conversation = requireConversation(request.getUserId(), request.getConversationId());
         ConversationRound existing = conversationRoundMapper.getRound(request.getConversationId(), request.getRoundNumber());
+
         if (existing != null)
             return replay(existing, request.getMutationId(), hash);
+
         if (request.getRoundNumber() != conversation.getLatestRoundNumber() + 1)
             throw conversationRoundProgressValidator.invalid("round_number must equal the persisted high-water mark plus one.");
 
         ConversationRound round = conversationRoundMapper.insertCheckpoint(conversationRoundProgressMapper.toCheckpoint(request, hash));
+
         if (round == null)
             throw new IllegalStateException("Checkpoint insert returned no row.");
         SaveConversationRoundRequest legacyRoundSaveRequest = conversationRoundProgressMapper.toLegacyRoundSaveRequest(request);
@@ -167,10 +179,13 @@ public class ConversationRoundProgressService
             legacyRoundSaveRequest, round.getId());
         conversationRoundService.persistRoundReferences(legacyRoundSaveRequest, conversation, round.getId());
         String automaticTitle = deriveAutomaticTitle(request, roundFiles);
+
         if (conversationMapper.advanceLatestRoundNumber(request.getConversationId(), request.getUserId(),
             request.getRoundNumber(), automaticTitle, ConversationTitleManager.DEFAULT_TITLE) != 1)
             throw new IllegalStateException("Failed to advance Conversation high-water mark.");
+
         recordMutation(round.getId(), request.getUserId(), request.getMutationId(), hash, 0);
+
         return new MutationOutcome(0, RoundStatus.ROUND_STATUS_IN_PROGRESS, false);
     }
 
@@ -186,8 +201,10 @@ public class ConversationRoundProgressService
     {
         if (StringUtils.hasText(request.getUserRequest().getContent()))
             return ConversationTitleManager.deriveFromFirstUserMessage(request.getUserRequest().getContent());
+
         if (!roundFiles.isEmpty())
             return ConversationTitleManager.deriveFromAttachmentFilename(roundFiles.get(0).getOriginalFilename());
+
         return ConversationTitleManager.DEFAULT_TITLE;
     }
 
@@ -203,8 +220,10 @@ public class ConversationRoundProgressService
         requireConversation(request.getUserId(), request.getConversationId());
         ConversationRound round = requireRound(request.getConversationId(), request.getRoundNumber());
         ConversationRoundMutation replay = conversationRoundMutationMapper.getMutation(round.getId(), request.getMutationId());
+
         if (replay != null)
             return validateReplay(replay, hash, RoundStatus.ROUND_STATUS_IN_PROGRESS);
+
         conversationRoundProgressValidator.requireMutableRevision(round, request.getExpectedRevision());
         validateTurnBoundary(round.getId(), request);
 
@@ -213,12 +232,16 @@ public class ConversationRoundProgressService
                 .setUserId(request.getUserId()).addAllTurns(request.getTurnsList()).build(), round.getId());
         List<ConversationToolDispatch> dispatches = conversationRoundProgressMapper.toDispatches(
             request.getUserId(), round.getId(), request.getDispatchEvidenceList());
+
         if (!dispatches.isEmpty() && conversationToolDispatchMapper.upsertDispatchEvidence(dispatches) != dispatches.size())
             throw conversationRoundProgressValidator.invalid("Dispatch evidence attempted to overwrite terminal evidence.");
+
         if (conversationRoundMapper.advanceRevision(round.getId(), request.getExpectedRevision(), request.getUserId()) != 1)
             throw conversationRoundProgressValidator.stale();
+
         long committedRevision = request.getExpectedRevision() + 1;
         recordMutation(round.getId(), request.getUserId(), request.getMutationId(), hash, committedRevision);
+
         return new MutationOutcome(committedRevision, RoundStatus.ROUND_STATUS_IN_PROGRESS, false);
     }
 
@@ -234,6 +257,7 @@ public class ConversationRoundProgressService
         requireConversation(request.getUserId(), request.getConversationId());
         ConversationRound round = requireRound(request.getConversationId(), request.getRoundNumber());
         ConversationRoundMutation replay = conversationRoundMutationMapper.getMutation(round.getId(), request.getMutationId());
+
         if (replay != null)
             return validateReplay(replay, hash, request.getStatus());
 
@@ -268,6 +292,7 @@ public class ConversationRoundProgressService
     private void validateTurnBoundary(long roundId, AppendConversationRoundProgressRequest request)
     {
         long nextTurn = conversationTurnMapper.countTurns(roundId) + 1;
+
         for (int index = 0; index < request.getTurnsCount(); index++)
             if (request.getTurns(index).getTurnNumber() != nextTurn + index)
                 throw conversationRoundProgressValidator.invalid("Appended turn_number must continue the persisted sequence.");
@@ -283,9 +308,10 @@ public class ConversationRoundProgressService
     private Conversation requireConversation(long userId, String conversationId)
     {
         Conversation conversation = conversationMapper.lockConversationByIdAndUser(conversationId, userId);
+
         if (conversation == null)
-            throw conversationRoundProgressValidator.error(ConversationErrorCode.CONVERSATION_ERROR_CODE_CONVERSATION_NOT_FOUND,
-                "Conversation does not exist.");
+            throw conversationRoundProgressValidator.error(ConversationErrorCode.CONVERSATION_ERROR_CODE_CONVERSATION_NOT_FOUND, "Conversation does not exist.");
+
         return conversation;
     }
 
@@ -299,9 +325,10 @@ public class ConversationRoundProgressService
     private ConversationRound requireRound(String conversationId, long roundNumber)
     {
         ConversationRound round = conversationRoundMapper.getRound(conversationId, roundNumber);
+
         if (round == null || round.isDeleted())
-            throw conversationRoundProgressValidator.error(ConversationErrorCode.CONVERSATION_ERROR_CODE_ROUND_NOT_FOUND,
-                "Round does not exist.");
+            throw conversationRoundProgressValidator.error(ConversationErrorCode.CONVERSATION_ERROR_CODE_ROUND_NOT_FOUND, "Round does not exist.");
+
         return round;
     }
 
@@ -316,9 +343,11 @@ public class ConversationRoundProgressService
     private MutationOutcome replay(ConversationRound round, String mutationId, String hash)
     {
         ConversationRoundMutation mutation = conversationRoundMutationMapper.getMutation(round.getId(), mutationId);
+
         if (mutation == null)
             throw conversationRoundProgressValidator.error(ConversationErrorCode.CONVERSATION_ERROR_CODE_ROUND_NUMBER_CONFLICT,
                 "Round number already contains different persisted content.");
+
         return validateReplay(mutation, hash, toProtoStatus(round.getStatus()));
     }
 
@@ -333,8 +362,8 @@ public class ConversationRoundProgressService
     private MutationOutcome validateReplay(ConversationRoundMutation mutation, String hash, RoundStatus status)
     {
         if (!mutation.getPayloadHash().equals(hash))
-            throw conversationRoundProgressValidator.error(ConversationErrorCode.CONVERSATION_ERROR_CODE_MUTATION_CONFLICT,
-                "mutation_id was already committed with different content.");
+            throw conversationRoundProgressValidator.error(ConversationErrorCode.CONVERSATION_ERROR_CODE_MUTATION_CONFLICT, "mutation_id was already committed with different content.");
+
         return new MutationOutcome(mutation.getCommittedRevision(), status, true);
     }
 
@@ -356,6 +385,7 @@ public class ConversationRoundProgressService
         mutation.setMutationId(mutationId);
         mutation.setPayloadHash(hash);
         mutation.setCommittedRevision(revision);
+
         if (conversationRoundMutationMapper.insertMutation(mutation) != 1)
             throw new IllegalStateException("Mutation ledger insert affected an unexpected row count.");
     }

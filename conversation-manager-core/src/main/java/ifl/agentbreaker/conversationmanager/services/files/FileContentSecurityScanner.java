@@ -36,9 +36,11 @@ public class FileContentSecurityScanner
     {
         if (bytes.length < signature.length)
             return false;
+
         for (int start = 0; start <= bytes.length - signature.length; start++)
         {
             boolean match = true;
+
             for (int offset = 0; offset < signature.length; offset++)
             {
                 if (bytes[start + offset] != signature[offset])
@@ -47,9 +49,11 @@ public class FileContentSecurityScanner
                     break;
                 }
             }
+
             if (match)
                 return true;
         }
+
         return false;
     }
 }

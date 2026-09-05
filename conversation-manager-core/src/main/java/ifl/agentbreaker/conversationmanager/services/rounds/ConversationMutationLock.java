@@ -50,6 +50,7 @@ public class ConversationMutationLock
     {
         Thread thread = new Thread(runnable, "conversation-mutation-lock-renewer");
         thread.setDaemon(true);
+
         return thread;
     });
 
@@ -74,12 +75,14 @@ public class ConversationMutationLock
         do
         {
             Boolean acquired = stringRedisTemplate.opsForValue().setIfAbsent(key, token, LEASE);
+
             if (Boolean.TRUE.equals(acquired))
             {
                 ScheduledFuture<?> renewal = renewer.scheduleAtFixedRate(
                     () -> stringRedisTemplate.execute(RENEW_SCRIPT, Collections.singletonList(key), token,
                         Long.toString(LEASE.toMillis())),
                     LEASE.toMillis() / 3, LEASE.toMillis() / 3, TimeUnit.MILLISECONDS);
+
                 return new LockHandle(key, token, renewal);
             }
             try

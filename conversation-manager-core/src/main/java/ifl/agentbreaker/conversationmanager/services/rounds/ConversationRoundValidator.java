@@ -76,8 +76,10 @@ public class ConversationRoundValidator
         requireTime(request.getStartTime(), request.getEndTime(), "round");
         require(request.getReferencesCount() <= conversationReferenceProperties.getMaxCountPerRound(),
             "The Round exceeds the configured Conversation reference limit.");
+
         Set<String> referenceIds = new HashSet<>();
-        request.getReferencesList().forEach(reference -> {
+        request.getReferencesList().forEach(reference ->
+        {
             require(StringUtils.hasText(reference.getSourceConversationId()),
                 "A referenced Conversation ID is required.");
             require(!request.getConversationId().equals(reference.getSourceConversationId()),
@@ -91,9 +93,12 @@ public class ConversationRoundValidator
         if (request.getStatus() != RoundStatus.ROUND_STATUS_COMPLETED)
         {
             require(!request.hasFinalAnswer(), "A failed or cancelled round cannot contain a final answer.");
+
             if (request.getStatus() == RoundStatus.ROUND_STATUS_FAILED)
                 require(StringUtils.hasText(request.getErrorMessage()), "A failed round requires an error message.");
+
             validateTurns(request, false);
+
             return;
         }
 
@@ -124,6 +129,7 @@ public class ConversationRoundValidator
     {
         AgentIdentity firstIdentity = null;
         ConversationTurn previousTurn = null;
+
         for (int index = 0; index < request.getTurnsCount(); index++)
         {
             ConversationTurn turn = request.getTurns(index);
@@ -134,36 +140,35 @@ public class ConversationRoundValidator
                     && StringUtils.hasText(turn.getAgentIdentity().getName())
                     && turn.getAgentIdentity().getVersion() > 0,
                 "A resolved agent identity is required.");
+
             if (firstIdentity == null)
                 firstIdentity = turn.getAgentIdentity();
             else
-                require(firstIdentity.equals(turn.getAgentIdentity()),
-                    "The resolved Agent identity must remain fixed within one Round.");
+                require(firstIdentity.equals(turn.getAgentIdentity()), "The resolved Agent identity must remain fixed within one Round.");
+
             if (completedRound)
-                require(turn.getStatus() == TurnStatus.TURN_STATUS_COMPLETED && turn.getErrorMessage().isEmpty(),
-                    "Every turn in a completed round must be completed without an error.");
+                require(turn.getStatus() == TurnStatus.TURN_STATUS_COMPLETED && turn.getErrorMessage().isEmpty(), "Every turn in a completed round must be completed without an error.");
             else if (!isLast)
-                require(turn.getStatus() == TurnStatus.TURN_STATUS_COMPLETED && turn.getErrorMessage().isEmpty(),
-                    "Only the last partial turn may fail or be cancelled.");
+                require(turn.getStatus() == TurnStatus.TURN_STATUS_COMPLETED && turn.getErrorMessage().isEmpty(), "Only the last partial turn may fail or be cancelled.");
             else
             {
                 TurnStatus expectedStatus = request.getStatus() == RoundStatus.ROUND_STATUS_CANCELLED
                     ? TurnStatus.TURN_STATUS_CANCELLED : TurnStatus.TURN_STATUS_FAILED;
-                require(turn.getStatus() == expectedStatus,
-                    "The last partial turn status must match the Round status.");
+                require(turn.getStatus() == expectedStatus, "The last partial turn status must match the Round status.");
+
                 if (expectedStatus == TurnStatus.TURN_STATUS_FAILED)
-                    require(StringUtils.hasText(turn.getErrorMessage()),
-                        "A failed partial turn requires an error message.");
+                    require(StringUtils.hasText(turn.getErrorMessage()), "A failed partial turn requires an error message.");
             }
             requireTime(turn.getStartTime(), turn.getEndTime(), "turn");
-            require(turn.getStartTime() >= request.getStartTime() && turn.getEndTime() <= request.getEndTime(),
-                "Turn timing must be contained by round timing.");
+            require(turn.getStartTime() >= request.getStartTime() && turn.getEndTime() <= request.getEndTime(), "Turn timing must be contained by round timing.");
             validateTurnInvocation(turn, index, request.getTraceId());
+
             if (previousTurn != null)
                 validateContinuationDelta(previousTurn, turn.getRequest());
+
             if (!isLast)
-                require(turn.getResponse().getMessage().getToolCallsCount() > 0,
-                    "Every non-final Turn must continue through at least one Tool call.");
+                require(turn.getResponse().getMessage().getToolCallsCount() > 0, "Every non-final Turn must continue through at least one Tool call.");
+
             previousTurn = turn;
         }
     }
@@ -180,21 +185,22 @@ public class ConversationRoundValidator
         AssistantMessage previousMessage = previousTurn.getResponse().getMessage();
         List<ToolCall> previousCalls = previousMessage.getToolCallsList();
         require(!previousCalls.isEmpty(), "APPEND_DELTA requires Tool calls from the preceding Turn.");
-        require(currentRequest.getMessagesCount() == previousCalls.size() + 1,
-            "APPEND_DELTA must contain the preceding Assistant Tool call message and every Tool result.");
+        require(currentRequest.getMessagesCount() == previousCalls.size() + 1, "APPEND_DELTA must contain the preceding Assistant Tool call message and every Tool result.");
 
         LlmConversationMessage assistantDelta = currentRequest.getMessages(0);
         require(assistantDelta.getRole() == MessageRole.MESSAGE_ROLE_ASSISTANT
                 && assistantDelta.getContent().equals(previousMessage.getContent())
                 && assistantDelta.getToolCallsCount() == previousCalls.size(),
             "APPEND_DELTA must start with the exact preceding Assistant Tool call message.");
+
         for (int index = 0; index < previousCalls.size(); index++)
-            require(toolCallEquals(previousCalls.get(index), assistantDelta.getToolCalls(index)),
-                "APPEND_DELTA Assistant Tool calls must match the preceding model response.");
+            require(toolCallEquals(previousCalls.get(index), assistantDelta.getToolCalls(index)), "APPEND_DELTA Assistant Tool calls must match the preceding model response.");
 
         Map<String, ToolCallExecution> executionsById = new HashMap<>();
+
         for (ToolCallExecution execution : previousTurn.getToolCallExecutionsList())
             executionsById.put(execution.getToolCallId(), execution);
+
         for (int index = 0; index < previousCalls.size(); index++)
         {
             ToolCall previousCall = previousCalls.get(index);
@@ -266,6 +272,7 @@ public class ConversationRoundValidator
     {
         Map<String, ToolDefinition> toolsByName = new HashMap<>();
         Set<String> toolKeys = new HashSet<>();
+
         for (ToolDefinition tool : request.getToolsList())
         {
             require(tool.getSourceType() != ToolSourceType.TOOL_SOURCE_TYPE_UNSPECIFIED,
@@ -280,6 +287,7 @@ public class ConversationRoundValidator
             require(toolsByName.put(tool.getToolName(), tool) == null,
                 "Tool names must be unique within one LLM request.");
         }
+
         return toolsByName;
     }
 
@@ -291,10 +299,11 @@ public class ConversationRoundValidator
     private void validateRequestMessages(Iterable<LlmConversationMessage> messages)
     {
         Set<String> priorToolCallIds = new HashSet<>();
+
         for (LlmConversationMessage message : messages)
         {
-            require(message.getRole() != MessageRole.MESSAGE_ROLE_UNSPECIFIED,
-                "Every request message requires a role.");
+            require(message.getRole() != MessageRole.MESSAGE_ROLE_UNSPECIFIED, "Every request message requires a role.");
+
             if (message.getRole() == MessageRole.MESSAGE_ROLE_ASSISTANT)
             {
                 for (ToolCall toolCall : message.getToolCallsList())
@@ -303,14 +312,16 @@ public class ConversationRoundValidator
                     require(priorToolCallIds.add(toolCall.getId()),
                         "Historical Tool call IDs must be unique in request order.");
                 }
+
                 require(StringUtils.hasText(message.getContent())
                         || message.getContentPartsCount() > 0
                         || message.getToolCallsCount() > 0,
                     "Assistant messages require content or Tool calls.");
+
                 if (message.getContentPartsCount() > 0)
                     validateContentPayload(message.getContent(), message.getContentPartsList(), "Assistant message");
-                require(message.getToolCallId().isEmpty(),
-                    "Assistant messages cannot contain tool_call_id.");
+
+                require(message.getToolCallId().isEmpty(), "Assistant messages cannot contain tool_call_id.");
             }
             else if (message.getRole() == MessageRole.MESSAGE_ROLE_TOOL)
             {
@@ -323,8 +334,7 @@ public class ConversationRoundValidator
             }
             else
             {
-                require(message.getToolCallsCount() == 0 && message.getToolCallId().isEmpty(),
-                    "Only assistant and Tool messages may contain Tool metadata.");
+                require(message.getToolCallsCount() == 0 && message.getToolCallId().isEmpty(), "Only assistant and Tool messages may contain Tool metadata.");
                 validateContentPayload(message.getContent(), message.getContentPartsList(), "request message");
             }
         }
@@ -351,6 +361,7 @@ public class ConversationRoundValidator
             "A successful LLM response requires a finish reason and no error.");
 
         Map<String, ToolCall> callsById = new HashMap<>();
+
         for (ToolCall toolCall : response.getMessage().getToolCallsList())
         {
             validateToolCall(toolCall);
@@ -359,10 +370,12 @@ public class ConversationRoundValidator
             require(toolsByName.containsKey(toolCall.getFunction().getName()),
                 "Every response Tool call must reference a frozen Tool definition.");
         }
+
         require(turn.getToolCallExecutionsCount() == callsById.size(),
             "Every response Tool call requires exactly one execution record.");
 
         Set<String> executedIds = new HashSet<>();
+
         for (ToolCallExecution execution : turn.getToolCallExecutionsList())
         {
             ToolCall toolCall = callsById.get(execution.getToolCallId());
@@ -376,16 +389,19 @@ public class ConversationRoundValidator
                 "Tool execution arguments must match the model-emitted arguments.");
             require(execution.getStatus() != ToolCallExecutionStatus.TOOL_CALL_EXECUTION_STATUS_UNSPECIFIED,
                 "Tool execution status is required.");
+
             if (execution.getStatus() == ToolCallExecutionStatus.TOOL_CALL_EXECUTION_STATUS_COMPLETED)
             {
                 require(execution.getErrorMessage().isEmpty(), "Completed Tool execution cannot contain an error.");
                 require(StringUtils.hasText(execution.getResultContent()) && execution.hasRawResult(),
                     "Completed Tool execution requires complete normalized and raw results.");
             }
+
             if (execution.getStatus() == ToolCallExecutionStatus.TOOL_CALL_EXECUTION_STATUS_FAILED)
                 require(StringUtils.hasText(execution.getErrorMessage())
                         && StringUtils.hasText(execution.getResultContent()) && execution.hasRawResult(),
                     "Failed Tool execution requires an error plus complete normalized and raw results.");
+
             if (execution.getStatus() == ToolCallExecutionStatus.TOOL_CALL_EXECUTION_STATUS_CANCELLED)
                 require(StringUtils.hasText(execution.getErrorMessage()),
                     "Cancelled Tool execution requires a cancellation reason.");
@@ -434,6 +450,7 @@ public class ConversationRoundValidator
         boolean hasContent = StringUtils.hasText(content);
         boolean hasContentParts = contentParts != null && !contentParts.isEmpty();
         require(hasContent != hasContentParts, label + " must contain text or content parts, but not both.");
+
         if (!hasContentParts)
             return;
 
@@ -443,6 +460,7 @@ public class ConversationRoundValidator
                     || contentPart.getType().equals("image_url")
                     || contentPart.getType().equals("file_url"),
                 label + " contains an unsupported content part type.");
+
             if (contentPart.getType().equals("text"))
             {
                 require(StringUtils.hasText(contentPart.getText()) && !contentPart.hasFileUrl(),
@@ -471,6 +489,7 @@ public class ConversationRoundValidator
         {
             JsonNode firstNode = objectMapper.readTree(first);
             JsonNode secondNode = objectMapper.readTree(second);
+
             return firstNode.equals(secondNode);
         }
         catch (JsonProcessingException e)
@@ -519,7 +538,6 @@ public class ConversationRoundValidator
     private void require(boolean condition, String message)
     {
         if (!condition)
-            throw new RoundPersistenceException(
-                ConversationErrorCode.CONVERSATION_ERROR_CODE_INVALID_REQUEST_VALUE, message);
+            throw new RoundPersistenceException(ConversationErrorCode.CONVERSATION_ERROR_CODE_INVALID_REQUEST_VALUE, message);
     }
 }

@@ -13,9 +13,7 @@ import org.springframework.test.util.ReflectionTestUtils;
 import java.io.ByteArrayOutputStream;
 import java.nio.charset.StandardCharsets;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import org.junit.jupiter.api.Assertions;
 
 public class ConversationFileParserTest
 {
@@ -44,11 +42,11 @@ public class ConversationFileParserTest
             "A deterministic text attachment that exceeds the configured extraction bound."
                 .getBytes(StandardCharsets.UTF_8));
 
-        assertEquals("text/plain", result.detectedMimeType());
-        assertTrue(result.truncated());
-        assertTrue(result.extractedText().contains("Content truncated"));
-        assertEquals(FileTextExtractionStrategy.BALANCED_EXCERPTS, result.metadata().getTextExtractionStrategy());
-        assertEquals(64, result.sha256().length());
+        Assertions.assertEquals("text/plain", result.detectedMimeType());
+        Assertions.assertTrue(result.truncated());
+        Assertions.assertTrue(result.extractedText().contains("Content truncated"));
+        Assertions.assertEquals(FileTextExtractionStrategy.BALANCED_EXCERPTS, result.metadata().getTextExtractionStrategy());
+        Assertions.assertEquals(64, result.sha256().length());
     }
 
     @Test
@@ -65,12 +63,12 @@ public class ConversationFileParserTest
             file("long.txt", "txt", ConversationFileKind.TEXT),
             text.getBytes(StandardCharsets.UTF_8));
 
-        assertTrue(result.truncated());
-        assertTrue(result.extractedText().contains("BEGIN-EVIDENCE"));
-        assertTrue(result.extractedText().contains("MIDDLE-EVIDENCE"));
-        assertTrue(result.extractedText().contains("END-EVIDENCE"));
-        assertEquals(text.length(), result.metadata().getOriginalCharacterCount());
-        assertEquals(result.extractedText().length(), result.metadata().getRetainedCharacterCount());
+        Assertions.assertTrue(result.truncated());
+        Assertions.assertTrue(result.extractedText().contains("BEGIN-EVIDENCE"));
+        Assertions.assertTrue(result.extractedText().contains("MIDDLE-EVIDENCE"));
+        Assertions.assertTrue(result.extractedText().contains("END-EVIDENCE"));
+        Assertions.assertEquals(text.length(), result.metadata().getOriginalCharacterCount());
+        Assertions.assertEquals(result.extractedText().length(), result.metadata().getRetainedCharacterCount());
     }
 
     @Test
@@ -80,46 +78,47 @@ public class ConversationFileParserTest
             file("notes.md", "md", ConversationFileKind.TEXT),
             "# Heading\n\nMarkdown evidence.".getBytes(StandardCharsets.UTF_8));
 
-        assertTrue(ConversationFileTypeResolver.isMimeTypeCompatible("md", result.detectedMimeType()));
-        assertTrue(result.extractedText().contains("Markdown evidence"));
+        Assertions.assertTrue(ConversationFileTypeResolver.isMimeTypeCompatible("md", result.detectedMimeType()));
+        Assertions.assertTrue(result.extractedText().contains("Markdown evidence"));
     }
 
     @Test
     public void rejectsPdfWithoutReadableTextLayer() throws Exception
     {
         ByteArrayOutputStream output = new ByteArrayOutputStream();
+
         try (PDDocument document = new PDDocument())
         {
             document.addPage(new PDPage());
             document.save(output);
         }
 
-        FileProcessingException error = assertThrows(
+        FileProcessingException error = Assertions.assertThrows(
             FileProcessingException.class,
             () -> parser.parse(file("scan.pdf", "pdf", ConversationFileKind.DOCUMENT), output.toByteArray()));
-        assertEquals("SCANNED_PDF_UNSUPPORTED", error.getErrorCode());
+        Assertions.assertEquals("SCANNED_PDF_UNSUPPORTED", error.getErrorCode());
     }
 
     @Test
     public void resolvesSupportedFileKinds()
     {
-        assertEquals(ConversationFileKind.IMAGE, ConversationFileTypeResolver.resolveKind("png"));
-        assertEquals(ConversationFileKind.SPREADSHEET, ConversationFileTypeResolver.resolveKind("xlsx"));
-        assertEquals("report.final", ConversationFileTypeResolver.normalizeFilename("C:\\tmp\\report.final"));
-        assertEquals("", ConversationFileTypeResolver.getExtension("README"));
-        assertTrue(ConversationFileTypeResolver.isMimeTypeCompatible("md", "text/plain; charset=UTF-8"));
+        Assertions.assertEquals(ConversationFileKind.IMAGE, ConversationFileTypeResolver.resolveKind("png"));
+        Assertions.assertEquals(ConversationFileKind.SPREADSHEET, ConversationFileTypeResolver.resolveKind("xlsx"));
+        Assertions.assertEquals("report.final", ConversationFileTypeResolver.normalizeFilename("C:\\tmp\\report.final"));
+        Assertions.assertEquals("", ConversationFileTypeResolver.getExtension("README"));
+        Assertions.assertTrue(ConversationFileTypeResolver.isMimeTypeCompatible("md", "text/plain; charset=UTF-8"));
     }
 
     @Test
     public void rejectsContentThatDoesNotMatchTheExtension()
     {
-        FileProcessingException error = assertThrows(
+        FileProcessingException error = Assertions.assertThrows(
             FileProcessingException.class,
             () -> parser.parse(
                 file("report.pdf", "pdf", ConversationFileKind.DOCUMENT),
                 "This is plain text, not a PDF.".getBytes(StandardCharsets.UTF_8)));
 
-        assertEquals("FILE_TYPE_MISMATCH", error.getErrorCode());
+        Assertions.assertEquals("FILE_TYPE_MISMATCH", error.getErrorCode());
     }
 
     @Test
@@ -129,9 +128,9 @@ public class ConversationFileParserTest
         byte[] signature = "X5O!P%@AP[4\\PZX54(P^)7CC)7}$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*"
             .getBytes(StandardCharsets.US_ASCII);
 
-        FileProcessingException error = assertThrows(FileProcessingException.class, () -> scanner.scan(signature));
+        FileProcessingException error = Assertions.assertThrows(FileProcessingException.class, () -> scanner.scan(signature));
 
-        assertEquals("MALWARE_DETECTED", error.getErrorCode());
+        Assertions.assertEquals("MALWARE_DETECTED", error.getErrorCode());
     }
 
     private FileResource file(String name, String extension, ConversationFileKind kind)
@@ -140,6 +139,7 @@ public class ConversationFileParserTest
         fileResource.setOriginalFilename(name);
         fileResource.setFileExtension(extension);
         fileResource.setKind(kind);
+
         return fileResource;
     }
 }

@@ -1,16 +1,7 @@
 package ifl.agentbreaker.conversationmanager.services.rounds;
 
 import ifl.agentbreaker.commons.api.dto.ResponseBase;
-import ifl.agentbreaker.conversationmanager.rpc.GetConversationReplayRequest;
-import ifl.agentbreaker.conversationmanager.rpc.GetConversationReplayResponse;
-import ifl.agentbreaker.conversationmanager.rpc.GetConversationRoundHistoryRequest;
-import ifl.agentbreaker.conversationmanager.rpc.GetConversationRoundHistoryResponse;
-import ifl.agentbreaker.conversationmanager.rpc.PrepareConversationFilesRequest;
-import ifl.agentbreaker.conversationmanager.rpc.PrepareConversationFilesResponse;
-import ifl.agentbreaker.conversationmanager.rpc.PrepareConversationReferencesRequest;
-import ifl.agentbreaker.conversationmanager.rpc.PrepareConversationReferencesResponse;
-import ifl.agentbreaker.conversationmanager.rpc.SaveConversationRoundRequest;
-import ifl.agentbreaker.conversationmanager.rpc.SaveConversationRoundResponse;
+import ifl.agentbreaker.conversationmanager.rpc.*;
 import ifl.agentbreaker.conversationmanager.support.TracingOperations;
 import io.micrometer.tracing.Span;
 import org.springframework.stereotype.Component;
@@ -52,11 +43,13 @@ public class ConversationRoundTracing
             tagSaveRequest(span, request);
             SaveConversationRoundResponse response = operation.get();
             tagBase(span, response.getBase());
+
             if (response.getBase().getSuccess())
             {
                 span.tag("conversation.persisted_round_number", Long.toString(response.getData().getRoundNumber()));
                 span.tag("conversation.persisted_status", response.getData().getStatus().name());
             }
+
             return response;
         });
     }
@@ -76,12 +69,14 @@ public class ConversationRoundTracing
             span.tag("conversation.id", request.getConversationId());
             GetConversationRoundHistoryResponse response = operation.get();
             tagBase(span, response.getBase());
+
             if (response.getBase().getSuccess())
             {
                 span.tag("conversation.latest_round_number",
                     Long.toString(response.getData().getLatestRoundNumber()));
                 span.tag("conversation.round_count", Integer.toString(response.getData().getRoundsCount()));
             }
+
             return response;
         });
     }
@@ -103,8 +98,10 @@ public class ConversationRoundTracing
             span.tag("conversation.replay_detail", request.getDetailLevel().name());
             GetConversationReplayResponse response = operation.get();
             tagBase(span, response.getBase());
+
             if (response.getBase().getSuccess())
                 span.tag("context.message_count", Integer.toString(response.getData().getContextMessagesCount()));
+
             return response;
         });
     }
@@ -129,6 +126,7 @@ public class ConversationRoundTracing
             span.tag("file.ready_count", Integer.toString(response.getData().getFilesCount()));
             span.tag("file.all_ready", Boolean.toString(response.getData().getAllReady()));
             span.tag("file.any_failed", Boolean.toString(response.getData().getAnyFailed()));
+
             return response;
         });
     }
@@ -150,6 +148,7 @@ public class ConversationRoundTracing
             PrepareConversationReferencesResponse response = operation.get();
             tagBase(span, response.getBase());
             span.tag("reference.prepared_count", Integer.toString(response.getDataCount()));
+
             return response;
         });
     }
@@ -163,7 +162,7 @@ public class ConversationRoundTracing
     private static void tagSaveRequest(Span span, SaveConversationRoundRequest request)
     {
         int toolExecutionCount = request.getTurnsList().stream()
-            .mapToInt(turn -> turn.getToolCallExecutionsCount())
+            .mapToInt(ConversationTurn::getToolCallExecutionsCount)
             .sum();
         span.tag("conversation.id", request.getConversationId());
         span.tag("conversation.round_number", Long.toString(request.getRoundNumber()));
@@ -172,8 +171,7 @@ public class ConversationRoundTracing
         span.tag("conversation.tool_execution_count", Integer.toString(toolExecutionCount));
         span.tag("conversation.reference_count", Integer.toString(request.getReferencesCount()));
         span.tag("conversation.request_chars", Integer.toString(request.getUserRequest().getContent().length()));
-        span.tag("conversation.answer_chars",
-            Integer.toString(request.hasFinalAnswer() ? request.getFinalAnswer().getContent().length() : 0));
+        span.tag("conversation.answer_chars", Integer.toString(request.hasFinalAnswer() ? request.getFinalAnswer().getContent().length() : 0));
         span.tag("conversation.trace_id", request.getTraceId());
     }
 

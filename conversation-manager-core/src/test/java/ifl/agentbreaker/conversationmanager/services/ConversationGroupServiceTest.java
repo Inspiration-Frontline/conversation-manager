@@ -22,11 +22,9 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import java.util.Collections;
 import java.util.List;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.mockito.ArgumentMatchers.anyList;
-import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
+import org.junit.jupiter.api.Assertions;
+import org.mockito.ArgumentMatchers;
+import org.mockito.Mockito;
 
 @ExtendWith(MockitoExtension.class)
 class ConversationGroupServiceTest
@@ -72,11 +70,11 @@ class ConversationGroupServiceTest
         conversationGroupService.createConversationGroup(request);
 
         ArgumentCaptor<ConversationGroup> groupCaptor = ArgumentCaptor.forClass(ConversationGroup.class);
-        verify(conversationGroupMapper).acquireUserGroupLock(USER_ID);
-        verify(conversationGroupMapper).incrementConversationGroupSortOrders(USER_ID);
-        verify(conversationGroupMapper).insertConversationGroup(groupCaptor.capture());
-        assertEquals(1, groupCaptor.getValue().getSortOrder());
-        assertEquals("Research", groupCaptor.getValue().getName());
+        Mockito.verify(conversationGroupMapper).acquireUserGroupLock(USER_ID);
+        Mockito.verify(conversationGroupMapper).incrementConversationGroupSortOrders(USER_ID);
+        Mockito.verify(conversationGroupMapper).insertConversationGroup(groupCaptor.capture());
+        Assertions.assertEquals(1, groupCaptor.getValue().getSortOrder());
+        Assertions.assertEquals("Research", groupCaptor.getValue().getName());
     }
 
     @Test
@@ -84,12 +82,12 @@ class ConversationGroupServiceTest
     {
         ReorderConversationGroupsRequest request = new ReorderConversationGroupsRequest();
         request.setConversationGroupIds(List.of(1L, 1L));
-        when(conversationGroupMapper.listConversationGroupsForUpdate(USER_ID))
+        Mockito.when(conversationGroupMapper.listConversationGroupsForUpdate(USER_ID))
             .thenReturn(List.of(group(1), group(2)));
 
         conversationGroupService.reorderConversationGroups(request);
 
-        verify(conversationGroupMapper, never()).batchUpdateConversationGroupSortOrders(anyList());
+        Mockito.verify(conversationGroupMapper, Mockito.never()).batchUpdateConversationGroupSortOrders(ArgumentMatchers.anyList());
     }
 
     @Test
@@ -99,14 +97,14 @@ class ConversationGroupServiceTest
         request.setConversationGroupIds(List.of(2L, 1L));
         ConversationGroup first = group(1);
         ConversationGroup second = group(2);
-        when(conversationGroupMapper.listConversationGroupsForUpdate(USER_ID))
+        Mockito.when(conversationGroupMapper.listConversationGroupsForUpdate(USER_ID))
             .thenReturn(List.of(first, second));
 
         conversationGroupService.reorderConversationGroups(request);
 
-        verify(conversationGroupMapper).batchUpdateConversationGroupSortOrders(List.of(first, second));
-        assertEquals(2, first.getSortOrder());
-        assertEquals(1, second.getSortOrder());
+        Mockito.verify(conversationGroupMapper).batchUpdateConversationGroupSortOrders(List.of(first, second));
+        Assertions.assertEquals(2, first.getSortOrder());
+        Assertions.assertEquals(1, second.getSortOrder());
     }
 
     @Test
@@ -115,14 +113,14 @@ class ConversationGroupServiceTest
         MoveConversationsRequest request = new MoveConversationsRequest();
         request.setConversationIds(List.of("conv_a", "conv_b"));
         request.setTargetConversationGroupId(3L);
-        when(conversationGroupMapper.lockConversationGroupByIdForUser(3L, USER_ID))
+        Mockito.when(conversationGroupMapper.lockConversationGroupByIdForUser(3L, USER_ID))
             .thenReturn(group(3));
-        when(conversationMapper.allOwnedConversationsExist(USER_ID, request.getConversationIds())).thenReturn(true);
+        Mockito.when(conversationMapper.allOwnedConversationsExist(USER_ID, request.getConversationIds())).thenReturn(true);
 
         conversationGroupService.moveConversations(request);
 
-        verify(conversationGroupMapper).acquireUserGroupLock(USER_ID);
-        verify(conversationMapper).moveConversations(USER_ID, request.getConversationIds(), 3L);
+        Mockito.verify(conversationGroupMapper).acquireUserGroupLock(USER_ID);
+        Mockito.verify(conversationMapper).moveConversations(USER_ID, request.getConversationIds(), 3L);
     }
 
     @Test
@@ -131,15 +129,15 @@ class ConversationGroupServiceTest
         DeleteConversationGroupRequest request = new DeleteConversationGroupRequest();
         request.setGroupId(4L);
         request.setDeleteConversations(false);
-        when(conversationGroupMapper.lockConversationGroupByIdForUser(4L, USER_ID))
+        Mockito.when(conversationGroupMapper.lockConversationGroupByIdForUser(4L, USER_ID))
             .thenReturn(group(4));
 
         conversationGroupService.deleteConversationGroup(request);
 
-        verify(conversationGroupMapper).acquireUserGroupLock(USER_ID);
-        verify(conversationMapper).clearConversationGroupByGroupId(4L, USER_ID);
-        verify(conversationMapper, never()).deleteConversationsByGroupId(4L, USER_ID);
-        verify(conversationGroupMapper).deleteConversationGroup(4L, USER_ID);
+        Mockito.verify(conversationGroupMapper).acquireUserGroupLock(USER_ID);
+        Mockito.verify(conversationMapper).clearConversationGroupByGroupId(4L, USER_ID);
+        Mockito.verify(conversationMapper, Mockito.never()).deleteConversationsByGroupId(4L, USER_ID);
+        Mockito.verify(conversationGroupMapper).deleteConversationGroup(4L, USER_ID);
     }
 
     private ConversationGroup group(long groupId)
@@ -147,6 +145,7 @@ class ConversationGroupServiceTest
         ConversationGroup group = new ConversationGroup();
         group.setId(groupId);
         group.setCreatorId(USER_ID);
+
         return group;
     }
 }

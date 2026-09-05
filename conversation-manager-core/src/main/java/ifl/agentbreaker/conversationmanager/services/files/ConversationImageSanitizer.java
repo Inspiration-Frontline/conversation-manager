@@ -47,11 +47,13 @@ public class ConversationImageSanitizer
     {
         Semaphore imageConcurrency = getConcurrency();
         boolean acquired = false;
+
         try
         {
             imageConcurrency.acquire();
             acquired = true;
             rejectKnownAnimation(bytes, fileResource.getFileExtension());
+
             return decodeAndEncode(fileResource, bytes);
         }
         catch (InterruptedException e)
@@ -81,10 +83,13 @@ public class ConversationImageSanitizer
         {
             if (input == null)
                 throw new FileProcessingException("INVALID_IMAGE", "The uploaded image cannot be decoded.");
+
             Iterator<ImageReader> readers = ImageIO.getImageReaders(input);
             if (!readers.hasNext())
                 throw new FileProcessingException("INVALID_IMAGE", "The uploaded image cannot be decoded.");
+
             ImageReader reader = readers.next();
+
             try
             {
                 reader.setInput(input, false, true);
@@ -92,21 +97,26 @@ public class ConversationImageSanitizer
                 int height = reader.getHeight(0);
                 validateDimensions(width, height);
                 int frameCount = readFrameCount(reader);
+
                 if (frameCount != 1)
-                    throw new FileProcessingException(
-                        "ANIMATED_IMAGE_UNSUPPORTED", "Animated images are not supported. Upload a still image.");
+                    throw new FileProcessingException("ANIMATED_IMAGE_UNSUPPORTED", "Animated images are not supported. Upload a still image.");
+
                 BufferedImage decoded = reader.read(0);
                 if (decoded == null)
                     throw new FileProcessingException("INVALID_IMAGE", "The uploaded image cannot be decoded.");
+
                 int orientation = readOrientation(fileResource, bytes);
                 BufferedImage oriented = applyOrientation(decoded, orientation);
                 BufferedImage bounded = scaleDown(oriented);
                 boolean pngOutput = shouldUsePng(fileResource, bounded);
                 byte[] encoded = encode(bounded, pngOutput);
                 BufferedImage verified = ImageIO.read(new ByteArrayInputStream(encoded));
+
                 if (verified == null || verified.getWidth() != bounded.getWidth() || verified.getHeight() != bounded.getHeight())
                     throw new FileProcessingException("IMAGE_DERIVATIVE_FAILED", "The sanitized image could not be verified.");
+
                 String digest = HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(encoded));
+
                 return new SanitizedImage(
                     encoded,
                     pngOutput ? "image/png" : "image/jpeg",
@@ -142,12 +152,12 @@ public class ConversationImageSanitizer
     private void validateDimensions(int width, int height) throws FileProcessingException
     {
         long pixels = (long) width * height;
+
         if (width <= 0 || height <= 0
             || width > conversationFileProperties.getMaxSourceEdgePixels()
             || height > conversationFileProperties.getMaxSourceEdgePixels()
             || pixels > conversationFileProperties.getMaxSourcePixels())
-            throw new FileProcessingException(
-                "IMAGE_DIMENSIONS_EXCEEDED", "The image dimensions exceed the configured limit.");
+            throw new FileProcessingException("IMAGE_DIMENSIONS_EXCEEDED", "The image dimensions exceed the configured limit.");
     }
 
     /**
@@ -181,16 +191,20 @@ public class ConversationImageSanitizer
     {
         if (!"jpg".equals(fileResource.getFileExtension()) && !"jpeg".equals(fileResource.getFileExtension()))
             return 1;
+
         try
         {
             Metadata metadata = ImageMetadataReader.readMetadata(new ByteArrayInputStream(bytes));
             ExifIFD0Directory directory = metadata.getFirstDirectoryOfType(ExifIFD0Directory.class);
+
             if (directory == null || !directory.containsTag(ExifIFD0Directory.TAG_ORIENTATION))
                 return 1;
+
             int orientation = directory.getInt(ExifIFD0Directory.TAG_ORIENTATION);
+
             if (orientation < 1 || orientation > 8)
-                throw new FileProcessingException(
-                    "IMAGE_ORIENTATION_INVALID", "The image orientation metadata is invalid.");
+                throw new FileProcessingException("IMAGE_ORIENTATION_INVALID", "The image orientation metadata is invalid.");
+
             return orientation;
         }
         catch (FileProcessingException e)
@@ -199,8 +213,7 @@ public class ConversationImageSanitizer
         }
         catch (Exception e)
         {
-            throw new FileProcessingException(
-                "IMAGE_ORIENTATION_INVALID", "The image orientation metadata cannot be read safely.", e);
+            throw new FileProcessingException("IMAGE_ORIENTATION_INVALID", "The image orientation metadata cannot be read safely.", e);
         }
     }
 
@@ -216,10 +229,12 @@ public class ConversationImageSanitizer
         int width = source.getWidth();
         int height = source.getHeight();
         boolean swapsAxes = orientation >= 5;
+
         BufferedImage target = new BufferedImage(
             swapsAxes ? height : width,
             swapsAxes ? width : height,
             source.getColorModel().hasAlpha() ? BufferedImage.TYPE_INT_ARGB : BufferedImage.TYPE_INT_RGB);
+
         AffineTransform transform = switch (orientation)
         {
             case 2 -> new AffineTransform(-1, 0, 0, 1, width, 0);
@@ -231,7 +246,9 @@ public class ConversationImageSanitizer
             case 8 -> new AffineTransform(0, -1, 1, 0, 0, width);
             default -> new AffineTransform();
         };
+
         Graphics2D graphics = target.createGraphics();
+
         try
         {
             graphics.drawImage(source, transform, null);
@@ -253,14 +270,16 @@ public class ConversationImageSanitizer
     {
         int limit = conversationFileProperties.getMaxModelInputEdgePixels();
         int longest = Math.max(source.getWidth(), source.getHeight());
+
         if (longest <= limit)
             return source;
+
         double scale = (double) limit / longest;
         int width = Math.max(1, (int) Math.round(source.getWidth() * scale));
         int height = Math.max(1, (int) Math.round(source.getHeight() * scale));
-        BufferedImage target = new BufferedImage(
-            width, height, source.getColorModel().hasAlpha() ? BufferedImage.TYPE_INT_ARGB : BufferedImage.TYPE_INT_RGB);
+        BufferedImage target = new BufferedImage(width, height, source.getColorModel().hasAlpha() ? BufferedImage.TYPE_INT_ARGB : BufferedImage.TYPE_INT_RGB);
         Graphics2D graphics = target.createGraphics();
+
         try
         {
             graphics.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BICUBIC);
@@ -297,16 +316,21 @@ public class ConversationImageSanitizer
     private byte[] encode(BufferedImage image, boolean pngOutput) throws Exception
     {
         ByteArrayOutputStream output = new ByteArrayOutputStream();
+
         if (pngOutput)
         {
             if (!ImageIO.write(image, "png", output))
                 throw new FileProcessingException("IMAGE_DERIVATIVE_FAILED", "PNG encoding is unavailable.");
+
             return output.toByteArray();
         }
         Iterator<ImageWriter> writers = ImageIO.getImageWritersByFormatName("jpeg");
+
         if (!writers.hasNext())
             throw new FileProcessingException("IMAGE_DERIVATIVE_FAILED", "JPEG encoding is unavailable.");
+
         ImageWriter writer = writers.next();
+
         try (ImageOutputStream imageOutput = ImageIO.createImageOutputStream(output))
         {
             writer.setOutput(imageOutput);
@@ -332,8 +356,8 @@ public class ConversationImageSanitizer
     private void rejectKnownAnimation(byte[] bytes, String extension) throws FileProcessingException
     {
         if ("png".equals(extension) && containsPngChunk(bytes, "acTL"))
-            throw new FileProcessingException(
-                "ANIMATED_IMAGE_UNSUPPORTED", "Animated images are not supported. Upload a still image.");
+            throw new FileProcessingException("ANIMATED_IMAGE_UNSUPPORTED", "Animated images are not supported. Upload a still image.");
+
         if ("webp".equals(extension) && (containsWebpChunk(bytes, "ANIM") || containsWebpChunk(bytes, "ANMF")))
             throw new FileProcessingException(
                 "ANIMATED_IMAGE_UNSUPPORTED", "Animated images are not supported. Upload a still image.");
@@ -349,16 +373,20 @@ public class ConversationImageSanitizer
     private boolean containsPngChunk(byte[] bytes, String marker)
     {
         int offset = 8;
+
         while (offset <= bytes.length - 12)
         {
             long length = readUnsignedIntBigEndian(bytes, offset);
+
             if (matchesAscii(bytes, offset + 4, marker))
                 return true;
+
             long next = (long) offset + 12 + length;
             if (next > bytes.length || next <= offset)
                 return false;
             offset = (int) next;
         }
+
         return false;
     }
 
@@ -372,14 +400,18 @@ public class ConversationImageSanitizer
     private boolean containsWebpChunk(byte[] bytes, String marker)
     {
         int offset = 12;
+
         while (offset <= bytes.length - 8)
         {
             if (matchesAscii(bytes, offset, marker))
                 return true;
+
             long length = readUnsignedIntLittleEndian(bytes, offset + 4);
             long next = (long) offset + 8 + length + (length & 1);
+
             if (next > bytes.length || next <= offset)
                 return false;
+
             offset = (int) next;
         }
         return false;
@@ -397,11 +429,13 @@ public class ConversationImageSanitizer
     {
         if (marker.length() != 4 || offset < 0 || offset > bytes.length - 4)
             return false;
+
         for (int index = 0; index < 4; index++)
         {
             if (bytes[offset + index] != (byte) marker.charAt(index))
                 return false;
         }
+
         return true;
     }
 
@@ -443,11 +477,13 @@ public class ConversationImageSanitizer
     private Semaphore getConcurrency()
     {
         Semaphore current = concurrency;
+
         if (current == null)
         {
             synchronized (this)
             {
                 current = concurrency;
+
                 if (current == null)
                 {
                     current = new Semaphore(conversationFileProperties.getImageProcessingConcurrency());

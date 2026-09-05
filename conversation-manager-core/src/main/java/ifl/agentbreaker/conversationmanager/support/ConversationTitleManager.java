@@ -34,6 +34,7 @@ public final class ConversationTitleManager
     {
         String trimmed = TextNormalizer.trimToEmpty(title);
         String normalized = WHITESPACE.matcher(trimmed).replaceAll(" ");
+
         return TextNormalizer.trimToMaxLength(normalized, MAX_TITLE_LENGTH);
     }
 
@@ -46,6 +47,7 @@ public final class ConversationTitleManager
     public static String deriveFromFirstUserMessage(String message)
     {
         String title = normalize(message);
+
         return title.isEmpty() ? DEFAULT_TITLE : title;
     }
 
@@ -59,8 +61,10 @@ public final class ConversationTitleManager
     {
         String normalized = normalize(filename);
         int dot = normalized.lastIndexOf('.');
+
         if (dot > 0)
             normalized = normalized.substring(0, dot);
+
         return normalized.isEmpty() ? DEFAULT_TITLE : normalized;
     }
 }

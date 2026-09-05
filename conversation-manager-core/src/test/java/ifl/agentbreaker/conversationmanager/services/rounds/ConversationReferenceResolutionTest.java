@@ -22,14 +22,9 @@ import java.util.Collections;
 import java.util.List;
 import java.util.stream.IntStream;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.mockito.ArgumentMatchers.anyCollection;
-import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.times;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
+import org.junit.jupiter.api.Assertions;
+import org.mockito.ArgumentMatchers;
+import org.mockito.Mockito;
 
 @ExtendWith(MockitoExtension.class)
 class ConversationReferenceResolutionTest
@@ -57,7 +52,7 @@ class ConversationReferenceResolutionTest
     @BeforeEach
     void configureReferenceLimit()
     {
-        when(conversationReferenceProperties.getMaxCountPerRound()).thenReturn(10);
+        Mockito.when(conversationReferenceProperties.getMaxCountPerRound()).thenReturn(10);
         UserContextService.setCurrentUser(new UserInfo(7, "test-user", "Test User", Collections.emptyList()));
     }
 
@@ -72,25 +67,25 @@ class ConversationReferenceResolutionTest
     {
         ResolveConversationReferencesRequest request = request(
             "conv_destination", 0, List.of("conv_second", "conv_first"));
-        when(conversationMapper.getConversationByIdAndUser("conv_destination", 7))
+        Mockito.when(conversationMapper.getConversationByIdAndUser("conv_destination", 7))
             .thenReturn(conversation("conv_destination", "Destination", 41, 0));
-        when(conversationMapper.listConversationsByIdsAndUser(anyCollection(), eq(7L)))
+        Mockito.when(conversationMapper.listConversationsByIdsAndUser(ArgumentMatchers.anyCollection(), ArgumentMatchers.eq(7L)))
             .thenReturn(List.of(
                 conversation("conv_first", "First", 41, 3),
                 conversation("conv_second", "Second", 41, 8)));
-        when(conversationRoundMapper.listConversationIdsWithCompletedRounds(anyCollection()))
+        Mockito.when(conversationRoundMapper.listConversationIdsWithCompletedRounds(ArgumentMatchers.anyCollection()))
             .thenReturn(List.of("conv_first", "conv_second"));
 
         ServiceResponse<List<ResolvedConversationReference>> response =
             conversationRoundService.resolveConversationReferences(request);
 
-        assertTrue(response.isSuccess());
-        assertEquals(List.of("conv_second", "conv_first"), response.getData().stream()
+        Assertions.assertTrue(response.isSuccess());
+        Assertions.assertEquals(List.of("conv_second", "conv_first"), response.getData().stream()
             .map(ResolvedConversationReference::sourceConversationId).toList());
-        assertEquals(List.of(8L, 3L), response.getData().stream()
+        Assertions.assertEquals(List.of(8L, 3L), response.getData().stream()
             .map(ResolvedConversationReference::sourceEndRoundNumber).toList());
-        verify(conversationMapper, times(1)).listConversationsByIdsAndUser(anyCollection(), eq(7L));
-        verify(conversationRoundMapper, times(1)).listConversationIdsWithCompletedRounds(anyCollection());
+        Mockito.verify(conversationMapper, Mockito.times(1)).listConversationsByIdsAndUser(ArgumentMatchers.anyCollection(), ArgumentMatchers.eq(7L));
+        Mockito.verify(conversationRoundMapper, Mockito.times(1)).listConversationIdsWithCompletedRounds(ArgumentMatchers.anyCollection());
     }
 
     @Test
@@ -98,17 +93,17 @@ class ConversationReferenceResolutionTest
     {
         ResolveConversationReferencesRequest request = request(
             null, 41, List.of("conv_source"));
-        when(conversationGroupMapper.existsByIdAndUser(41, 7)).thenReturn(true);
-        when(conversationMapper.listConversationsByIdsAndUser(anyCollection(), eq(7L)))
+        Mockito.when(conversationGroupMapper.existsByIdAndUser(41, 7)).thenReturn(true);
+        Mockito.when(conversationMapper.listConversationsByIdsAndUser(ArgumentMatchers.anyCollection(), ArgumentMatchers.eq(7L)))
             .thenReturn(List.of(conversation("conv_source", "Failed only", 41, 2)));
-        when(conversationRoundMapper.listConversationIdsWithCompletedRounds(anyCollection()))
+        Mockito.when(conversationRoundMapper.listConversationIdsWithCompletedRounds(ArgumentMatchers.anyCollection()))
             .thenReturn(List.of());
 
         ServiceResponse<List<ResolvedConversationReference>> response =
             conversationRoundService.resolveConversationReferences(request);
 
-        assertFalse(response.isSuccess());
-        assertEquals("Every referenced Conversation must contain an active completed Round.",
+        Assertions.assertFalse(response.isSuccess());
+        Assertions.assertEquals("Every referenced Conversation must contain an active completed Round.",
             response.getMessage());
     }
 
@@ -124,21 +119,21 @@ class ConversationReferenceResolutionTest
             .toList();
         ResolveConversationReferencesRequest request = request(
             "conv_destination", 0, sourceIds);
-        when(conversationMapper.getConversationByIdAndUser("conv_destination", 7))
+        Mockito.when(conversationMapper.getConversationByIdAndUser("conv_destination", 7))
             .thenReturn(conversation("conv_destination", "Destination", 41, 0));
-        when(conversationMapper.listConversationsByIdsAndUser(anyCollection(), eq(7L)))
+        Mockito.when(conversationMapper.listConversationsByIdsAndUser(ArgumentMatchers.anyCollection(), ArgumentMatchers.eq(7L)))
             .thenReturn(sources);
-        when(conversationRoundMapper.listConversationIdsWithCompletedRounds(anyCollection()))
+        Mockito.when(conversationRoundMapper.listConversationIdsWithCompletedRounds(ArgumentMatchers.anyCollection()))
             .thenReturn(sourceIds);
 
         ServiceResponse<List<ResolvedConversationReference>> response =
             conversationRoundService.resolveConversationReferences(request);
 
-        assertTrue(response.isSuccess());
-        assertEquals(sourceIds, response.getData().stream()
+        Assertions.assertTrue(response.isSuccess());
+        Assertions.assertEquals(sourceIds, response.getData().stream()
             .map(ResolvedConversationReference::sourceConversationId).toList());
-        verify(conversationMapper, times(1)).listConversationsByIdsAndUser(anyCollection(), eq(7L));
-        verify(conversationRoundMapper, times(1)).listConversationIdsWithCompletedRounds(anyCollection());
+        Mockito.verify(conversationMapper, Mockito.times(1)).listConversationsByIdsAndUser(ArgumentMatchers.anyCollection(), ArgumentMatchers.eq(7L));
+        Mockito.verify(conversationRoundMapper, Mockito.times(1)).listConversationIdsWithCompletedRounds(ArgumentMatchers.anyCollection());
     }
 
     @Test
@@ -147,14 +142,14 @@ class ConversationReferenceResolutionTest
         ServiceResponse<List<ResolvedConversationReference>> duplicateResponse =
             conversationRoundService.resolveConversationReferences(request(
                 "conv_destination", 0, List.of("conv_source", "conv_source")));
-        assertFalse(duplicateResponse.isSuccess());
+        Assertions.assertFalse(duplicateResponse.isSuccess());
 
-        when(conversationMapper.getConversationByIdAndUser("conv_destination", 7))
+        Mockito.when(conversationMapper.getConversationByIdAndUser("conv_destination", 7))
             .thenReturn(conversation("conv_destination", "Destination", 41, 0));
         ServiceResponse<List<ResolvedConversationReference>> selfResponse =
             conversationRoundService.resolveConversationReferences(request(
                 "conv_destination", 0, List.of("conv_destination")));
-        assertFalse(selfResponse.isSuccess());
+        Assertions.assertFalse(selfResponse.isSuccess());
     }
 
     private ResolveConversationReferencesRequest request(
@@ -164,6 +159,7 @@ class ConversationReferenceResolutionTest
         request.setDestinationConversationId(destinationConversationId);
         request.setConversationGroupId(groupId);
         request.setSourceConversationIds(sourceIds);
+
         return request;
     }
 
@@ -174,6 +170,7 @@ class ConversationReferenceResolutionTest
         conversation.setTitle(title);
         conversation.setConversationGroupId(groupId);
         conversation.setLatestRoundNumber(latestRoundNumber);
+
         return conversation;
     }
 }

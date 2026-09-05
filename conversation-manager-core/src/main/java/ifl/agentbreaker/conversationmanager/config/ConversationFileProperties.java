@@ -60,24 +60,32 @@ public class ConversationFileProperties
         if (taskPollMilliseconds <= 0 || maxSourcePixels <= 0 || maxSourceEdgePixels <= 0 || maxModelInputEdgePixels <= 0
             || imageProcessingConcurrency <= 0 || jpegQuality <= 0F || jpegQuality > 1F)
             throw new IllegalStateException("Image processing limits must be positive and JPEG quality must be in (0, 1].");
+
         Set<String> normalizedExtensions = new LinkedHashSet<>();
+
         for (String extension : allowedExtensions)
         {
             String normalized = extension.trim().toLowerCase(Locale.ROOT);
+
             while (normalized.startsWith("."))
                 normalized = normalized.substring(1);
+
             if (!normalized.isEmpty())
                 normalizedExtensions.add(normalized);
         }
+
         allowedExtensions = normalizedExtensions;
 
         Set<String> normalizedMimeTypes = new LinkedHashSet<>();
+
         for (String mimeType : allowedMimeTypes)
         {
             String normalized = mimeType.trim().toLowerCase(Locale.ROOT);
+
             if (!normalized.isEmpty())
                 normalizedMimeTypes.add(normalized);
         }
+
         allowedMimeTypes = normalizedMimeTypes;
     }
 }

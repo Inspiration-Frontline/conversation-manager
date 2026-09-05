@@ -74,6 +74,7 @@ public abstract class JsonbTypeHandler<T> extends BaseTypeHandler<T>
     {
         PGobject jsonb = new PGobject();
         jsonb.setType("jsonb");
+
         try
         {
             jsonb.setValue(JsonSerializer.serializeShared(parameter, subject));
@@ -82,6 +83,7 @@ public abstract class JsonbTypeHandler<T> extends BaseTypeHandler<T>
         {
             throw new SQLException(subject + " could not be serialized.", e);
         }
+
         statement.setObject(parameterIndex, jsonb);
     }
 
@@ -127,10 +129,12 @@ public abstract class JsonbTypeHandler<T> extends BaseTypeHandler<T>
     {
         if (json == null || json.isBlank())
             return emptyValue;
+
         try
         {
             if (targetClass != null)
                 return JsonSerializer.deserializeShared(json, targetClass, subject);
+
             return JsonSerializer.deserializeShared(json, targetTypeReference, subject);
         }
         catch (IllegalArgumentException e)

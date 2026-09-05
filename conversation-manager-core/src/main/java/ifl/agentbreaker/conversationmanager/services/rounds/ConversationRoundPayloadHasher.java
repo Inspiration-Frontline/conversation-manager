@@ -30,6 +30,7 @@ public class ConversationRoundPayloadHasher
     public String hash(SaveConversationRoundRequest request)
     {
         SaveConversationRoundRequest canonical = request.toBuilder().clearUserId().build();
+
         try
         {
             ByteArrayOutputStream output = new ByteArrayOutputStream(canonical.getSerializedSize());
@@ -37,6 +38,7 @@ public class ConversationRoundPayloadHasher
             coded.useDeterministicSerialization();
             canonical.writeTo(coded);
             coded.flush();
+
             return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(output.toByteArray()));
         }
         catch (NoSuchAlgorithmException e)

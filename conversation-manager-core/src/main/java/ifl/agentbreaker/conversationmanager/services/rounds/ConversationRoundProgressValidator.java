@@ -20,6 +20,7 @@ class ConversationRoundProgressValidator
     {
         validateMutationIdentity(request.getUserId(), request.getConversationId(), request.getRoundNumber(),
             request.getMutationId());
+
         if (!request.hasUserRequest() || request.getStartTime() <= 0 || !request.hasAgentIdentity()
             || !StringUtils.hasText(request.getTraceId()))
             throw invalid("Checkpoint request is incomplete.");
@@ -30,8 +31,8 @@ class ConversationRoundProgressValidator
      */
     void validateAppend(AppendConversationRoundProgressRequest request)
     {
-        validateMutationIdentity(request.getUserId(), request.getConversationId(), request.getRoundNumber(),
-            request.getMutationId());
+        validateMutationIdentity(request.getUserId(), request.getConversationId(), request.getRoundNumber(), request.getMutationId());
+
         if (request.getTurnsCount() == 0 && request.getDispatchEvidenceCount() == 0)
             throw invalid("Progress mutation must append a Turn or dispatch evidence.");
     }
@@ -41,9 +42,9 @@ class ConversationRoundProgressValidator
      */
     void validateFinalize(FinalizeConversationRoundRequest request)
     {
-        validateMutationIdentity(request.getUserId(), request.getConversationId(), request.getRoundNumber(),
-            request.getMutationId());
+        validateMutationIdentity(request.getUserId(), request.getConversationId(), request.getRoundNumber(), request.getMutationId());
         boolean completed = request.getStatus() == RoundStatus.ROUND_STATUS_COMPLETED;
+
         if (request.getEndTime() <= 0 || request.getStatus() == RoundStatus.ROUND_STATUS_IN_PROGRESS
             || request.getStatus() == RoundStatus.ROUND_STATUS_UNSPECIFIED
             || (completed && !request.hasFinalAnswer())
@@ -62,8 +63,8 @@ class ConversationRoundProgressValidator
     void requireMutableRevision(ConversationRound round, long expectedRevision)
     {
         if (round.getStatus() != ConversationRoundStatus.IN_PROGRESS)
-            throw error(ConversationErrorCode.CONVERSATION_ERROR_CODE_ROUND_NOT_IN_PROGRESS,
-                "Round is already terminal.");
+            throw error(ConversationErrorCode.CONVERSATION_ERROR_CODE_ROUND_NOT_IN_PROGRESS, "Round is already terminal.");
+
         if (round.getRevision() != expectedRevision)
             throw stale();
     }
@@ -73,8 +74,7 @@ class ConversationRoundProgressValidator
      */
     RoundPersistenceException stale()
     {
-        return error(ConversationErrorCode.CONVERSATION_ERROR_CODE_STALE_REVISION,
-            "expected_revision does not match the committed Round revision.");
+        return error(ConversationErrorCode.CONVERSATION_ERROR_CODE_STALE_REVISION, "expected_revision does not match the committed Round revision.");
     }
 
     /** Creates an invalid-request failure with a caller-safe message.

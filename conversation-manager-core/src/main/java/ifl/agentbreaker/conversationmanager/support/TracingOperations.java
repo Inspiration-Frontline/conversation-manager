@@ -54,6 +54,7 @@ public class TracingOperations
     public <T> T trace(String spanName, Function<Span, T> operation)
     {
         Span span = tracer.nextSpan().name(spanName).start();
+
         try (Tracer.SpanInScope ignored = tracer.withSpan(span))
         {
             return operation.apply(span);

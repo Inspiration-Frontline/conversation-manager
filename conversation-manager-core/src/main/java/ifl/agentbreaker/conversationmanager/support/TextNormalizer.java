@@ -47,6 +47,7 @@ public final class TextNormalizer
     public static String trimToMaxLength(String value, int maxLength)
     {
         String trimmed = trimToEmpty(value);
+
         if (trimmed.length() <= maxLength)
             return trimmed;
 

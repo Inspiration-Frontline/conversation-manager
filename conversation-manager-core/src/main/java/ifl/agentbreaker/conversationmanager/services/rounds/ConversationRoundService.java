@@ -184,8 +184,10 @@ public class ConversationRoundService
     public ConversationRoundHistoryResult getHistory(long userId, String conversationId)
     {
         Long latestRoundNumber = conversationMapper.getLatestRoundNumberByIdAndUser(conversationId, userId);
+
         if (latestRoundNumber == null)
             throw new RoundPersistenceException(ERROR_CONVERSATION_NOT_FOUND, "Conversation does not exist.");
+
         return new ConversationRoundHistoryResult(
             latestRoundNumber, conversationRoundMapper.listActiveRounds(conversationId));
     }
@@ -208,6 +210,7 @@ public class ConversationRoundService
         {
             RoundDeletionResult result = transactionTemplate.execute(status ->
                 deleteRoundsInTransaction(userId, conversationId, requestedRoundNumbers, status));
+
             if (result == null)
                 throw new IllegalStateException("Round retry preparation returned no transaction result.");
 
@@ -252,6 +255,7 @@ public class ConversationRoundService
         TransactionStatus transactionStatus)
     {
         Conversation conversation = conversationMapper.lockConversationByIdAndUser(conversationId, userId);
+
         if (conversation == null)
             throw error(
                 ConversationErrorCode.CONVERSATION_ERROR_CODE_CONVERSATION_NOT_FOUND,
@@ -264,6 +268,7 @@ public class ConversationRoundService
         descendingRoundNumbers.sort(Collections.reverseOrder());
         int deletedCount = conversationRoundMapper.tombstoneRounds(
             conversationId, descendingRoundNumbers, userId);
+
         if (deletedCount == descendingRoundNumbers.size())
             return new RoundDeletionResult(List.copyOf(descendingRoundNumbers), List.of());
 
@@ -274,6 +279,7 @@ public class ConversationRoundService
                 ConversationErrorCode.CONVERSATION_ERROR_CODE_ROUND_NOT_FOUND_VALUE,
                 "Round was not deleted."))
             .toList();
+
         return new RoundDeletionResult(List.of(), failures);
     }
 
@@ -286,11 +292,11 @@ public class ConversationRoundService
     private void validateActiveRoundSuffix(List<Long> requestedRoundNumbers, List<Long> activeRoundNumbers)
     {
         int startIndex = activeRoundNumbers.size() - requestedRoundNumbers.size();
+
         if (startIndex < 0
             || !activeRoundNumbers.subList(startIndex, activeRoundNumbers.size()).equals(requestedRoundNumbers))
-            throw error(
-                ConversationErrorCode.CONVERSATION_ERROR_CODE_DELETE_REQUIRES_TAIL_SUFFIX,
-                "Round retry requires a contiguous suffix ending at the latest active Round.");
+
+            throw error(ConversationErrorCode.CONVERSATION_ERROR_CODE_DELETE_REQUIRES_TAIL_SUFFIX, "Round retry requires a contiguous suffix ending at the latest active Round.");
     }
 
     /**
@@ -323,6 +329,7 @@ public class ConversationRoundService
                 .collect(Collectors.toMap(
                     RoundAssistantAnswerHistory::roundNumber,
                     RoundAssistantAnswerHistory::assistantAnswer));
+
             return ServiceResponse.buildSuccessResponse(new RoundHistoryView(
                 conversationId,
                 history.latestRoundNumber(),
@@ -403,6 +410,7 @@ public class ConversationRoundService
         ResolveConversationReferencesRequest request)
     {
         long userId = UserContextService.getCurrentUserId();
+
         try
         {
             return ServiceResponse.buildSuccessResponse(resolveReferenceBoundaries(userId, request));
@@ -429,6 +437,7 @@ public class ConversationRoundService
 
         Set<String> sourcesWithCompletedRounds = new HashSet<>(
             conversationRoundMapper.listConversationIdsWithCompletedRounds(sourceIds));
+
         if (sourcesWithCompletedRounds.size() != sourceIds.size())
             throw invalidReferenceRequest(
                 "Every referenced Conversation must contain an active completed Round.");
@@ -462,17 +471,18 @@ public class ConversationRoundService
         boolean hasDestination = StringUtils.hasText(request.getDestinationConversationId());
         boolean hasGroup = requestedGroupId > 0;
         if (hasDestination == hasGroup)
-            throw invalidReferenceRequest(
-                "Exactly one destination Conversation or Conversation Group is required.");
+            throw invalidReferenceRequest("Exactly one destination Conversation or Conversation Group is required.");
 
         List<String> sourceIds = request.getSourceConversationIds();
         Set<String> uniqueSourceIds = new LinkedHashSet<>();
+
         for (String sourceId : sourceIds)
         {
             if (!StringUtils.hasText(sourceId) || !uniqueSourceIds.add(sourceId))
                 throw invalidReferenceRequest(
                     "Referenced Conversations must be non-empty and unique.");
         }
+
         return List.copyOf(sourceIds);
     }
 
@@ -488,14 +498,18 @@ public class ConversationRoundService
         if (StringUtils.hasText(request.getDestinationConversationId()))
         {
             Conversation destination = getReferenceDestination(userId, request.getDestinationConversationId());
+
             if (sourceIds.contains(destination.getConversationId()))
                 throw invalidReferenceRequest("A Conversation cannot reference itself.");
+
             return destination.getConversationGroupId();
         }
 
         long groupId = request.getConversationGroupId();
+
         if (!conversationGroupMapper.existsByIdAndUser(groupId, userId))
             throw invalidReferenceRequest("Conversation Group does not exist.");
+
         return groupId;
     }
 
@@ -587,6 +601,7 @@ public class ConversationRoundService
         if (rounds.isEmpty())
             return Map.of();
         List<Long> roundIds = rounds.stream().map(ConversationRound::getId).toList();
+
         return conversationRoundReferenceMapper.listReferencesByRoundIds(roundIds).stream()
             .collect(Collectors.groupingBy(ConversationRoundReference::getRoundId));
     }
@@ -628,14 +643,17 @@ public class ConversationRoundService
     public ConversationReplayResult getModelContext(long userId, String conversationId, long endRoundNumber)
     {
         Long latestRoundNumber = conversationMapper.getLatestRoundNumberByIdAndUser(conversationId, userId);
+
         if (latestRoundNumber == null)
             throw new RoundPersistenceException(ERROR_CONVERSATION_NOT_FOUND, "Conversation does not exist.");
+
         if (endRoundNumber <= 0 || endRoundNumber > latestRoundNumber)
             throw new RoundPersistenceException(
                 ConversationErrorCode.CONVERSATION_ERROR_CODE_INVALID_REQUEST_VALUE,
                 "end_round_number must reference an assigned round.");
 
         ConversationRound boundaryRound = conversationRoundMapper.getRound(conversationId, endRoundNumber);
+
         if (boundaryRound == null || boundaryRound.isDeleted())
             throw new RoundPersistenceException(
                 ConversationErrorCode.CONVERSATION_ERROR_CODE_ROUND_NOT_FOUND_VALUE,
@@ -643,6 +661,7 @@ public class ConversationRoundService
 
         ReplayTurnBoundary replayBoundary = resolveReplayTurnBoundary(
             conversationId, endRoundNumber, boundaryRound);
+
         if (replayBoundary == null)
             return new ConversationReplayResult(conversationId, List.of());
 
@@ -659,6 +678,7 @@ public class ConversationRoundService
             .setRole(MessageRole.MESSAGE_ROLE_ASSISTANT)
             .setContent(replayBoundary.turn().getResponseContent())
             .build());
+
         return new ConversationReplayResult(conversationId, List.copyOf(contextMessages));
     }
 
@@ -680,6 +700,7 @@ public class ConversationRoundService
         if (boundaryRound.getStatus() == ConversationRoundStatus.CANCELLED)
         {
             ConversationTurn cancelledTurn = conversationTurnMapper.getLatestTurn(boundaryRound.getId());
+
             if (cancelledTurn != null
                 && cancelledTurn.isResponseMessagePresent()
                 && StringUtils.hasText(cancelledTurn.getResponseContent()))
@@ -688,12 +709,15 @@ public class ConversationRoundService
 
         ConversationRound completedRound = conversationRoundMapper.getLatestCompletedRoundAtOrBefore(
             conversationId, endRoundNumber);
+
         if (completedRound == null)
             return null;
         ConversationTurn completedTurn = conversationTurnMapper.getCompletedTurn(
             completedRound.getId(), completedRound.getFinalSourceTurnNumber());
+
         if (completedTurn == null || !completedTurn.isResponseMessagePresent())
             throw new IllegalStateException("Completed replay Round has no response Turn.");
+
         return new ReplayTurnBoundary(completedRound, completedTurn);
     }
 
@@ -725,6 +749,7 @@ public class ConversationRoundService
 
         Map<String, List<ConversationRound>> completedRoundsByConversation = loadCompletedReferenceRounds(boundaries);
         validateCompletedReferenceRounds(boundaries, completedRoundsByConversation);
+
         return buildPreparedReferences(references, sourcesById, completedRoundsByConversation);
     }
 
@@ -739,9 +764,7 @@ public class ConversationRoundService
         if (userId <= 0 || !StringUtils.hasText(destinationConversationId)
             || references.isEmpty()
             || references.size() > conversationReferenceProperties.getMaxCountPerRound())
-            throw new RoundPersistenceException(
-                ConversationErrorCode.CONVERSATION_ERROR_CODE_INVALID_REQUEST_VALUE,
-                "The Conversation reference request is invalid.");
+            throw new RoundPersistenceException(ConversationErrorCode.CONVERSATION_ERROR_CODE_INVALID_REQUEST_VALUE, "The Conversation reference request is invalid.");
     }
 
     /** Loads and validates the destination Conversation for reference preparation.
@@ -752,12 +775,12 @@ public class ConversationRoundService
     private Conversation getReferenceDestination(long userId, String destinationConversationId)
     {
         Conversation destination = conversationMapper.getConversationByIdAndUser(destinationConversationId, userId);
+
         if (destination == null)
             throw new RoundPersistenceException(ERROR_CONVERSATION_NOT_FOUND, "Conversation does not exist.");
+
         if (destination.getConversationGroupId() == null)
-            throw new RoundPersistenceException(
-                ConversationErrorCode.CONVERSATION_ERROR_CODE_INVALID_REQUEST_VALUE,
-                "Conversation references require a Group.");
+            throw new RoundPersistenceException(ConversationErrorCode.CONVERSATION_ERROR_CODE_INVALID_REQUEST_VALUE, "Conversation references require a Group.");
 
         return destination;
     }
@@ -772,13 +795,16 @@ public class ConversationRoundService
     {
         Set<String> sourceIds = new LinkedHashSet<>();
         List<ConversationReferenceBoundary> boundaries = new ArrayList<>();
+
         for (ConversationReference reference : references)
         {
             String sourceId = reference.getSourceConversationId();
+
             if (!StringUtils.hasText(sourceId)
                 || sourceId.equals(destinationConversationId)
                 || !sourceIds.add(sourceId)
                 || reference.getSourceEndRoundNumber() <= 0)
+
                 throw new RoundPersistenceException(
                     ConversationErrorCode.CONVERSATION_ERROR_CODE_INVALID_REQUEST_VALUE,
                     "Conversation references must be non-empty, unique, and use a positive boundary.");
@@ -836,22 +862,19 @@ public class ConversationRoundService
         for (ConversationReferenceBoundary boundary : boundaries)
         {
             Conversation source = sourcesById.get(boundary.sourceConversationId());
+
             if (source == null || !Objects.equals(
                 destination.getConversationGroupId(), source.getConversationGroupId()))
-                throw new RoundPersistenceException(
-                    ConversationErrorCode.CONVERSATION_ERROR_CODE_INVALID_REQUEST_VALUE,
-                    "Every referenced Conversation must belong to the current Group.");
+                throw new RoundPersistenceException(ConversationErrorCode.CONVERSATION_ERROR_CODE_INVALID_REQUEST_VALUE, "Every referenced Conversation must belong to the current Group.");
+
             if (boundary.sourceEndRoundNumber() > source.getLatestRoundNumber())
-                throw new RoundPersistenceException(
-                    ConversationErrorCode.CONVERSATION_ERROR_CODE_INVALID_REQUEST_VALUE,
-                    "A referenced Round boundary is newer than the source Conversation.");
+                throw new RoundPersistenceException(ConversationErrorCode.CONVERSATION_ERROR_CODE_INVALID_REQUEST_VALUE, "A referenced Round boundary is newer than the source Conversation.");
 
             ConversationRound boundaryRound = roundsByBoundary.get(new RoundBoundaryKey(
                 boundary.sourceConversationId(), boundary.sourceEndRoundNumber()));
+
             if (boundaryRound == null || boundaryRound.isDeleted())
-                throw new RoundPersistenceException(
-                    ConversationErrorCode.CONVERSATION_ERROR_CODE_ROUND_NOT_FOUND_VALUE,
-                    "A referenced Round boundary does not exist.");
+                throw new RoundPersistenceException(ConversationErrorCode.CONVERSATION_ERROR_CODE_ROUND_NOT_FOUND_VALUE, "A referenced Round boundary does not exist.");
         }
     }
 
@@ -880,8 +903,7 @@ public class ConversationRoundService
         {
             if (completedRoundsByConversation.getOrDefault(
                 boundary.sourceConversationId(), List.of()).isEmpty())
-                throw invalidReferenceRequest(
-                    "Every referenced Conversation must contain an active completed Round.");
+                throw invalidReferenceRequest("Every referenced Conversation must contain an active completed Round.");
         }
     }
 
@@ -900,6 +922,7 @@ public class ConversationRoundService
         Map<String, List<ConversationRound>> completedRoundsByConversation)
     {
         List<PreparedConversationReference> prepared = new ArrayList<>();
+
         for (ConversationReference reference : references)
         {
             Conversation source = sourcesById.get(reference.getSourceConversationId());
@@ -956,6 +979,7 @@ public class ConversationRoundService
                     .setArguments(toolCall.getArguments()))
                 .build()).toList())
             .setToolCallId(message.getToolCallId() == null ? "" : message.getToolCallId());
+
         builder.addAllContentParts(deserializeContentParts(message.getContentParts()));
         return builder.build();
     }
@@ -973,13 +997,16 @@ public class ConversationRoundService
     {
         conversationRoundValidator.validateRoundRequest(request);
         String payloadHash = conversationRoundPayloadHasher.hash(request);
+
         try (ConversationMutationLock.LockHandle ignored =
                  conversationMutationLock.acquire(request.getConversationId()))
         {
             SaveConversationRoundRequest savedRequest = transactionTemplate.execute(
                 transactionStatus -> saveInTransaction(request, payloadHash));
+
             if (savedRequest == null)
                 throw new IllegalStateException("Round persistence transaction returned no result.");
+
             return savedRequest;
         }
     }
@@ -997,22 +1024,23 @@ public class ConversationRoundService
     {
         Conversation conversation = conversationMapper.lockConversationByIdAndUser(
             request.getConversationId(), request.getUserId());
+
         if (conversation == null)
-            throw error(ConversationErrorCode.CONVERSATION_ERROR_CODE_CONVERSATION_NOT_FOUND,
-                "Conversation does not exist.");
+            throw error(ConversationErrorCode.CONVERSATION_ERROR_CODE_CONVERSATION_NOT_FOUND, "Conversation does not exist.");
 
         long highWater = conversation.getLatestRoundNumber();
         ConversationRound existing = conversationRoundMapper.getRound(
             request.getConversationId(), request.getRoundNumber());
+
         if (request.getRoundNumber() <= highWater)
         {
             if (existing == null || existing.isDeleted())
-                throw error(ConversationErrorCode.CONVERSATION_ERROR_CODE_ROUND_NUMBER_RETIRED,
-                    "Round number has already been retired.");
+                throw error(ConversationErrorCode.CONVERSATION_ERROR_CODE_ROUND_NUMBER_RETIRED, "Round number has already been retired.");
+
             if (existing.getPayloadHashVersion() != ConversationRoundPayloadHasher.CURRENT_VERSION
                 || !payloadHash.equals(existing.getPayloadHash()))
-                throw error(ConversationErrorCode.CONVERSATION_ERROR_CODE_ROUND_NUMBER_CONFLICT,
-                    "Round number already contains different persisted content.");
+                throw error(ConversationErrorCode.CONVERSATION_ERROR_CODE_ROUND_NUMBER_CONFLICT, "Round number already contains different persisted content.");
+
             return request;
         }
 
@@ -1021,6 +1049,7 @@ public class ConversationRoundService
                 "round_number must equal the persisted high-water mark plus one.");
 
         ConversationRound savedRound = conversationRoundMapper.insertRound(toRound(request, payloadHash));
+
         if (savedRound == null)
             throw new IllegalStateException("Round insert returned no row.");
 
@@ -1038,6 +1067,7 @@ public class ConversationRoundService
             : roundFiles.isEmpty()
                 ? ConversationTitleManager.DEFAULT_TITLE
                 : ConversationTitleManager.deriveFromAttachmentFilename(roundFiles.get(0).getOriginalFilename());
+
         if (conversationMapper.advanceLatestRoundNumber(
             request.getConversationId(), request.getUserId(), request.getRoundNumber(),
             automaticTitle, ConversationTitleManager.DEFAULT_TITLE) != 1)
@@ -1072,21 +1102,24 @@ public class ConversationRoundService
 
         List<ConversationRoundReference> rows = new ArrayList<>();
         int referenceOrder = 0;
+
         for (ConversationReference reference : request.getReferencesList())
         {
             Conversation source = sourcesById.get(reference.getSourceConversationId());
+
             if (source == null || !Objects.equals(
                 destination.getConversationGroupId(), source.getConversationGroupId())
                 || destination.getConversationGroupId() == null)
+
                 throw error(ConversationErrorCode.CONVERSATION_ERROR_CODE_INVALID_REQUEST,
                     "Every referenced Conversation must belong to the destination Group.");
 
             ConversationRound boundary = roundsByBoundary.get(new RoundBoundaryKey(
                 source.getConversationId(), reference.getSourceEndRoundNumber()));
+
             if (boundary == null || boundary.isDeleted()
                 || reference.getSourceEndRoundNumber() > source.getLatestRoundNumber())
-                throw error(ConversationErrorCode.CONVERSATION_ERROR_CODE_ROUND_NOT_FOUND,
-                    "A referenced Round boundary does not exist.");
+                throw error(ConversationErrorCode.CONVERSATION_ERROR_CODE_ROUND_NOT_FOUND, "A referenced Round boundary does not exist.");
 
             ConversationRoundReference row = new ConversationRoundReference();
             applyAudit(row, request.getUserId());
@@ -1114,16 +1147,19 @@ public class ConversationRoundService
     {
         Set<String> fileIds = new LinkedHashSet<>();
         int filePartCount = 0;
+
         for (ContentPart contentPart : request.getUserRequest().getContentPartsList())
         {
             if (contentPart.getType().equals("text"))
                 continue;
             filePartCount++;
+
             if (!contentPart.hasFileUrl())
                 throw error(ConversationErrorCode.CONVERSATION_ERROR_CODE_INVALID_FILE_SELECTION,
                     "Every Round file part must contain a stable AgentBreaker file URL.");
             String url = contentPart.getFileUrl().getUrl();
             String prefix = "agentbreaker-file://";
+
             if (!url.startsWith(prefix) || url.length() == prefix.length()
                 || !fileIds.add(url.substring(prefix.length())))
                 throw error(ConversationErrorCode.CONVERSATION_ERROR_CODE_INVALID_FILE_SELECTION,
@@ -1133,14 +1169,14 @@ public class ConversationRoundService
             return List.of();
 
         List<FileResource> fileResources = fileResourceMapper.listOwnedFileResources(fileIds, request.getUserId());
+
         if (fileResources.size() != filePartCount
             || fileResources.stream().anyMatch(fileResource -> fileResource.getConfirmedTime() == null))
-            throw error(ConversationErrorCode.CONVERSATION_ERROR_CODE_INVALID_FILE_SELECTION,
-                "Every Round file must exist, be owned by the user, and have a confirmed upload.");
+            throw error(ConversationErrorCode.CONVERSATION_ERROR_CODE_INVALID_FILE_SELECTION, "Every Round file must exist, be owned by the user, and have a confirmed upload.");
+
         if (request.getStatus() == RoundStatus.ROUND_STATUS_COMPLETED
             && fileResources.stream().anyMatch(fileResource -> fileResource.getStatus() != ConversationFileStatus.READY))
-            throw error(ConversationErrorCode.CONVERSATION_ERROR_CODE_INVALID_FILE_SELECTION,
-                "A completed Round can reference only READY files.");
+            throw error(ConversationErrorCode.CONVERSATION_ERROR_CODE_INVALID_FILE_SELECTION, "A completed Round can reference only READY files.");
 
         List<Long> fileResourceIds = fileResources.stream().map(FileResource::getId).toList();
         requireAffectedRows(
@@ -1148,6 +1184,7 @@ public class ConversationRoundService
             fileResourceIds.size(),
             conversationRoundFileMapper.insertRoundFiles(roundId, request.getUserId(), fileResourceIds));
         fileCleanupTaskMapper.cancelByFileResourceIds(fileResourceIds);
+
         return fileResources;
     }
 
@@ -1164,12 +1201,14 @@ public class ConversationRoundService
             return;
 
         List<ConversationTurn> turns = new ArrayList<>();
+
         for (ifl.agentbreaker.conversationmanager.rpc.ConversationTurn sourceTurn : request.getTurnsList())
             turns.add(toTurn(sourceTurn, roundId, request.getUserId()));
         List<ConversationTurn> savedTurns = conversationTurnMapper.insertTurns(turns);
         requireReturnedRows("Turn", turns.size(), savedTurns);
 
         List<TurnPersistenceContext> contexts = new ArrayList<>();
+
         for (ConversationTurn savedTurn : savedTurns)
         {
             int sourceIndex = Math.toIntExact(savedTurn.getTurnNumber() - 1);
@@ -1231,6 +1270,7 @@ public class ConversationRoundService
         conversationRound.setPayloadHashVersion(ConversationRoundPayloadHasher.CURRENT_VERSION);
         conversationRound.setPayloadHash(payloadHash);
         conversationRound.setDeleted(false);
+
         return conversationRound;
     }
 
@@ -1283,6 +1323,7 @@ public class ConversationRoundService
             response.hasMessage() ? serializeContentParts(response.getMessage().getContentPartsList()) : null);
         conversationTurn.setFinishReason(response.getFinishReason());
         conversationTurn.setUsagePresent(response.hasUsage());
+
         if (response.hasUsage())
         {
             TokenUsage usage = response.getUsage();
@@ -1295,6 +1336,7 @@ public class ConversationRoundService
         conversationTurn.setRawResponse(response.hasRawResponse() ? response.getRawResponse() : null);
         conversationTurn.setResponseErrorMessage(response.getErrorMessage());
         conversationTurn.setReasoningContent(response.hasReasoningContent() ? response.getReasoningContent() : null);
+
         return conversationTurn;
     }
 
@@ -1322,6 +1364,7 @@ public class ConversationRoundService
         conversationLlmRequestMessage.setContentParts(serializeContentParts(source.getContentPartsList()));
         conversationLlmRequestMessage.setToolCallId(
             source.getToolCallId().isEmpty() ? null : source.getToolCallId());
+
         return conversationLlmRequestMessage;
     }
 
@@ -1335,9 +1378,11 @@ public class ConversationRoundService
     private void persistToolDefinitions(List<TurnPersistenceContext> contexts, long userId)
     {
         List<ConversationLlmToolDefinition> definitions = new ArrayList<>();
+
         for (TurnPersistenceContext context : contexts)
         {
             int toolOrder = 0;
+
             for (ToolDefinition source : context.sourceTurn().getRequest().getToolsList())
             {
                 ConversationLlmToolDefinition definition = new ConversationLlmToolDefinition();
@@ -1377,9 +1422,11 @@ public class ConversationRoundService
     {
         List<ConversationLlmRequestMessage> messages = new ArrayList<>();
         Map<RequestMessageKey, LlmConversationMessage> sourceMessagesByKey = new HashMap<>();
+
         for (TurnPersistenceContext context : contexts)
         {
             int messageOrder = 0;
+
             for (LlmConversationMessage sourceMessage : context.sourceTurn().getRequest().getMessagesList())
             {
                 messages.add(toRequestMessage(
@@ -1395,13 +1442,16 @@ public class ConversationRoundService
         requireReturnedRows("LLM request message", messages.size(), savedMessages);
 
         List<ConversationLlmRequestMessageToolCall> requestToolCalls = new ArrayList<>();
+
         for (ConversationLlmRequestMessage savedMessage : savedMessages)
         {
             RequestMessageKey key = new RequestMessageKey(savedMessage.getTurnId(), savedMessage.getMessageOrder());
             LlmConversationMessage sourceMessage = sourceMessagesByKey.get(key);
+
             if (sourceMessage == null)
                 throw new IllegalStateException("Request message batch returned an unknown logical row.");
             int callOrder = 0;
+
             for (ToolCall sourceToolCall : sourceMessage.getToolCallsList())
             {
                 ConversationLlmRequestMessageToolCall toolCall =
@@ -1435,6 +1485,7 @@ public class ConversationRoundService
     {
         Map<ResponseToolCallKey, ToolCallExecution> sourceExecutionsByKey = new HashMap<>();
         List<ConversationToolCallExecution> executions = new ArrayList<>();
+
         for (TurnPersistenceContext context : contexts)
         {
             for (ToolCallExecution execution : context.sourceTurn().getToolCallExecutionsList())
@@ -1442,11 +1493,13 @@ public class ConversationRoundService
                     new ResponseToolCallKey(context.turn().getId(), execution.getToolCallId()), execution);
 
             int callOrder = 0;
+
             for (ToolCall sourceToolCall : context.sourceTurn().getResponse().getMessage().getToolCallsList())
             {
                 int currentCallOrder = callOrder++;
                 ToolCallExecution sourceExecution = sourceExecutionsByKey.get(
                     new ResponseToolCallKey(context.turn().getId(), sourceToolCall.getId()));
+
                 if (sourceExecution == null)
                     throw new IllegalStateException("Response Tool call has no execution evidence.");
                 executions.add(toToolCallExecution(
@@ -1474,10 +1527,12 @@ public class ConversationRoundService
         if (contentParts == null || contentParts.isEmpty())
             return null;
         List<Map<String, Object>> values = new ArrayList<>();
+
         for (ContentPart contentPart : contentParts)
         {
             Map<String, Object> value = new HashMap<>();
             value.put("type", contentPart.getType());
+
             if (contentPart.getType().equals("text"))
                 value.put("text", contentPart.getText());
             else
@@ -1487,8 +1542,10 @@ public class ConversationRoundService
                 fileValue.put("detail", contentPart.getFileUrl().getDetail());
                 value.put("file_url", fileValue);
             }
+
             values.add(value);
         }
+
         return jsonSerializer.serialize(values, "Content parts");
     }
 
@@ -1504,14 +1561,17 @@ public class ConversationRoundService
     {
         if (!StringUtils.hasText(json))
             return List.of();
+
         try
         {
             JsonNode root = jsonSerializer.readTree(json, "Persisted content parts");
             List<ContentPart> contentParts = new ArrayList<>();
+
             for (JsonNode item : root)
             {
                 String type = item.path("type").asText();
                 ContentPart.Builder contentPart = ContentPart.newBuilder().setType(type);
+
                 if (type.equals("text"))
                     contentPart.setText(item.path("text").asText());
                 else
@@ -1521,8 +1581,10 @@ public class ConversationRoundService
                         .setUrl(fileValue.path("url").asText())
                         .setDetail(fileValue.path("detail").asText()));
                 }
+
                 contentParts.add(contentPart.build());
             }
+
             return contentParts;
         }
         catch (IllegalArgumentException e)
@@ -1542,6 +1604,7 @@ public class ConversationRoundService
     {
         if (request == null)
             return null;
+
         if (StringUtils.hasText(request.getContent()))
             return request.getContent();
         String text = request.getContentPartsList().stream()
@@ -1549,6 +1612,7 @@ public class ConversationRoundService
             .map(ContentPart::getText)
             .filter(StringUtils::hasText)
             .collect(Collectors.joining("\n\n"));
+
         return StringUtils.hasText(text) ? text : null;
     }
 
@@ -1563,6 +1627,7 @@ public class ConversationRoundService
     {
         if (round == null)
             return null;
+
         if (StringUtils.hasText(round.getUserRequestContent()))
             return round.getUserRequestContent();
         String text = deserializeContentParts(round.getUserRequestContentParts()).stream()
@@ -1570,6 +1635,7 @@ public class ConversationRoundService
             .map(ContentPart::getText)
             .filter(StringUtils::hasText)
             .collect(Collectors.joining("\n\n"));
+
         return StringUtils.hasText(text) ? text : null;
     }
 
@@ -1582,10 +1648,12 @@ public class ConversationRoundService
     UserRequest toProtoUserRequest(ConversationRound round)
     {
         UserRequest.Builder userRequest = UserRequest.newBuilder();
+
         if (StringUtils.hasText(round.getUserRequestContent()))
             userRequest.setContent(round.getUserRequestContent());
         else
             userRequest.addAllContentParts(deserializeContentParts(round.getUserRequestContentParts()));
+
         return userRequest.build();
     }
 
@@ -1633,6 +1701,7 @@ public class ConversationRoundService
         execution.setErrorMessage(source.getErrorMessage());
         execution.setStartTime(Instant.ofEpochMilli(source.getStartTime()));
         execution.setEndTime(Instant.ofEpochMilli(source.getEndTime()));
+
         return execution;
     }
 

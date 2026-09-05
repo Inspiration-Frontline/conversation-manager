@@ -14,8 +14,7 @@ import org.springframework.test.util.ReflectionTestUtils;
 
 import java.util.List;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import org.junit.jupiter.api.Assertions;
 
 class ConversationRequestSnapshotSerializerTest
 {
@@ -51,13 +50,13 @@ class ConversationRequestSnapshotSerializerTest
 
         JsonNode snapshot = objectMapper.readTree(serializer.serialize(List.of(systemMessage, assistantMessage)));
 
-        assertEquals("SYSTEM", snapshot.get(0).get("role").asText());
-        assertEquals("Use connected services when needed.", snapshot.get(0).get("content").asText());
-        assertTrue(snapshot.get(0).get("content_parts").isNull());
-        assertEquals(0, snapshot.get(0).get("tool_calls").size());
-        assertEquals("call-1", snapshot.get(1).get("tool_calls").get(0).get("id").asText());
-        assertEquals("search", snapshot.get(1).get("tool_calls").get(0).get("function_name").asText());
-        assertEquals("{\"query\":\"Python\"}",
+        Assertions.assertEquals("SYSTEM", snapshot.get(0).get("role").asText());
+        Assertions.assertEquals("Use connected services when needed.", snapshot.get(0).get("content").asText());
+        Assertions.assertTrue(snapshot.get(0).get("content_parts").isNull());
+        Assertions.assertEquals(0, snapshot.get(0).get("tool_calls").size());
+        Assertions.assertEquals("call-1", snapshot.get(1).get("tool_calls").get(0).get("id").asText());
+        Assertions.assertEquals("search", snapshot.get(1).get("tool_calls").get(0).get("function_name").asText());
+        Assertions.assertEquals("{\"query\":\"Python\"}",
             snapshot.get(1).get("tool_calls").get(0).get("arguments").asText());
     }
 }
