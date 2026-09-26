@@ -3,7 +3,6 @@ package ifl.agentbreaker.conversationmanager.services.rounds;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import ifl.agentbreaker.commons.api.dto.AgentIdentity;
 import ifl.agentbreaker.conversationmanager.config.ConversationReferenceProperties;
 import ifl.agentbreaker.conversationmanager.rpc.AssistantMessage;
 import ifl.agentbreaker.conversationmanager.rpc.ConversationErrorCode;
@@ -103,10 +102,13 @@ public class ConversationRoundValidator
         }
 
         require(request.getErrorMessage().isEmpty(), "A completed round cannot contain an error.");
-        require(request.hasFinalAnswer() && StringUtils.hasText(request.getFinalAnswer().getContent()),
-            "A completed round requires a text final answer.");
-        require(request.getFinalAnswer().getContentPartsCount() == 0,
-            "Multimodal final answers are not supported yet.");
+        require(request.hasFinalAnswer()
+                && (StringUtils.hasText(request.getFinalAnswer().getContent())
+                    || request.getFinalAnswer().getContentPartsCount() > 0),
+            "A completed round requires a final answer.");
+        require(!(StringUtils.hasText(request.getFinalAnswer().getContent())
+                && request.getFinalAnswer().getContentPartsCount() > 0),
+            "A final answer must use either content or content_parts.");
         require(request.getTurnsCount() >= 1, "A completed round requires at least one turn.");
         require(request.getFinalAnswer().getSourceTurnNumber() == request.getTurnsCount(),
             "The final answer must reference the last turn.");
@@ -114,20 +116,27 @@ public class ConversationRoundValidator
         ConversationTurn finalTurn = request.getTurns(request.getTurnsCount() - 1);
         require(finalTurn.getResponse().getMessage().getToolCallsCount() == 0,
             "The final turn cannot end with pending Tool calls.");
-        require(request.getFinalAnswer().getContent().equals(
-                finalTurn.getResponse().getMessage().getContent()),
-            "The final answer must match the last LLM response.");
+        String finalAnswerText = request.getFinalAnswer().getContent();
+
+        if (request.getFinalAnswer().getContentPartsCount() > 0)
+            finalAnswerText = request.getFinalAnswer().getContentPartsList().stream()
+                .filter(part -> "text".equals(part.getType()))
+                .map(ContentPart::getText)
+                .findFirst()
+                .orElse("");
+
+        require(finalAnswerText.equals(finalTurn.getResponse().getMessage().getContent()),
+            "The final answer text must match the last LLM response.");
     }
 
     /**
-     * Validates Turn ordering, fixed Agent identity, nested timing, and terminal-state continuity.
+     * Validates Turn ordering, per-Turn Agent identity, nested timing, and terminal-state continuity.
      *
      * @param request parent Round containing ordered Turns
      * @param completedRound whether every Turn must be successful
      */
     private void validateTurns(SaveConversationRoundRequest request, boolean completedRound)
     {
-        AgentIdentity firstIdentity = null;
         ConversationTurn previousTurn = null;
 
         for (int index = 0; index < request.getTurnsCount(); index++)
@@ -140,11 +149,6 @@ public class ConversationRoundValidator
                     && StringUtils.hasText(turn.getAgentIdentity().getName())
                     && turn.getAgentIdentity().getVersion() > 0,
                 "A resolved agent identity is required.");
-
-            if (firstIdentity == null)
-                firstIdentity = turn.getAgentIdentity();
-            else
-                require(firstIdentity.equals(turn.getAgentIdentity()), "The resolved Agent identity must remain fixed within one Round.");
 
             if (completedRound)
                 require(turn.getStatus() == TurnStatus.TURN_STATUS_COMPLETED && turn.getErrorMessage().isEmpty(), "Every turn in a completed round must be completed without an error.");

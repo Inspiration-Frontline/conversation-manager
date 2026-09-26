@@ -9,6 +9,7 @@
         <result column="modification_time" property="modificationTime"/>
         <result column="file_id" property="fileId"/>
         <result column="kind" property="kind"/>
+        <result column="origin" property="origin"/>
         <result column="status" property="status"/>
         <result column="status_revision" property="statusRevision"/>
         <result column="bucket_name" property="bucketName"/>
@@ -39,7 +40,7 @@
 
     <sql id="FileResourceColumns">
         "id", "creator_id", "modifier_id", "creation_time", "modification_time", "file_id",
-        "kind", "status", "status_revision", "bucket_name", "object_key", "original_filename",
+        "kind", "origin", "status", "status_revision", "bucket_name", "object_key", "original_filename",
         "file_extension", "declared_mime_type", "detected_mime_type", "file_size", "sha256",
         "extracted_text", "extraction_metadata", "extraction_truncated", "width", "height",
         "error_code", "error_message", "upload_expires_at", "confirmed_time", "ready_time",
@@ -48,13 +49,28 @@
 
     <select id="insertFileResource" resultMap="FileResourceResultMap" affectData="true">
         INSERT INTO "file_resource" (
-            "creator_id", "modifier_id", "file_id", "kind", "status", "status_revision",
+            "creator_id", "modifier_id", "file_id", "kind", "origin", "status", "status_revision",
             "bucket_name", "object_key", "original_filename", "file_extension", "declared_mime_type",
             "file_size", "upload_expires_at", "deleted"
         ) VALUES (
-            #{creatorId}, #{modifierId}, #{fileId}, #{kind}, #{status}, #{statusRevision},
+            #{creatorId}, #{modifierId}, #{fileId}, #{kind}, #{origin}, #{status}, #{statusRevision},
             #{bucketName}, #{objectKey}, #{originalFilename}, #{fileExtension}, #{declaredMimeType},
             #{fileSize}, #{uploadExpiresAt}, FALSE
+        )
+        RETURNING <include refid="FileResourceColumns"/>
+    </select>
+
+    <select id="insertGeneratedFileResource" resultMap="FileResourceResultMap" affectData="true">
+        INSERT INTO "file_resource" (
+            "creator_id", "modifier_id", "file_id", "kind", "origin", "status", "status_revision",
+            "bucket_name", "object_key", "original_filename", "file_extension", "declared_mime_type",
+            "detected_mime_type", "file_size", "sha256", "width", "height", "upload_expires_at",
+            "confirmed_time", "ready_time", "orphaned_time", "deleted"
+        ) VALUES (
+            #{creatorId}, #{modifierId}, #{fileId}, #{kind}, #{origin}, #{status}, #{statusRevision},
+            #{bucketName}, #{objectKey}, #{originalFilename}, #{fileExtension}, #{declaredMimeType},
+            #{detectedMimeType}, #{fileSize}, #{sha256}, #{width}, #{height}, #{uploadExpiresAt},
+            #{confirmedTime}, #{readyTime}, #{orphanedTime}, FALSE
         )
         RETURNING <include refid="FileResourceColumns"/>
     </select>

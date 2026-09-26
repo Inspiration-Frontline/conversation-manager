@@ -18,6 +18,12 @@ public interface FileResourceMapper
      */
     FileResource insertFileResource(FileResource fileResource);
 
+    /** Inserts one already-materialized generated resource.
+     * @param fileResource validated generated resource metadata
+     * @return inserted resource carrying generated identity and timestamps
+     */
+    FileResource insertGeneratedFileResource(FileResource fileResource);
+
     /** Loads a file resource by its internal identity.
      * @param id internal database identity
      * @return matching resource, or {@code null} when absent

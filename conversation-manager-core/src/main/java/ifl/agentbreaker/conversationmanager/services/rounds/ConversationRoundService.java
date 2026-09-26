@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import ifl.agentbreaker.authcenter.session.UserContextService;
 import ifl.agentbreaker.conversationmanager.config.ConversationReferenceProperties;
 import ifl.agentbreaker.conversationmanager.dao.ConversationRoundFileMapper;
+import ifl.agentbreaker.conversationmanager.dao.ConversationRoundGeneratedFileMapper;
 import ifl.agentbreaker.conversationmanager.dao.FileCleanupTaskMapper;
 import ifl.agentbreaker.conversationmanager.dao.FileResourceMapper;
 import ifl.agentbreaker.conversationmanager.dao.ConversationLlmRequestMessageMapper;
@@ -32,6 +33,7 @@ import ifl.agentbreaker.conversationmanager.domain.dtos.responses.RoundDeletionF
 import ifl.agentbreaker.conversationmanager.domain.dtos.responses.RoundDeletionResult;
 import ifl.agentbreaker.conversationmanager.domain.dtos.responses.RoundHistoryView;
 import ifl.agentbreaker.conversationmanager.domain.dtos.responses.RoundFileHistory;
+import ifl.agentbreaker.conversationmanager.domain.dtos.responses.GeneratedFileHistory;
 import ifl.agentbreaker.conversationmanager.domain.dtos.responses.RoundAssistantAnswerHistory;
 import ifl.agentbreaker.conversationmanager.domain.dtos.responses.RoundToolActivityHistory;
 import ifl.agentbreaker.conversationmanager.domain.dtos.responses.SharedRoundHistoryView;
@@ -136,6 +138,10 @@ public class ConversationRoundService
     /** Persistence operations for Round-to-file references. */
     @Autowired
     private ConversationRoundFileMapper conversationRoundFileMapper;
+
+    /** Persistence operations for generic generated-output relations. */
+    @Autowired
+    private ConversationRoundGeneratedFileMapper conversationRoundGeneratedFileMapper;
 
     /** Persistence operations for file-resource ownership and references. */
     @Autowired
@@ -283,6 +289,62 @@ public class ConversationRoundService
         return new RoundDeletionResult(List.of(), failures);
     }
 
+    /** Marks all active generated outputs in one completed Round as superseded for Regenerate.
+     * The Round and its file resources remain durable so historical views, shares, forks, and
+     * later edits can continue to resolve the original output.
+     *
+     * @param userId authenticated Conversation owner
+     * @param conversationId stable Conversation identifier
+     * @param roundNumber completed Round whose generated outputs are replaced
+     * @return number of generated-output relations transitioned to SUPERSEDED
+     * @throws RoundPersistenceException when ownership, Round state, or request identity is invalid
+     */
+    public int supersedeGeneratedOutputs(long userId, String conversationId, long roundNumber)
+    {
+        if (userId <= 0 || !StringUtils.hasText(conversationId) || roundNumber <= 0)
+            throw error(ConversationErrorCode.CONVERSATION_ERROR_CODE_INVALID_REQUEST,
+                "Generated-output supersede requires a positive owner, Conversation, and Round.");
+
+        try (ConversationMutationLock.LockHandle ignored = conversationMutationLock.acquire(conversationId))
+        {
+            Integer supersededCount = transactionTemplate.execute(status ->
+                supersedeGeneratedOutputsInTransaction(userId, conversationId, roundNumber));
+
+            if (supersededCount == null)
+                throw new IllegalStateException("Generated-output supersede transaction returned no result.");
+
+            return supersededCount;
+        }
+    }
+
+    /** Performs ownership, lifecycle, and set-based generated-output mutation in one transaction.
+     * @param userId authenticated Conversation owner
+     * @param conversationId stable Conversation identifier
+     * @param roundNumber target Round number
+     * @return number of transitioned relations
+     */
+    private int supersedeGeneratedOutputsInTransaction(
+        long userId, String conversationId, long roundNumber)
+    {
+        Conversation conversation = conversationMapper.lockConversationByIdAndUser(conversationId, userId);
+
+        if (conversation == null)
+            throw error(ConversationErrorCode.CONVERSATION_ERROR_CODE_CONVERSATION_NOT_FOUND,
+                "Conversation does not exist.");
+
+        ConversationRound round = conversationRoundMapper.getRound(conversationId, roundNumber);
+
+        if (round == null || round.isDeleted())
+            throw error(ConversationErrorCode.CONVERSATION_ERROR_CODE_ROUND_NOT_FOUND,
+                "Round does not exist.");
+
+        if (round.getStatus() != ConversationRoundStatus.COMPLETED)
+            throw error(ConversationErrorCode.CONVERSATION_ERROR_CODE_INVALID_REQUEST,
+                "Only a completed Round can be regenerated.");
+
+        return conversationRoundGeneratedFileMapper.markAllSuperseded(round.getId(), userId);
+    }
+
     /**
      * Requires the requested values to be the exact contiguous suffix of active Round numbers.
      *
@@ -318,6 +380,10 @@ public class ConversationRoundService
                 .listRoundFiles(conversationId)
                 .stream()
                 .collect(Collectors.groupingBy(RoundFileHistory::roundNumber));
+            Map<Long, List<GeneratedFileHistory>> generatedFilesByRound = conversationRoundGeneratedFileMapper
+                .listRoundGeneratedFiles(conversationId)
+                .stream()
+                .collect(Collectors.groupingBy(GeneratedFileHistory::roundNumber));
             Map<Long, List<RoundToolActivityHistory>> toolActivitiesByRound = conversationToolCallExecutionMapper
                 .listRoundToolActivities(conversationId)
                 .stream()
@@ -335,7 +401,8 @@ public class ConversationRoundService
                 history.latestRoundNumber(),
                 history.rounds().stream()
                     .map(round -> toRoundView(
-                        round, toolActivitiesByRound, filesByRound, referencesByRound, assistantAnswersByRound))
+                        round, toolActivitiesByRound, filesByRound, generatedFilesByRound,
+                        referencesByRound, assistantAnswersByRound))
                     .toList()));
         }
         catch (RoundPersistenceException e)
@@ -355,6 +422,7 @@ public class ConversationRoundService
         ConversationRound round,
         Map<Long, List<RoundToolActivityHistory>> toolActivitiesByRound,
         Map<Long, List<RoundFileHistory>> filesByRound,
+        Map<Long, List<GeneratedFileHistory>> generatedFilesByRound,
         Map<Long, List<ConversationRoundReference>> referencesByRound,
         Map<Long, String> assistantAnswersByRound)
     {
@@ -372,6 +440,9 @@ public class ConversationRoundService
                 .map(file -> new RoundHistoryView.FileView(
                     file.fileId(), file.originalFilename(), file.mimeType(), file.fileSize(),
                     file.kind(), file.status()))
+                .toList(),
+            generatedFilesByRound.getOrDefault(round.getRoundNumber(), List.of()).stream()
+                .map(this::toGeneratedFileView)
                 .toList(),
             referencesByRound.getOrDefault(round.getId(), List.of()).stream()
                 .map(this::toReferenceView)
@@ -568,6 +639,10 @@ public class ConversationRoundService
             .listCompletedRoundFilesAtOrBefore(conversationId, endRoundNumber)
             .stream()
             .collect(Collectors.groupingBy(RoundFileHistory::roundNumber));
+        Map<Long, List<GeneratedFileHistory>> generatedFilesByRound = conversationRoundGeneratedFileMapper
+            .listCompletedGeneratedFilesAtOrBefore(conversationId, endRoundNumber)
+            .stream()
+            .collect(Collectors.groupingBy(GeneratedFileHistory::roundNumber));
         List<ConversationRound> visibleRounds = conversationRoundMapper
             .listCompletedRoundsAtOrBefore(conversationId, endRoundNumber);
         Map<Long, List<ConversationRoundReference>> referencesByRound = listReferencesByRound(visibleRounds);
@@ -586,7 +661,10 @@ public class ConversationRoundService
                     .map(file -> new SharedRoundHistoryView.FileView(
                         file.fileId(), file.originalFilename(), file.mimeType(), file.fileSize(),
                         file.kind(), file.status()))
-                .toList(),
+                    .toList(),
+                generatedFilesByRound.getOrDefault(round.getRoundNumber(), List.of()).stream()
+                    .map(this::toSharedGeneratedFileView)
+                    .toList(),
                 referencesByRound.getOrDefault(round.getId(), List.of()).stream()
                     .map(this::toSharedReferenceView)
                     .toList())).toList());
@@ -604,6 +682,28 @@ public class ConversationRoundService
 
         return conversationRoundReferenceMapper.listReferencesByRoundIds(roundIds).stream()
             .collect(Collectors.groupingBy(ConversationRoundReference::getRoundId));
+    }
+
+    /** Converts an owner generated-file projection to the browser history shape.
+     * @param file generated-file history row
+     * @return owner-visible generated-file metadata
+     */
+    private RoundHistoryView.GeneratedFileView toGeneratedFileView(GeneratedFileHistory file)
+    {
+        return new RoundHistoryView.GeneratedFileView(
+            file.fileId(), file.originalFilename(), file.mimeType(), file.fileSize(), file.width(), file.height(),
+            file.outputKind(), file.outputStatus(), file.sourceTurnNumber(), file.outputOrder());
+    }
+
+    /** Converts a generated-file projection to the redacted share shape.
+     * @param file generated-file history row
+     * @return share-visible generated-file metadata
+     */
+    private SharedRoundHistoryView.GeneratedFileView toSharedGeneratedFileView(GeneratedFileHistory file)
+    {
+        return new SharedRoundHistoryView.GeneratedFileView(
+            file.fileId(), file.originalFilename(), file.mimeType(), file.fileSize(), file.width(), file.height(),
+            file.outputKind(), file.outputStatus(), file.sourceTurnNumber(), file.outputOrder());
     }
 
     /** Converts a stored reference to the owner-visible history view.

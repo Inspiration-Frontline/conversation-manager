@@ -21,6 +21,10 @@ are not part of a forward replay.
 16. `20260830_FileResourceVariants.sql`
 17. `20260831_RestoreForkedRoundFiles.sql`
 18. `20260831_UseOneBasedRoundFileOrder.sql`
+19. `20260907_GeneratedFiles.sql`
+20. `20260908_FileResourceOrigin.sql`
+21. `20260912_TaskAgentExecutionIdempotency.sql`
+22. `20260913_RestoreForkedGeneratedFiles.sql`
 
 The two `20260825` files are a committed legacy naming exception: the Expand migration must run
 before Contract even though their action names sort in the opposite order. Future same-day
@@ -29,3 +33,7 @@ dependencies must use sortable sequence numbers in their filenames.
 Versioned migrations contain durable schema/function changes and deterministic transformations
 required by those changes. Environment-specific, one-time data repairs do not belong in this
 directory.
+
+The Phase 15 rollback for `20260907_GeneratedFiles.sql` is
+`20260907_RollbackGeneratedFiles.sql` in this directory. The rollback files for the later
+incremental changes are kept under `SQLs/Rollback/` with the matching migration date and name.

@@ -1,0 +1,80 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="ifl.agentbreaker.conversationmanager.dao.ConversationTaskAgentExecutionMapper">
+    <resultMap id="ExecutionResultMap" type="ifl.agentbreaker.conversationmanager.domain.entities.pg.ConversationTaskAgentExecution">
+        <id column="id" property="id"/>
+        <result column="creator_id" property="creatorId"/>
+        <result column="modifier_id" property="modifierId"/>
+        <result column="creation_time" property="creationTime"/>
+        <result column="modification_time" property="modificationTime"/>
+        <result column="round_id" property="roundId"/>
+        <result column="parent_turn_id" property="parentTurnId"/>
+        <result column="task_agent_id" property="taskAgentId"/>
+        <result column="task_agent_name" property="taskAgentName"/>
+        <result column="task_agent_version" property="taskAgentVersion"/>
+        <result column="capability_key" property="capabilityKey"/>
+        <result column="status" property="status"/>
+        <result column="request_id" property="requestId"/>
+        <result column="trace_id" property="traceId"/>
+        <result column="parent_span_id" property="parentSpanId"/>
+        <result column="task_span_id" property="taskSpanId"/>
+        <result column="rewritten_instruction" property="rewrittenInstruction"/>
+        <result column="input_resource_ids" property="inputResourceIdsJson"/>
+        <result column="normalized_settings" property="normalizedSettingsJson"/>
+        <result column="generation_attempt_id" property="generationAttemptId"/>
+        <result column="provider_request_id" property="providerRequestId"/>
+        <result column="error_code" property="errorCode"/>
+        <result column="error_message" property="errorMessage"/>
+        <result column="start_time" property="startTime"/>
+        <result column="end_time" property="endTime"/>
+    </resultMap>
+
+    <sql id="ExecutionColumns">
+        "id", "creator_id", "modifier_id", "creation_time", "modification_time", "round_id",
+        "parent_turn_id", "task_agent_id", "task_agent_name", "task_agent_version", "capability_key",
+        "status", "request_id", "trace_id", "parent_span_id", "task_span_id", "rewritten_instruction",
+        "input_resource_ids", "normalized_settings", "generation_attempt_id", "provider_request_id",
+        "error_code", "error_message", "start_time", "end_time"
+    </sql>
+
+    <select id="insertExecution" resultMap="ExecutionResultMap" affectData="true">
+        INSERT INTO "conversation_task_agent_execution" (
+            "creator_id", "modifier_id", "round_id", "parent_turn_id", "task_agent_id", "task_agent_name",
+            "task_agent_version", "capability_key", "status", "request_id", "trace_id", "parent_span_id",
+            "task_span_id", "rewritten_instruction", "input_resource_ids", "normalized_settings",
+            "generation_attempt_id", "provider_request_id", "error_code", "error_message", "start_time", "end_time"
+        ) VALUES (
+            #{creatorId}, #{modifierId}, #{roundId}, #{parentTurnId}, #{taskAgentId}, #{taskAgentName},
+            #{taskAgentVersion}, #{capabilityKey}, #{status}, COALESCE(#{requestId}, ''), COALESCE(#{traceId}, ''),
+            COALESCE(#{parentSpanId}, ''), COALESCE(#{taskSpanId}, ''), COALESCE(#{rewrittenInstruction}, ''),
+            CAST(#{inputResourceIdsJson} AS JSONB), CAST(#{normalizedSettingsJson} AS JSONB), #{generationAttemptId},
+            COALESCE(#{providerRequestId}, ''), COALESCE(#{errorCode}, ''), COALESCE(#{errorMessage}, ''),
+            #{startTime}, #{endTime}
+        )
+        ON CONFLICT ("generation_attempt_id") WHERE "generation_attempt_id" IS NOT NULL DO UPDATE SET
+            "modifier_id" = EXCLUDED."modifier_id",
+            "parent_turn_id" = COALESCE(EXCLUDED."parent_turn_id", "conversation_task_agent_execution"."parent_turn_id"),
+            "status" = EXCLUDED."status",
+            "provider_request_id" = EXCLUDED."provider_request_id",
+            "error_code" = EXCLUDED."error_code",
+            "error_message" = EXCLUDED."error_message",
+            "end_time" = EXCLUDED."end_time"
+        RETURNING <include refid="ExecutionColumns"/>
+    </select>
+
+    <insert id="insertTurnLink">
+        INSERT INTO "conversation_task_agent_turn" (
+            "creator_id", "modifier_id", "task_execution_id", "turn_id", "turn_order"
+        ) VALUES (#{creatorId}, #{creatorId}, #{executionId}, #{turnId}, #{turnOrder})
+        ON CONFLICT ("task_execution_id", "turn_id") DO NOTHING
+    </insert>
+
+    <update id="updateTerminal">
+        UPDATE "conversation_task_agent_execution"
+        SET "modifier_id" = #{userId}, "status" = #{status},
+            "provider_request_id" = COALESCE(#{providerRequestId}, "provider_request_id"),
+            "error_code" = COALESCE(#{errorCode}, "error_code"),
+            "error_message" = COALESCE(#{errorMessage}, "error_message"), "end_time" = #{endTime}
+        WHERE "id" = #{executionId} AND "creator_id" = #{userId}
+    </update>
+</mapper>

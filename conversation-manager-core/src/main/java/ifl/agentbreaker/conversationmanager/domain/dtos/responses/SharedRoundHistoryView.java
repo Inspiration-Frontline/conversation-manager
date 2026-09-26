@@ -24,7 +24,8 @@ public record SharedRoundHistoryView(long latestRoundNumber, List<RoundView> rou
      */
     public record RoundView(long roundNumber, String userMessage, String assistantAnswer, String status,
                             String errorMessage, long turnCount, long startTime, long endTime,
-                            List<FileView> files, List<ReferenceView> references)
+                            List<FileView> files, List<GeneratedFileView> generatedFiles,
+                            List<ReferenceView> references)
     {
     }
 
@@ -38,6 +39,24 @@ public record SharedRoundHistoryView(long latestRoundNumber, List<RoundView> rou
      */
     public record FileView(String fileId, String originalFilename, String mimeType, long fileSize,
                            String kind, String status)
+    {
+    }
+
+    /** Share-authorized metadata for one generated artifact.
+     * @param fileId stable file identity
+     * @param originalFilename generated display filename
+     * @param mimeType validated media type
+     * @param fileSize persisted byte size
+     * @param width image width when applicable
+     * @param height image height when applicable
+     * @param outputKind generic generated artifact category
+     * @param outputStatus ACTIVE or SUPERSEDED presentation state
+     * @param sourceTurnNumber producing Turn number
+     * @param outputOrder stable order in the Round
+     */
+    public record GeneratedFileView(String fileId, String originalFilename, String mimeType, long fileSize,
+                                    Integer width, Integer height, String outputKind, String outputStatus,
+                                    long sourceTurnNumber, int outputOrder)
     {
     }
 

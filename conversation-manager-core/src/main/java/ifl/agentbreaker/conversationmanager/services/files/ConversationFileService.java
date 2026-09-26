@@ -13,11 +13,13 @@ import ifl.agentbreaker.conversationmanager.dao.FileProcessingTaskMapper;
 import ifl.agentbreaker.conversationmanager.dao.FileResourceMapper;
 import ifl.agentbreaker.conversationmanager.dao.FileResourceVariantMapper;
 import ifl.agentbreaker.conversationmanager.dao.ConversationRoundFileMapper;
+import ifl.agentbreaker.conversationmanager.dao.ConversationRoundGeneratedFileMapper;
 import ifl.agentbreaker.conversationmanager.dao.ConversationSharingMapper;
 import ifl.agentbreaker.conversationmanager.domain.constants.ConversationFileKind;
 import ifl.agentbreaker.conversationmanager.domain.constants.ConversationFileStatus;
 import ifl.agentbreaker.conversationmanager.domain.constants.FileCleanupReason;
 import ifl.agentbreaker.conversationmanager.domain.constants.FileVariantType;
+import ifl.agentbreaker.conversationmanager.domain.constants.FileResourceOrigin;
 import ifl.agentbreaker.conversationmanager.domain.dtos.requests.ConfirmFileUploadRequest;
 import ifl.agentbreaker.conversationmanager.domain.dtos.requests.ConfirmFileUploadItem;
 import ifl.agentbreaker.conversationmanager.domain.dtos.requests.CreateFileUploadSessionRequest;
@@ -29,6 +31,7 @@ import ifl.agentbreaker.conversationmanager.domain.dtos.responses.FileResourceIn
 import ifl.agentbreaker.conversationmanager.domain.dtos.responses.FileUploadSession;
 import ifl.agentbreaker.conversationmanager.domain.dtos.responses.FilePreviewUrl;
 import ifl.agentbreaker.conversationmanager.domain.dtos.responses.RoundFileHistory;
+import ifl.agentbreaker.conversationmanager.domain.dtos.responses.GeneratedFileHistory;
 import ifl.agentbreaker.conversationmanager.domain.entities.pg.FileResource;
 import ifl.agentbreaker.conversationmanager.domain.entities.pg.FileResourceVariant;
 import ifl.agentbreaker.conversationmanager.domain.entities.pg.ConversationSharing;
@@ -68,6 +71,11 @@ import java.util.Set;
 @LogArgumentsAndResponse
 public class ConversationFileService
 {
+    /** Shared-snapshot file identity and lifecycle values used to mint a preview URL. */
+    private record SharedPreviewTarget(long fileResourceId, String kind, String status)
+    {
+    }
+
     /** Client-visible code for invalid upload metadata or content. */
     public static final int ERROR_INVALID_FILE = 2300;
     /** Client-visible code for an unknown or unauthorized file. */
@@ -101,6 +109,10 @@ public class ConversationFileService
     /** Persistence operations for Round-to-file references. */
     @Autowired
     private ConversationRoundFileMapper conversationRoundFileMapper;
+
+    /** Persistence operations for generic generated-output relations. */
+    @Autowired
+    private ConversationRoundGeneratedFileMapper conversationRoundGeneratedFileMapper;
 
     /** Persistence operations for sharing snapshot authorization. */
     @Autowired
@@ -149,6 +161,7 @@ public class ConversationFileService
         fileResource.setModifierId(userId);
         fileResource.setFileId(fileId);
         fileResource.setKind(kind);
+        fileResource.setOrigin(FileResourceOrigin.USER_UPLOAD);
         fileResource.setStatus(ConversationFileStatus.PENDING_UPLOAD);
         fileResource.setStatusRevision(1);
         fileResource.setBucketName(ossStorageProperties.getBucketName());
@@ -370,10 +383,27 @@ public class ConversationFileService
         RoundFileHistory sharedFile = conversationRoundFileMapper.getSharedRoundFile(
             conversationId, endRoundNumber, fileId);
 
-        if (sharedFile == null)
-            throw new ServiceResponseException(ERROR_FILE_NOT_FOUND, "File does not exist in the shared snapshot.");
+        long fileResourceId;
 
-        FileResource fileResource = fileResourceMapper.getFileResourceById(sharedFile.fileResourceId());
+        if (sharedFile != null)
+            fileResourceId = sharedFile.fileResourceId();
+        else
+        {
+            List<GeneratedFileHistory> generatedFiles = conversationRoundGeneratedFileMapper
+                .listSharedGeneratedFiles(conversationId, endRoundNumber, List.of(fileId));
+
+            if (generatedFiles.isEmpty())
+                throw new ServiceResponseException(ERROR_FILE_NOT_FOUND, "File does not exist in the shared snapshot.");
+
+            GeneratedFileHistory generatedFile = generatedFiles.getFirst();
+
+            if (!ConversationFileKind.IMAGE.name().equals(generatedFile.kind()))
+                throw new ServiceResponseException(ERROR_INVALID_FILE, "The file is not a downloadable image.");
+
+            fileResourceId = generatedFile.fileResourceId();
+        }
+
+        FileResource fileResource = fileResourceMapper.getFileResourceById(fileResourceId);
 
         if (fileResource == null || fileResource.getStatus() != ConversationFileStatus.READY || fileResource.isDeleted())
             throw new ServiceResponseException(ERROR_INVALID_FILE, "The file is not ready for download.");
@@ -453,28 +483,42 @@ public class ConversationFileService
         if (sharing == null)
             throw new ServiceResponseException(ERROR_FILE_NOT_FOUND, "Shared conversation does not exist or has expired.");
 
-        List<RoundFileHistory> files = conversationRoundFileMapper.listSharedRoundFiles(sharing.getParentConversationId(), sharing.getEndRoundNumber(), request.getFileIds());
-        if (files.size() != request.getFileIds().size())
+        List<RoundFileHistory> attachmentFiles = conversationRoundFileMapper.listSharedRoundFiles(
+            sharing.getParentConversationId(), sharing.getEndRoundNumber(), request.getFileIds());
+        List<GeneratedFileHistory> generatedFiles = conversationRoundGeneratedFileMapper.listSharedGeneratedFiles(
+            sharing.getParentConversationId(), sharing.getEndRoundNumber(), request.getFileIds());
+        Map<String, SharedPreviewTarget> filesById = new LinkedHashMap<>();
+
+        for (RoundFileHistory file : attachmentFiles)
+            filesById.put(file.fileId(), new SharedPreviewTarget(
+                file.fileResourceId(), file.kind(), file.status()));
+
+        for (GeneratedFileHistory file : generatedFiles)
+            filesById.put(file.fileId(), new SharedPreviewTarget(
+                file.fileResourceId(), file.kind(), file.status()));
+
+        if (filesById.size() != request.getFileIds().size())
             throw new ServiceResponseException(ERROR_FILE_NOT_FOUND, "One or more images do not exist in the shared snapshot.");
 
-        Map<String, RoundFileHistory> filesById = new LinkedHashMap<>();
-        for (RoundFileHistory file : files)
+        for (String fileId : request.getFileIds())
         {
+            SharedPreviewTarget file = filesById.get(fileId);
+
             if (!ConversationFileKind.IMAGE.name().equals(file.kind())
                 || !ConversationFileStatus.READY.name().equals(file.status()))
                 throw new ServiceResponseException(ERROR_INVALID_FILE, "Every preview file must be a ready image.");
-
-            filesById.put(file.fileId(), file);
         }
 
-        List<Long> resourceIds = files.stream().map(RoundFileHistory::fileResourceId).toList();
+        List<Long> resourceIds = request.getFileIds().stream()
+            .map(fileId -> filesById.get(fileId).fileResourceId())
+            .toList();
         Map<Long, FileResourceVariant> variants = indexReadyVariants(resourceIds);
         Instant expiresAt = Instant.now().plusSeconds(ossStorageProperties.getPresignedUrlTtlSeconds());
 
         List<FilePreviewUrl> results = new ArrayList<>();
         for (String fileId : request.getFileIds())
         {
-            RoundFileHistory file = filesById.get(fileId);
+            SharedPreviewTarget file = filesById.get(fileId);
             results.add(toPreviewUrl(fileId, requireVariant(variants, file.fileResourceId()), expiresAt));
         }
 

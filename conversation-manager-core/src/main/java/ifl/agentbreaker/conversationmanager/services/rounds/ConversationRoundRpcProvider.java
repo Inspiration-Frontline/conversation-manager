@@ -44,13 +44,23 @@ import ifl.agentbreaker.conversationmanager.rpc.PrepareConversationFilesResult;
 import ifl.agentbreaker.conversationmanager.rpc.PrepareConversationReferencesRequest;
 import ifl.agentbreaker.conversationmanager.rpc.PrepareConversationReferencesResponse;
 import ifl.agentbreaker.conversationmanager.rpc.PreparedConversationFile;
+import ifl.agentbreaker.conversationmanager.rpc.PersistGeneratedFileRequest;
+import ifl.agentbreaker.conversationmanager.rpc.PersistGeneratedFileResponse;
+import ifl.agentbreaker.conversationmanager.rpc.PersistGeneratedFileResult;
 import ifl.agentbreaker.conversationmanager.rpc.RoundStatus;
 import ifl.agentbreaker.conversationmanager.rpc.FinalizeConversationRoundRequest;
 import ifl.agentbreaker.conversationmanager.rpc.FinalizeConversationRoundResponse;
 import ifl.agentbreaker.conversationmanager.rpc.SaveConversationRoundRequest;
 import ifl.agentbreaker.conversationmanager.rpc.SaveConversationRoundResponse;
+import ifl.agentbreaker.conversationmanager.rpc.SupersedeGeneratedOutputsRequest;
+import ifl.agentbreaker.conversationmanager.rpc.SupersedeGeneratedOutputsResponse;
+import ifl.agentbreaker.conversationmanager.rpc.SupersedeGeneratedOutputsResult;
 import ifl.agentbreaker.conversationmanager.rpc.ConversationRound.Builder;
 import ifl.agentbreaker.conversationmanager.services.files.ConversationFileService;
+import ifl.agentbreaker.conversationmanager.services.files.GeneratedFileMaterializationService;
+import ifl.agentbreaker.conversationmanager.exceptions.ServiceResponseException;
+import ifl.agentbreaker.conversationmanager.domain.constants.GenerationAttemptStatus;
+import ifl.agentbreaker.conversationmanager.domain.constants.GeneratedOutputKind;
 import org.apache.dubbo.config.annotation.DubboService;
 import org.springframework.beans.factory.annotation.Autowired;
 
@@ -92,6 +102,119 @@ public class ConversationRoundRpcProvider implements ConversationRpcService
     /** Checkpoint/progress service used by streaming Runner mutations. */
     @Autowired
     private ConversationRoundProgressService conversationRoundProgressService;
+
+    /** Materializes validated Task-Agent output into durable file resources and relations. */
+    @Autowired
+    private GeneratedFileMaterializationService generatedFileMaterializationService;
+
+    /** Persists one terminal generation attempt and returns a stable file reference when content exists.
+     * @param request authenticated Round identity, bounded metadata, and optional image bytes
+     * @return typed success or client-safe validation/ownership error
+     */
+    @Override
+    public PersistGeneratedFileResponse persistGeneratedFile(PersistGeneratedFileRequest request)
+    {
+        try
+        {
+            GeneratedFileMaterializationService.MaterializationRequest materializationRequest =
+                new GeneratedFileMaterializationService.MaterializationRequest(
+                    request.getUserId(), request.getConversationId(), request.getRoundNumber(), request.getAttemptId(),
+                    request.getCapabilityKey(), request.getModel(), toDomainAttemptStatus(request.getStatus()),
+                    request.getSourceTurnNumber(), request.getOriginalFilename(), request.getMimeType(),
+                    request.getContent().toByteArray(), request.getSha256(), request.getWidth(), request.getHeight(),
+                    toDomainOutputKind(request.getOutputKind()), request.getRewrittenInstruction(),
+                    request.getProviderRequestId(), request.getErrorCode(), request.getErrorMessage(),
+                    java.time.Instant.ofEpochMilli(request.getStartTime()), request.getEndTime() <= 0
+                        ? null : java.time.Instant.ofEpochMilli(request.getEndTime()), request.getRequestId(),
+                    request.getTraceId(), request.getTaskAgentId(), request.getTaskAgentName(),
+                    request.getTaskAgentVersion(), request.getNormalizedSettingsJson(), request.getParentSpanId(),
+                    request.getTaskSpanId());
+            GeneratedFileMaterializationService.MaterializationResult result =
+                generatedFileMaterializationService.materialize(materializationRequest);
+
+            PersistGeneratedFileResult data = PersistGeneratedFileResult.newBuilder()
+                .setAttemptId(result.attemptId())
+                .setGenerationAttemptId(result.generationAttemptId())
+                .setFileId(result.fileId())
+                .setFileResourceId(result.fileResourceId())
+                .setOutputStatus(result.outputStatus().name())
+                .setStatus(toProtoAttemptStatus(result.status()))
+                .build();
+
+            return PersistGeneratedFileResponse.newBuilder().setBase(successBase()).setData(data).build();
+        }
+        catch (ServiceResponseException e)
+        {
+            return PersistGeneratedFileResponse.newBuilder()
+                .setBase(errorBase(e.getCode(), e.getMessage()))
+                .setData(PersistGeneratedFileResult.getDefaultInstance())
+                .build();
+        }
+    }
+
+    /** Adapts generated-file persistence to Dubbo's asynchronous method signature.
+     * @param request generation attempt and optional materialized bytes
+     * @return future containing the synchronous persistence result
+     */
+    @Override
+    public CompletableFuture<PersistGeneratedFileResponse> persistGeneratedFileAsync(
+        PersistGeneratedFileRequest request)
+    {
+        return CompletableFuture.completedFuture(persistGeneratedFile(request));
+    }
+
+    /** Converts the wire attempt state into the domain state machine. */
+    private GenerationAttemptStatus toDomainAttemptStatus(
+        ifl.agentbreaker.conversationmanager.rpc.GeneratedAttemptStatus status)
+    {
+        return switch (status)
+        {
+            case GENERATED_ATTEMPT_STATUS_READY -> GenerationAttemptStatus.READY;
+            case GENERATED_ATTEMPT_STATUS_DISPATCHING -> GenerationAttemptStatus.DISPATCHING;
+            case GENERATED_ATTEMPT_STATUS_COMPLETED -> GenerationAttemptStatus.COMPLETED;
+            case GENERATED_ATTEMPT_STATUS_FAILED -> GenerationAttemptStatus.FAILED;
+            case GENERATED_ATTEMPT_STATUS_CANCELLED -> GenerationAttemptStatus.CANCELLED;
+            case GENERATED_ATTEMPT_STATUS_UNKNOWN -> GenerationAttemptStatus.UNKNOWN;
+            case GENERATED_ATTEMPT_STATUS_MATERIALIZED -> GenerationAttemptStatus.MATERIALIZED;
+            default -> throw new ServiceResponseException(
+                ConversationErrorCode.CONVERSATION_ERROR_CODE_INVALID_REQUEST_VALUE,
+                "The generation attempt status is invalid.");
+        };
+    }
+
+    /** Converts the wire output category into the generic domain association kind. */
+    private GeneratedOutputKind toDomainOutputKind(
+        ifl.agentbreaker.conversationmanager.rpc.GeneratedOutputKind outputKind)
+    {
+        return switch (outputKind)
+        {
+            case GENERATED_OUTPUT_KIND_IMAGE -> GeneratedOutputKind.IMAGE;
+            case GENERATED_OUTPUT_KIND_VIDEO -> GeneratedOutputKind.VIDEO;
+            case GENERATED_OUTPUT_KIND_AUDIO -> GeneratedOutputKind.AUDIO;
+            case GENERATED_OUTPUT_KIND_PRESENTATION -> GeneratedOutputKind.PRESENTATION;
+            case GENERATED_OUTPUT_KIND_DOCUMENT -> GeneratedOutputKind.DOCUMENT;
+            case GENERATED_OUTPUT_KIND_OTHER -> GeneratedOutputKind.OTHER;
+            default -> throw new ServiceResponseException(
+                ConversationErrorCode.CONVERSATION_ERROR_CODE_INVALID_REQUEST_VALUE,
+                "The generated output kind is invalid.");
+        };
+    }
+
+    /** Converts the domain attempt state to the wire enum returned to Runner. */
+    private ifl.agentbreaker.conversationmanager.rpc.GeneratedAttemptStatus toProtoAttemptStatus(
+        GenerationAttemptStatus status)
+    {
+        return switch (status)
+        {
+            case READY -> ifl.agentbreaker.conversationmanager.rpc.GeneratedAttemptStatus.GENERATED_ATTEMPT_STATUS_READY;
+            case DISPATCHING -> ifl.agentbreaker.conversationmanager.rpc.GeneratedAttemptStatus.GENERATED_ATTEMPT_STATUS_DISPATCHING;
+            case COMPLETED -> ifl.agentbreaker.conversationmanager.rpc.GeneratedAttemptStatus.GENERATED_ATTEMPT_STATUS_COMPLETED;
+            case FAILED -> ifl.agentbreaker.conversationmanager.rpc.GeneratedAttemptStatus.GENERATED_ATTEMPT_STATUS_FAILED;
+            case CANCELLED -> ifl.agentbreaker.conversationmanager.rpc.GeneratedAttemptStatus.GENERATED_ATTEMPT_STATUS_CANCELLED;
+            case UNKNOWN -> ifl.agentbreaker.conversationmanager.rpc.GeneratedAttemptStatus.GENERATED_ATTEMPT_STATUS_UNKNOWN;
+            case MATERIALIZED -> ifl.agentbreaker.conversationmanager.rpc.GeneratedAttemptStatus.GENERATED_ATTEMPT_STATUS_MATERIALIZED;
+        };
+    }
 
     /**
      * Keeps the shared Round RPC surface explicit: Conversation creation belongs to the HTTP
@@ -486,6 +609,50 @@ public class ConversationRoundRpcProvider implements ConversationRpcService
     public CompletableFuture<DeleteRoundsResponse> deleteRoundsAsync(DeleteRoundsRequest request)
     {
         return CompletableFuture.completedFuture(deleteRounds(request));
+    }
+
+    /** Marks all active generated outputs of a completed Round as superseded before Regenerate.
+     * @param request authenticated owner, Conversation, and completed Round number
+     * @return typed mutation count or a client-safe validation/ownership error
+     */
+    @Override
+    public SupersedeGeneratedOutputsResponse supersedeGeneratedOutputs(
+        SupersedeGeneratedOutputsRequest request)
+    {
+        try
+        {
+            int supersededCount = conversationRoundService.supersedeGeneratedOutputs(
+                request.getUserId(), request.getConversationId(), request.getRoundNumber());
+            SupersedeGeneratedOutputsResult data = SupersedeGeneratedOutputsResult.newBuilder()
+                .setConversationId(request.getConversationId())
+                .setRoundNumber(request.getRoundNumber())
+                .setSupersededCount(supersededCount)
+                .build();
+            return SupersedeGeneratedOutputsResponse.newBuilder()
+                .setBase(successBase())
+                .setData(data)
+                .build();
+        }
+        catch (RoundPersistenceException e)
+        {
+            return SupersedeGeneratedOutputsResponse.newBuilder()
+                .setBase(errorBase(e.getCode(), e.getMessage()))
+                .setData(SupersedeGeneratedOutputsResult.newBuilder()
+                    .setConversationId(request.getConversationId())
+                    .setRoundNumber(request.getRoundNumber()))
+                .build();
+        }
+    }
+
+    /** Adapts generated-output supersede to Dubbo's asynchronous method signature.
+     * @param request authenticated owner, Conversation, and completed Round number
+     * @return future containing the synchronous mutation result
+     */
+    @Override
+    public CompletableFuture<SupersedeGeneratedOutputsResponse> supersedeGeneratedOutputsAsync(
+        SupersedeGeneratedOutputsRequest request)
+    {
+        return CompletableFuture.completedFuture(supersedeGeneratedOutputs(request));
     }
 
     /**

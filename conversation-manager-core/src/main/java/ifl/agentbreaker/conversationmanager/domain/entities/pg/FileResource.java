@@ -2,6 +2,7 @@ package ifl.agentbreaker.conversationmanager.domain.entities.pg;
 
 import ifl.agentbreaker.conversationmanager.domain.constants.ConversationFileKind;
 import ifl.agentbreaker.conversationmanager.domain.constants.ConversationFileStatus;
+import ifl.agentbreaker.conversationmanager.domain.constants.FileResourceOrigin;
 import ifl.agentbreaker.conversationmanager.domain.valueobjects.FileExtractionMetadata;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
@@ -17,6 +18,8 @@ public class FileResource extends EntityBase
     private String fileId;
     /** Classified file kind selecting parser and model handling. */
     private ConversationFileKind kind;
+    /** Provenance used to distinguish user uploads from generated artifacts. */
+    private FileResourceOrigin origin;
     /** Current lifecycle or execution status. */
     private ConversationFileStatus status;
     /**

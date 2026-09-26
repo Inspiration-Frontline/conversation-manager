@@ -29,6 +29,15 @@ public interface ConversationTurnMapper
     ConversationTurn getCompletedTurn(@Param("roundId") long roundId, @Param("turnNumber") long turnNumber);
 
     /**
+     * Loads one persisted Turn by its stable Round-local sequence number.
+     *
+     * @param roundId database identity of the containing Round
+     * @param turnNumber one-based Turn number within the Round
+     * @return persisted Turn, or {@code null} when absent
+     */
+    ConversationTurn getTurn(@Param("roundId") long roundId, @Param("turnNumber") long turnNumber);
+
+    /**
      * Loads the latest persisted Turn regardless of terminal status.
      *
      * @param roundId database identity of the containing Round

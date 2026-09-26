@@ -65,6 +65,33 @@ class ConversationRoundValidatorTest
     }
 
     @Test
+    void acceptsPrimaryAndTaskAgentIdentitiesInOneRound()
+    {
+        SaveConversationRoundRequest valid = validToolLoopRequest();
+        ConversationTurn taskAgentTurn = valid.getTurns(1).toBuilder()
+            .setAgentIdentity(AgentIdentity.newBuilder()
+                .setAgentId(2)
+                .setName("image-generation-agent")
+                .setVersion(1))
+            .build();
+
+        Assertions.assertDoesNotThrow(() -> validator.validateRoundRequest(valid.toBuilder()
+            .setTurns(1, taskAgentTurn)
+            .build()));
+    }
+
+    @Test
+    void rejectsTurnWithInvalidAgentIdentity()
+    {
+        ConversationTurn invalidTurn = validToolLoopRequest().getTurns(0).toBuilder()
+            .setAgentIdentity(AgentIdentity.newBuilder().setAgentId(2).setVersion(0))
+            .build();
+
+        Assertions.assertThrows(RoundPersistenceException.class, () -> validator.validateRoundRequest(
+            validToolLoopRequest().toBuilder().setTurns(0, invalidTurn).build()));
+    }
+
+    @Test
     void acceptsUniqueFrozenConversationReferences()
     {
         SaveConversationRoundRequest request = validTextRequest(1, "answer").toBuilder()

@@ -1,0 +1,130 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="ifl.agentbreaker.conversationmanager.dao.ConversationRoundGeneratedFileMapper">
+    <insert id="insertGeneratedFile">
+        INSERT INTO "conversation_round_generated_file" (
+            "creator_id", "modifier_id", "round_id", "file_resource_id", "source_turn_number",
+            "output_order", "generation_attempt_id", "output_kind", "output_status"
+        ) VALUES (
+            #{creatorId}, #{modifierId}, #{roundId}, #{fileResourceId}, #{sourceTurnNumber},
+            #{outputOrder}, #{generationAttemptId}, #{outputKind}, #{outputStatus}
+        )
+        ON CONFLICT ("round_id", "file_resource_id") DO NOTHING
+    </insert>
+
+    <select id="listRoundGeneratedFiles"
+            resultType="ifl.agentbreaker.conversationmanager.domain.dtos.responses.GeneratedFileHistory">
+        SELECT round."round_number" AS "roundNumber",
+               file."id" AS "fileResourceId",
+               file."file_id" AS "fileId",
+               file."original_filename" AS "originalFilename",
+               COALESCE(file."detected_mime_type", file."declared_mime_type") AS "mimeType",
+               file."file_size" AS "fileSize",
+               file."width" AS "width",
+               file."height" AS "height",
+               file."kind" AS "kind",
+               file."status" AS "status",
+               relation."output_kind" AS "outputKind",
+               relation."output_status" AS "outputStatus",
+               relation."source_turn_number" AS "sourceTurnNumber",
+               relation."output_order" AS "outputOrder"
+        FROM "conversation_round_generated_file" relation
+        INNER JOIN "conversation_round" round ON round."id" = relation."round_id"
+        INNER JOIN "file_resource" file ON file."id" = relation."file_resource_id"
+        WHERE round."conversation_id" = #{conversationId}
+          AND round."deleted" = FALSE
+        ORDER BY round."round_number", relation."output_order"
+    </select>
+
+    <select id="getByGenerationAttemptId"
+            resultType="ifl.agentbreaker.conversationmanager.domain.entities.pg.ConversationRoundGeneratedFile">
+        SELECT "id", "creator_id", "modifier_id", "creation_time", "modification_time", "round_id",
+               "file_resource_id", "source_turn_number", "output_order", "generation_attempt_id",
+               "output_kind", "output_status"
+        FROM "conversation_round_generated_file"
+        WHERE "generation_attempt_id" = #{generationAttemptId}
+    </select>
+
+    <select id="listCompletedGeneratedFilesAtOrBefore"
+            resultType="ifl.agentbreaker.conversationmanager.domain.dtos.responses.GeneratedFileHistory">
+        SELECT round."round_number" AS "roundNumber",
+               file."id" AS "fileResourceId",
+               file."file_id" AS "fileId",
+               file."original_filename" AS "originalFilename",
+               COALESCE(file."detected_mime_type", file."declared_mime_type") AS "mimeType",
+               file."file_size" AS "fileSize",
+               file."width" AS "width",
+               file."height" AS "height",
+               file."kind" AS "kind",
+               file."status" AS "status",
+               relation."output_kind" AS "outputKind",
+               relation."output_status" AS "outputStatus",
+               relation."source_turn_number" AS "sourceTurnNumber",
+               relation."output_order" AS "outputOrder"
+        FROM "conversation_round_generated_file" relation
+        INNER JOIN "conversation_round" round ON round."id" = relation."round_id"
+        INNER JOIN "file_resource" file ON file."id" = relation."file_resource_id"
+        WHERE round."conversation_id" = #{conversationId}
+          AND round."round_number" &lt;= #{endRoundNumber}
+          AND round."status" = 'COMPLETED'
+          AND round."deleted" = FALSE
+          AND file."deleted" = FALSE
+        ORDER BY round."round_number", relation."output_order"
+    </select>
+
+    <select id="listSharedGeneratedFiles"
+            resultType="ifl.agentbreaker.conversationmanager.domain.dtos.responses.GeneratedFileHistory">
+        SELECT round."round_number" AS "roundNumber",
+               file."id" AS "fileResourceId",
+               file."file_id" AS "fileId",
+               file."original_filename" AS "originalFilename",
+               COALESCE(file."detected_mime_type", file."declared_mime_type") AS "mimeType",
+               file."file_size" AS "fileSize",
+               file."width" AS "width",
+               file."height" AS "height",
+               file."kind" AS "kind",
+               file."status" AS "status",
+               relation."output_kind" AS "outputKind",
+               relation."output_status" AS "outputStatus",
+               relation."source_turn_number" AS "sourceTurnNumber",
+               relation."output_order" AS "outputOrder"
+        FROM "conversation_round_generated_file" relation
+        INNER JOIN "conversation_round" round ON round."id" = relation."round_id"
+        INNER JOIN "file_resource" file ON file."id" = relation."file_resource_id"
+        WHERE round."conversation_id" = #{conversationId}
+          AND round."round_number" &lt;= #{endRoundNumber}
+          AND round."status" = 'COMPLETED'
+          AND round."deleted" = FALSE
+          AND file."deleted" = FALSE
+          AND file."file_id" IN
+        <foreach collection="fileIds" item="fileId" open="(" separator="," close=")">
+            #{fileId}
+        </foreach>
+        ORDER BY ARRAY_POSITION(
+            ARRAY[
+            <foreach collection="fileIds" item="fileId" separator=",">
+                CAST(#{fileId} AS VARCHAR)
+            </foreach>
+            ], file."file_id")
+    </select>
+
+    <update id="markSuperseded">
+        UPDATE "conversation_round_generated_file"
+        SET "output_status" = 'SUPERSEDED',
+            "modifier_id" = #{userId}
+        WHERE "round_id" = #{roundId}
+          AND "file_resource_id" IN
+        <foreach collection="fileResourceIds" item="fileResourceId" open="(" separator="," close=")">
+            #{fileResourceId}
+        </foreach>
+          AND "output_status" = 'ACTIVE'
+    </update>
+
+    <update id="markAllSuperseded">
+        UPDATE "conversation_round_generated_file"
+        SET "output_status" = 'SUPERSEDED',
+            "modifier_id" = #{userId}
+        WHERE "round_id" = #{roundId}
+          AND "output_status" = 'ACTIVE'
+    </update>
+</mapper>
