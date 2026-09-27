@@ -233,7 +233,6 @@ public class GeneratedFileMaterializationService
         relation.setRoundId(round.getId());
         relation.setFileResourceId(insertedResource.getId());
         relation.setSourceTurnNumber(request.sourceTurnNumber());
-        relation.setOutputOrder(1);
         relation.setGenerationAttemptId(attempt.getId());
         relation.setOutputKind(request.outputKind());
         relation.setOutputStatus(GeneratedOutputStatus.ACTIVE);

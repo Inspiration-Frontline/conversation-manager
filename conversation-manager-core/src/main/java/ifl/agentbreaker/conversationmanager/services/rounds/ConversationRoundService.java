@@ -225,6 +225,42 @@ public class ConversationRoundService
     }
 
     /**
+     * Tombstones the latest active failed or cancelled Round that a replacement checkpoint supersedes.
+     *
+     * <p>Runs inside the caller's checkpoint transaction after the Conversation row is locked, so the
+     * superseded Round and its replacement Round commit together. A rejected replacement therefore
+     * never leaves the Conversation without an active retryable Round.
+     *
+     * @param userId authenticated Conversation owner
+     * @param conversationId stable Conversation identifier
+     * @param supersededRoundNumber failed or cancelled Round selected for replacement
+     */
+    public void tombstoneSupersededRound(long userId, String conversationId, long supersededRoundNumber)
+    {
+        List<ConversationRound> activeRounds = conversationRoundMapper.listActiveRounds(conversationId);
+
+        if (activeRounds.isEmpty())
+            throw error(ConversationErrorCode.CONVERSATION_ERROR_CODE_DELETE_REQUIRES_TAIL_SUFFIX,
+                "The requested Round is not available for retry.");
+
+        ConversationRound latestRound = activeRounds.get(activeRounds.size() - 1);
+        ConversationRoundStatus latestStatus = latestRound.getStatus();
+
+        if (latestRound.getRoundNumber() != supersededRoundNumber
+            || (latestStatus != ConversationRoundStatus.FAILED
+                && latestStatus != ConversationRoundStatus.CANCELLED))
+            throw error(ConversationErrorCode.CONVERSATION_ERROR_CODE_DELETE_REQUIRES_TAIL_SUFFIX,
+                "Only the latest failed or cancelled Round can be retried.");
+
+        int tombstonedCount = conversationRoundMapper.tombstoneRounds(
+            conversationId, List.of(supersededRoundNumber), userId);
+
+        if (tombstonedCount != 1)
+            throw error(ConversationErrorCode.CONVERSATION_ERROR_CODE_ROUND_NOT_FOUND,
+                "The superseded Round could not be replaced.");
+    }
+
+    /**
      * Validates retry deletion input before acquiring the Conversation mutation lock.
      *
      * @param userId authenticated Conversation owner

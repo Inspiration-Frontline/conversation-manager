@@ -7,7 +7,10 @@
             "output_order", "generation_attempt_id", "output_kind", "output_status"
         ) VALUES (
             #{creatorId}, #{modifierId}, #{roundId}, #{fileResourceId}, #{sourceTurnNumber},
-            #{outputOrder}, #{generationAttemptId}, #{outputKind}, #{outputStatus}
+            (SELECT COALESCE(MAX(existing."output_order"), 0) + 1
+               FROM "conversation_round_generated_file" existing
+              WHERE existing."round_id" = #{roundId}),
+            #{generationAttemptId}, #{outputKind}, #{outputStatus}
         )
         ON CONFLICT ("round_id", "file_resource_id") DO NOTHING
     </insert>

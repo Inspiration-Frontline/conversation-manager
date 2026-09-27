@@ -167,6 +167,10 @@ public class ConversationRoundProgressService
         if (existing != null)
             return replay(existing, request.getMutationId(), hash);
 
+        if (request.getSupersedesRoundNumber() > 0)
+            conversationRoundService.tombstoneSupersededRound(request.getUserId(), request.getConversationId(),
+                request.getSupersedesRoundNumber());
+
         if (request.getRoundNumber() != conversation.getLatestRoundNumber() + 1)
             throw conversationRoundProgressValidator.invalid("round_number must equal the persisted high-water mark plus one.");
 

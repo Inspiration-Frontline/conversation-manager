@@ -100,4 +100,5 @@ class ConversationRoundServiceDeletionTest
             error.getCode());
         Mockito.verify(conversationRoundMapper, Mockito.never()).tombstoneRounds(ArgumentMatchers.any(), ArgumentMatchers.any(), ArgumentMatchers.anyLong());
     }
+
 }
