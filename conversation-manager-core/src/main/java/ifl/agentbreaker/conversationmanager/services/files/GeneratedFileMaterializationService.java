@@ -26,7 +26,6 @@ import ifl.agentbreaker.conversationmanager.domain.entities.pg.ConversationRound
 import ifl.agentbreaker.conversationmanager.domain.entities.pg.ConversationTaskAgentExecution;
 import ifl.agentbreaker.conversationmanager.domain.entities.pg.ConversationTurn;
 import ifl.agentbreaker.conversationmanager.domain.entities.pg.FileResource;
-import ifl.agentbreaker.conversationmanager.domain.entities.pg.FileResourceVariant;
 import ifl.agentbreaker.conversationmanager.exceptions.ServiceResponseException;
 import ifl.agentbreaker.conversationmanager.support.BusinessIdManager;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -37,8 +36,6 @@ import org.springframework.util.StringUtils;
 import javax.imageio.ImageIO;
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayInputStream;
-import java.io.ByteArrayOutputStream;
-import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.time.Instant;
 import java.time.ZoneOffset;
@@ -47,66 +44,98 @@ import java.util.HexFormat;
 import java.util.Locale;
 import java.util.Set;
 
-/** Materializes validated Runner output into an authorized, durable file resource. */
+/**
+ * Materializes validated Runner output into an authorized, durable file resource.
+ */
 @Service
 public class GeneratedFileMaterializationService
 {
-    /** Client-visible validation code for generated output requests. */
+    /**
+     * Client-visible validation code for generated output requests.
+     */
     public static final int ERROR_INVALID_GENERATED_FILE = 2400;
 
-    /** Ownership and Conversation lookup. */
+    /**
+     * Ownership and Conversation lookup.
+     */
     @Autowired
     private ConversationMapper conversationMapper;
 
-    /** Round lookup by stable Conversation boundary. */
+    /**
+     * Round lookup by stable Conversation boundary.
+     */
     @Autowired
     private ConversationRoundMapper conversationRoundMapper;
 
-    /** Idempotent attempt persistence. */
+    /**
+     * Idempotent attempt persistence.
+     */
     @Autowired
     private ConversationGenerationAttemptMapper conversationGenerationAttemptMapper;
 
-    /** Durable generated relation persistence. */
+    /**
+     * Durable generated relation persistence.
+     */
     @Autowired
     private ConversationRoundGeneratedFileMapper conversationRoundGeneratedFileMapper;
 
-    /** Optional Task-Agent diagnostic persistence. */
+    /**
+     * Optional Task-Agent diagnostic persistence.
+     */
     @Autowired
     private ConversationTaskAgentExecutionMapper conversationTaskAgentExecutionMapper;
 
-    /** Persisted Primary-Agent Turn lookup used to anchor Task-Agent diagnostics. */
+    /**
+     * Persisted Primary-Agent Turn lookup used to anchor Task-Agent diagnostics.
+     */
     @Autowired
     private ConversationTurnMapper conversationTurnMapper;
 
-    /** File resource persistence. */
+    /**
+     * File resource persistence.
+     */
     @Autowired
     private FileResourceMapper fileResourceMapper;
 
-    /** Sanitized preview/model-input derivative persistence. */
+    /**
+     * Sanitized preview/model-input derivative persistence.
+     */
     @Autowired
     private FileResourceVariantMapper fileResourceVariantMapper;
 
-    /** Image decoding and derivative validation. */
+    /**
+     * Image decoding and derivative validation.
+     */
     @Autowired
     private ConversationImageSanitizer conversationImageSanitizer;
 
-    /** Private object storage client. */
+    /**
+     * Private object storage client.
+     */
     @Autowired
     private OSS oss;
 
-    /** Storage configuration. */
+    /**
+     * Storage configuration.
+     */
     @Autowired
     private OssStorageProperties ossStorageProperties;
 
-    /** Output limits shared with uploaded image processing. */
+    /**
+     * Output limits shared with uploaded image processing.
+     */
     @Autowired
     private ConversationFileProperties conversationFileProperties;
 
-    /** Transaction boundary for durable metadata and relation rows. */
+    /**
+     * Transaction boundary for durable metadata and relation rows.
+     */
     @Autowired
     private TransactionTemplate transactionTemplate;
 
-    /** Materializes one terminal generation attempt and returns its stable file reference. */
+    /**
+     * Materializes one terminal generation attempt and returns its stable file reference.
+     */
     public MaterializationResult materialize(MaterializationRequest request)
     {
         validateRequest(request);
@@ -119,10 +148,10 @@ public class GeneratedFileMaterializationService
         if (round == null || round.isDeleted() || round.getCreatorId() != request.userId())
             throw new ServiceResponseException(ConversationFileService.ERROR_FILE_NOT_FOUND, "Round does not exist.");
 
-        ConversationGenerationAttempt existing = conversationGenerationAttemptMapper.getByAttemptId(request.attemptId());
+        ConversationGenerationAttempt existingGenerationAttempt = conversationGenerationAttemptMapper.getByAttemptId(request.attemptId());
 
-        if (existing != null)
-            return replayOrAdvanceExisting(request, existing);
+        if (existingGenerationAttempt != null)
+            return replayOrAdvanceExisting(request, existingGenerationAttempt);
 
         ConversationGenerationAttempt attempt = createAttempt(request, round.getId());
         ConversationGenerationAttempt inserted = conversationGenerationAttemptMapper.insertOrGet(attempt);
@@ -143,22 +172,25 @@ public class GeneratedFileMaterializationService
         return materializeCompleted(request, round, inserted);
     }
 
-    /** Replays an idempotent result or continues a previously accepted materialization. */
+    /**
+     * Replays an idempotent result or continues a previously accepted materialization.
+     */
     private MaterializationResult replayOrAdvanceExisting(MaterializationRequest request,
-                                                           ConversationGenerationAttempt existing)
+                                                          ConversationGenerationAttempt existingGenerationAttempt)
     {
-        if (existing.getCreatorId() != request.userId() || existing.getRoundId() <= 0)
+        if (existingGenerationAttempt.getCreatorId() != request.userId() || existingGenerationAttempt.getRoundId() <= 0)
             throw new ServiceResponseException(ConversationFileService.ERROR_FILE_NOT_FOUND, "Generation attempt does not exist.");
 
-        ConversationRoundGeneratedFile relation = conversationRoundGeneratedFileMapper.getByGenerationAttemptId(existing.getId());
+        ConversationRoundGeneratedFile relation = conversationRoundGeneratedFileMapper.getByGenerationAttemptId(existingGenerationAttempt.getId());
 
         if (relation != null)
         {
+            // TODO: Why don't we just use existsById in this case?
             FileResource resource = fileResourceMapper.getFileResourceById(relation.getFileResourceId());
 
             if (resource != null)
-                return new MaterializationResult(existing.getAttemptId(), existing.getId(), resource.getFileId(),
-                    resource.getId(), relation.getOutputStatus(), existing.getStatus());
+                return new MaterializationResult(existingGenerationAttempt.getAttemptId(), existingGenerationAttempt.getId(), resource.getFileId(),
+                    resource.getId(), relation.getOutputStatus(), existingGenerationAttempt.getStatus());
         }
 
         if (request.status() != GenerationAttemptStatus.COMPLETED)
@@ -166,7 +198,7 @@ public class GeneratedFileMaterializationService
             conversationGenerationAttemptMapper.updateTerminal(request.attemptId(), request.userId(),
                 request.status().name(), request.providerRequestId(), request.errorCode(), request.errorMessage(),
                 request.endTime());
-            return new MaterializationResult(existing.getAttemptId(), existing.getId(), "", 0,
+            return new MaterializationResult(existingGenerationAttempt.getAttemptId(), existingGenerationAttempt.getId(), "", 0,
                 GeneratedOutputStatus.ACTIVE, request.status());
         }
 
@@ -175,13 +207,15 @@ public class GeneratedFileMaterializationService
         if (round == null)
             throw new ServiceResponseException(ConversationFileService.ERROR_FILE_NOT_FOUND, "Round does not exist.");
 
-        return materializeCompleted(request, round, existing);
+        return materializeCompleted(request, round, existingGenerationAttempt);
     }
 
-    /** Performs bounded image validation, OSS publication, and one transaction of metadata writes. */
+    /**
+     * Performs bounded image validation, OSS publication, and one transaction of metadata writes.
+     */
     private MaterializationResult materializeCompleted(MaterializationRequest request,
-                                                        ConversationRound round,
-                                                        ConversationGenerationAttempt attempt)
+                                                       ConversationRound round,
+                                                       ConversationGenerationAttempt attempt)
     {
         ValidatedImage validated = validateImage(request);
         FileResource resource = createResource(request, validated, round.getCreatorId());
@@ -207,13 +241,15 @@ public class GeneratedFileMaterializationService
         }
     }
 
-    /** Persists resource, derivative, relation, attempt, and optional Task-Agent detail atomically. */
+    /**
+     * Persists resource, derivative, relation, attempt, and optional Task-Agent detail atomically.
+     */
     private MaterializationResult persistMaterializedRows(MaterializationRequest request,
-                                                           ConversationRound round,
-                                                           ConversationGenerationAttempt attempt,
-                                                           FileResource resource,
-                                                           ValidatedImage validated,
-                                                           String derivativeKey)
+                                                          ConversationRound round,
+                                                          ConversationGenerationAttempt attempt,
+                                                          FileResource resource,
+                                                          ValidatedImage validated,
+                                                          String derivativeKey)
     {
         FileResource insertedResource = fileResourceMapper.insertGeneratedFileResource(resource);
 
@@ -248,7 +284,9 @@ public class GeneratedFileMaterializationService
             insertedResource.getId(), GeneratedOutputStatus.ACTIVE, GenerationAttemptStatus.MATERIALIZED);
     }
 
-    /** Creates an optional Task-Agent execution row from the request audit fields. */
+    /**
+     * Creates an optional Task-Agent execution row from the request audit fields.
+     */
     private void persistTaskExecution(MaterializationRequest request, long roundId, long attemptId)
     {
         if (request.taskAgentId() <= 0 || !StringUtils.hasText(request.taskAgentName()))
@@ -293,7 +331,9 @@ public class GeneratedFileMaterializationService
             throw new IllegalStateException("The Task-Agent Turn link could not be persisted.");
     }
 
-    /** Maps generation state to Task-Agent state without exposing provider-specific values. */
+    /**
+     * Maps generation state to Task-Agent state without exposing provider-specific values.
+     */
     private TaskAgentExecutionStatus toTaskStatus(GenerationAttemptStatus status)
     {
         return switch (status)
@@ -306,7 +346,9 @@ public class GeneratedFileMaterializationService
         };
     }
 
-    /** Validates request identity and content bounds before any OSS or database mutation. */
+    /**
+     * Validates request identity and content bounds before any OSS or database mutation.
+     */
     private void validateRequest(MaterializationRequest request)
     {
         if (request.userId() <= 0 || !StringUtils.hasText(request.conversationId()) || request.roundNumber() <= 0
@@ -325,7 +367,9 @@ public class GeneratedFileMaterializationService
             throw new ServiceResponseException(ERROR_INVALID_GENERATED_FILE, "Generated content exceeds the configured byte limit.");
     }
 
-    /** Validates image decoding and creates the sanitized preview derivative. */
+    /**
+     * Validates image decoding and creates the sanitized preview derivative.
+     */
     private ValidatedImage validateImage(MaterializationRequest request)
     {
         if (request.outputKind() != GeneratedOutputKind.IMAGE
@@ -365,7 +409,9 @@ public class GeneratedFileMaterializationService
         }
     }
 
-    /** Creates an immutable READY resource metadata row before transaction insertion. */
+    /**
+     * Creates an immutable READY resource metadata row before transaction insertion.
+     */
     private FileResource createResource(MaterializationRequest request, ValidatedImage validated, long userId)
     {
         String fileId = BusinessIdManager.newFileId();
@@ -397,7 +443,9 @@ public class GeneratedFileMaterializationService
         return resource;
     }
 
-    /** Creates a generation attempt entity from bounded request metadata. */
+    /**
+     * Creates a generation attempt entity from bounded request metadata.
+     */
     private ConversationGenerationAttempt createAttempt(MaterializationRequest request, long roundId)
     {
         ConversationGenerationAttempt attempt = new ConversationGenerationAttempt();
@@ -416,7 +464,9 @@ public class GeneratedFileMaterializationService
         return attempt;
     }
 
-    /** Publishes one immutable object with a bounded content type. */
+    /**
+     * Publishes one immutable object with a bounded content type.
+     */
     private void putObject(String bucketName, String objectKey, byte[] content, String mimeType)
     {
         ObjectMetadata metadata = new ObjectMetadata();
@@ -425,7 +475,9 @@ public class GeneratedFileMaterializationService
         oss.putObject(bucketName, objectKey, new ByteArrayInputStream(content), metadata);
     }
 
-    /** Deletes a crash-left object without masking the original persistence failure. */
+    /**
+     * Deletes a crash-left object without masking the original persistence failure.
+     */
     private void deleteObjectQuietly(String bucketName, String objectKey)
     {
         try
@@ -439,7 +491,9 @@ public class GeneratedFileMaterializationService
         }
     }
 
-    /** Builds a stable source object key that never contains the untrusted display filename. */
+    /**
+     * Builds a stable source object key that never contains the untrusted display filename.
+     */
     private String buildSourceKey(long userId, String fileId)
     {
         ZonedDateTime now = ZonedDateTime.now(ZoneOffset.UTC);
@@ -448,7 +502,9 @@ public class GeneratedFileMaterializationService
             now.getYear(), now.getMonthValue(), fileId);
     }
 
-    /** Builds the deterministic derivative key adjacent to the source object. */
+    /**
+     * Builds the deterministic derivative key adjacent to the source object.
+     */
     private String buildDerivativeKey(FileResource resource, String extension)
     {
         int separator = resource.getObjectKey().lastIndexOf('/');
@@ -456,7 +512,9 @@ public class GeneratedFileMaterializationService
         return parent + "/derived/model-input." + extension;
     }
 
-    /** Maps a supported image MIME to its normalized extension. */
+    /**
+     * Maps a supported image MIME to its normalized extension.
+     */
     private String extensionForMime(String mimeType)
     {
         return switch (mimeType)
@@ -467,12 +525,16 @@ public class GeneratedFileMaterializationService
         };
     }
 
-    /** Validated source and sanitized derivative metadata. */
+    /**
+     * Validated source and sanitized derivative metadata.
+     */
     private record ValidatedImage(int width, int height, String sha256, SanitizedImage sanitized)
     {
     }
 
-    /** Immutable input accepted by the materialization service. */
+    /**
+     * Immutable input accepted by the materialization service.
+     */
     public record MaterializationRequest(long userId,
                                          String conversationId,
                                          long roundNumber,
@@ -505,7 +567,9 @@ public class GeneratedFileMaterializationService
     {
     }
 
-    /** Stable output returned to the RPC boundary after idempotent persistence. */
+    /**
+     * Stable output returned to the RPC boundary after idempotent persistence.
+     */
     public record MaterializationResult(String attemptId,
                                         long generationAttemptId,
                                         String fileId,

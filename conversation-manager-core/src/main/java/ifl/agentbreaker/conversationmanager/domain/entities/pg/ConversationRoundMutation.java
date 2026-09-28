@@ -14,15 +14,23 @@ import lombok.EqualsAndHashCode;
 @EqualsAndHashCode(callSuper = true)
 public class ConversationRoundMutation extends EntityBase
 {
-    /** Parent Round receiving the mutation. */
+    /**
+     * Parent Round receiving the mutation.
+     */
     private long roundId;
 
-    /** Client-generated UUID that identifies one logical mutation across retries. */
+    /**
+     * Client-generated UUID that identifies one logical mutation across retries.
+     */
     private String mutationId;
 
-    /** Lowercase SHA-256 of the serialized protobuf request bytes. */
+    /**
+     * Lowercase SHA-256 of the serialized protobuf request bytes.
+     */
     private String payloadHash;
 
-    /** Round revision produced by the committed mutation. */
+    /**
+     * Round revision produced by the committed mutation.
+     */
     private long committedRevision;
 }

@@ -105,7 +105,9 @@ public class ConversationRound extends EntityBase
      */
     private long turnCount;
 
-    /** Optimistic-concurrency revision of the persisted aggregate. */
+    /**
+     * Optimistic-concurrency revision of the persisted aggregate.
+     */
     private long revision;
 
     /**
@@ -113,7 +115,9 @@ public class ConversationRound extends EntityBase
      */
     private long agentId;
 
-    /** Agent display name captured with the Round for replay and audit. */
+    /**
+     * Agent display name captured with the Round for replay and audit.
+     */
     private String agentName;
 
     /**

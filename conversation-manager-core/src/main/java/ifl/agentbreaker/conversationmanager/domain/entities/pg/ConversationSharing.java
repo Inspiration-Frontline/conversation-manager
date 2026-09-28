@@ -5,7 +5,9 @@ import lombok.EqualsAndHashCode;
 
 import java.time.Instant;
 
-/** Persisted authenticated share token and its immutable completed-Round snapshot boundary. */
+/**
+ * Persisted authenticated share token and its immutable completed-Round snapshot boundary.
+ */
 @Data
 @EqualsAndHashCode(callSuper = true)
 public class ConversationSharing extends EntityBase
@@ -20,7 +22,9 @@ public class ConversationSharing extends EntityBase
      */
     private String sharedConversationId;
 
-    /** Inclusive upper boundary of the completed Round snapshot. */
+    /**
+     * Inclusive upper boundary of the completed Round snapshot.
+     */
     private long endRoundNumber;
 
     /**
@@ -28,12 +32,18 @@ public class ConversationSharing extends EntityBase
      */
     private boolean accessibleAfterDeleted;
 
-    /** UTC expiry instant, or {@code null} for a share that does not expire automatically. */
+    /**
+     * UTC expiry instant, or {@code null} for a share that does not expire automatically.
+     */
     private Instant expiresAt;
 
-    /** Whether the owner has explicitly revoked this share. */
+    /**
+     * Whether the owner has explicitly revoked this share.
+     */
     private boolean revoked;
 
-    /** UTC revocation instant, or {@code null} while the share is active. */
+    /**
+     * UTC revocation instant, or {@code null} while the share is active.
+     */
     private Instant revokedAt;
 }

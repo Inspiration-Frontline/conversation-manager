@@ -79,35 +79,51 @@ import java.util.Set;
 @DubboService(filter = "w3c-trace-context")
 public class ConversationRoundRpcProvider implements ConversationRpcService
 {
-    /** Application service that validates and persists complete Conversation Rounds. */
+    /**
+     * Application service that validates and persists complete Conversation Rounds.
+     */
     @Autowired
     private ConversationRoundService conversationRoundService;
 
-    /** File service that authorizes uploads and prepares attachment metadata for Runner. */
+    /**
+     * File service that authorizes uploads and prepares attachment metadata for Runner.
+     */
     @Autowired
     private ConversationFileService conversationFileService;
 
-    /** Configured limits used when validating a batch of Conversation attachments. */
+    /**
+     * Configured limits used when validating a batch of Conversation attachments.
+     */
     @Autowired
     private ConversationFileProperties conversationFileProperties;
 
-    /** Mapper used to verify Conversation ownership before reserving files. */
+    /**
+     * Mapper used to verify Conversation ownership before reserving files.
+     */
     @Autowired
     private ConversationMapper conversationMapper;
 
-    /** Tracing wrapper that records RPC outcomes without changing the response contract. */
+    /**
+     * Tracing wrapper that records RPC outcomes without changing the response contract.
+     */
     @Autowired
     private ConversationRoundTracing conversationRoundTracing;
 
-    /** Checkpoint/progress service used by streaming Runner mutations. */
+    /**
+     * Checkpoint/progress service used by streaming Runner mutations.
+     */
     @Autowired
     private ConversationRoundProgressService conversationRoundProgressService;
 
-    /** Materializes validated Task-Agent output into durable file resources and relations. */
+    /**
+     * Materializes validated Task-Agent output into durable file resources and relations.
+     */
     @Autowired
     private GeneratedFileMaterializationService generatedFileMaterializationService;
 
-    /** Persists one terminal generation attempt and returns a stable file reference when content exists.
+    /**
+     * Persists one terminal generation attempt and returns a stable file reference when content exists.
+     *
      * @param request authenticated Round identity, bounded metadata, and optional image bytes
      * @return typed success or client-safe validation/ownership error
      */
@@ -125,7 +141,7 @@ public class ConversationRoundRpcProvider implements ConversationRpcService
                     toDomainOutputKind(request.getOutputKind()), request.getRewrittenInstruction(),
                     request.getProviderRequestId(), request.getErrorCode(), request.getErrorMessage(),
                     java.time.Instant.ofEpochMilli(request.getStartTime()), request.getEndTime() <= 0
-                        ? null : java.time.Instant.ofEpochMilli(request.getEndTime()), request.getRequestId(),
+                    ? null : java.time.Instant.ofEpochMilli(request.getEndTime()), request.getRequestId(),
                     request.getTraceId(), request.getTaskAgentId(), request.getTaskAgentName(),
                     request.getTaskAgentVersion(), request.getNormalizedSettingsJson(), request.getParentSpanId(),
                     request.getTaskSpanId());
@@ -152,7 +168,9 @@ public class ConversationRoundRpcProvider implements ConversationRpcService
         }
     }
 
-    /** Adapts generated-file persistence to Dubbo's asynchronous method signature.
+    /**
+     * Adapts generated-file persistence to Dubbo's asynchronous method signature.
+     *
      * @param request generation attempt and optional materialized bytes
      * @return future containing the synchronous persistence result
      */
@@ -163,7 +181,9 @@ public class ConversationRoundRpcProvider implements ConversationRpcService
         return CompletableFuture.completedFuture(persistGeneratedFile(request));
     }
 
-    /** Converts the wire attempt state into the domain state machine. */
+    /**
+     * Converts the wire attempt state into the domain state machine.
+     */
     private GenerationAttemptStatus toDomainAttemptStatus(
         ifl.agentbreaker.conversationmanager.rpc.GeneratedAttemptStatus status)
     {
@@ -182,7 +202,9 @@ public class ConversationRoundRpcProvider implements ConversationRpcService
         };
     }
 
-    /** Converts the wire output category into the generic domain association kind. */
+    /**
+     * Converts the wire output category into the generic domain association kind.
+     */
     private GeneratedOutputKind toDomainOutputKind(
         ifl.agentbreaker.conversationmanager.rpc.GeneratedOutputKind outputKind)
     {
@@ -200,19 +222,28 @@ public class ConversationRoundRpcProvider implements ConversationRpcService
         };
     }
 
-    /** Converts the domain attempt state to the wire enum returned to Runner. */
+    /**
+     * Converts the domain attempt state to the wire enum returned to Runner.
+     */
     private ifl.agentbreaker.conversationmanager.rpc.GeneratedAttemptStatus toProtoAttemptStatus(
         GenerationAttemptStatus status)
     {
         return switch (status)
         {
-            case READY -> ifl.agentbreaker.conversationmanager.rpc.GeneratedAttemptStatus.GENERATED_ATTEMPT_STATUS_READY;
-            case DISPATCHING -> ifl.agentbreaker.conversationmanager.rpc.GeneratedAttemptStatus.GENERATED_ATTEMPT_STATUS_DISPATCHING;
-            case COMPLETED -> ifl.agentbreaker.conversationmanager.rpc.GeneratedAttemptStatus.GENERATED_ATTEMPT_STATUS_COMPLETED;
-            case FAILED -> ifl.agentbreaker.conversationmanager.rpc.GeneratedAttemptStatus.GENERATED_ATTEMPT_STATUS_FAILED;
-            case CANCELLED -> ifl.agentbreaker.conversationmanager.rpc.GeneratedAttemptStatus.GENERATED_ATTEMPT_STATUS_CANCELLED;
-            case UNKNOWN -> ifl.agentbreaker.conversationmanager.rpc.GeneratedAttemptStatus.GENERATED_ATTEMPT_STATUS_UNKNOWN;
-            case MATERIALIZED -> ifl.agentbreaker.conversationmanager.rpc.GeneratedAttemptStatus.GENERATED_ATTEMPT_STATUS_MATERIALIZED;
+            case READY ->
+                ifl.agentbreaker.conversationmanager.rpc.GeneratedAttemptStatus.GENERATED_ATTEMPT_STATUS_READY;
+            case DISPATCHING ->
+                ifl.agentbreaker.conversationmanager.rpc.GeneratedAttemptStatus.GENERATED_ATTEMPT_STATUS_DISPATCHING;
+            case COMPLETED ->
+                ifl.agentbreaker.conversationmanager.rpc.GeneratedAttemptStatus.GENERATED_ATTEMPT_STATUS_COMPLETED;
+            case FAILED ->
+                ifl.agentbreaker.conversationmanager.rpc.GeneratedAttemptStatus.GENERATED_ATTEMPT_STATUS_FAILED;
+            case CANCELLED ->
+                ifl.agentbreaker.conversationmanager.rpc.GeneratedAttemptStatus.GENERATED_ATTEMPT_STATUS_CANCELLED;
+            case UNKNOWN ->
+                ifl.agentbreaker.conversationmanager.rpc.GeneratedAttemptStatus.GENERATED_ATTEMPT_STATUS_UNKNOWN;
+            case MATERIALIZED ->
+                ifl.agentbreaker.conversationmanager.rpc.GeneratedAttemptStatus.GENERATED_ATTEMPT_STATUS_MATERIALIZED;
         };
     }
 
@@ -254,7 +285,7 @@ public class ConversationRoundRpcProvider implements ConversationRpcService
      * @param request authenticated user, Conversation, ordered Turns, and terminal Round state
      * @return success with the persisted Round projection, or a domain error envelope
      * @throws RuntimeException only for an infrastructure failure that cannot be represented by the
-     *         current business error contract
+     *                          current business error contract
      */
     @Override
     public SaveConversationRoundResponse saveConversationRound(SaveConversationRoundRequest request)
@@ -262,7 +293,9 @@ public class ConversationRoundRpcProvider implements ConversationRpcService
         return conversationRoundTracing.traceSaveConversationRound(request, () -> persistConversationRound(request));
     }
 
-    /** Converts persistence validation failures into the two-field save response envelope.
+    /**
+     * Converts persistence validation failures into the two-field save response envelope.
+     *
      * @param request complete Round mutation received from Runner
      * @return persisted Round projection, or a typed domain error response
      */
@@ -300,7 +333,9 @@ public class ConversationRoundRpcProvider implements ConversationRpcService
         return CompletableFuture.completedFuture(saveConversationRound(request));
     }
 
-    /** Creates or replays the durable checkpoint for an in-progress Round.
+    /**
+     * Creates or replays the durable checkpoint for an in-progress Round.
+     *
      * @param request checkpoint identity, revision, and initial capture supplied by Runner
      * @return mutation outcome including the committed revision and resulting status
      */
@@ -323,7 +358,9 @@ public class ConversationRoundRpcProvider implements ConversationRpcService
         }
     }
 
-    /** Adapts checkpoint creation to the asynchronous Dubbo method signature.
+    /**
+     * Adapts checkpoint creation to the asynchronous Dubbo method signature.
+     *
      * @param request checkpoint identity, revision, and initial capture supplied by Runner
      * @return future containing the checkpoint mutation outcome
      */
@@ -334,7 +371,9 @@ public class ConversationRoundRpcProvider implements ConversationRpcService
         return CompletableFuture.completedFuture(createConversationRoundCheckpoint(request));
     }
 
-    /** Appends an idempotent progress capture to an existing Round checkpoint.
+    /**
+     * Appends an idempotent progress capture to an existing Round checkpoint.
+     *
      * @param request progress sequence, payload, and expected revision supplied by Runner
      * @return mutation outcome including the committed revision and resulting status
      */
@@ -357,7 +396,9 @@ public class ConversationRoundRpcProvider implements ConversationRpcService
         }
     }
 
-    /** Adapts progress appending to the asynchronous Dubbo method signature.
+    /**
+     * Adapts progress appending to the asynchronous Dubbo method signature.
+     *
      * @param request progress sequence, payload, and expected revision supplied by Runner
      * @return future containing the progress mutation outcome
      */
@@ -368,7 +409,9 @@ public class ConversationRoundRpcProvider implements ConversationRpcService
         return CompletableFuture.completedFuture(appendConversationRoundProgress(request));
     }
 
-    /** Finalizes a checkpointed Round with its terminal status and captured answer.
+    /**
+     * Finalizes a checkpointed Round with its terminal status and captured answer.
+     *
      * @param request terminal status, final answer, and expected revision supplied by Runner
      * @return mutation outcome including the committed revision and resulting status
      */
@@ -391,7 +434,9 @@ public class ConversationRoundRpcProvider implements ConversationRpcService
         }
     }
 
-    /** Adapts Round finalization to the asynchronous Dubbo method signature.
+    /**
+     * Adapts Round finalization to the asynchronous Dubbo method signature.
+     *
      * @param request terminal status, final answer, and expected revision supplied by Runner
      * @return future containing the finalization mutation outcome
      */
@@ -402,14 +447,16 @@ public class ConversationRoundRpcProvider implements ConversationRpcService
         return CompletableFuture.completedFuture(finalizeConversationRound(request));
     }
 
-    /** Builds the common mutation payload returned by checkpoint, progress, and finalize calls.
+    /**
+     * Builds the common mutation payload returned by checkpoint, progress, and finalize calls.
+     *
      * @param conversationId Stable public identifier of the Conversation.
-     * @param roundNumber Numeric round number used for ordering or bounds.
-     * @param outcome committed revision, idempotency flag, and resulting status
+     * @param roundNumber    Numeric round number used for ordering or bounds.
+     * @param outcome        committed revision, idempotency flag, and resulting status
      * @return protocol mutation result for the requested Conversation Round
      */
     private ConversationRoundMutationResult toMutationResult(String conversationId, long roundNumber,
-        ConversationRoundProgressService.MutationOutcome outcome)
+                                                             ConversationRoundProgressService.MutationOutcome outcome)
     {
         return ConversationRoundMutationResult.newBuilder().setConversationId(conversationId)
             .setRoundNumber(roundNumber).setCommittedRevision(outcome.revision())
@@ -430,7 +477,9 @@ public class ConversationRoundRpcProvider implements ConversationRpcService
             request, () -> loadConversationRoundHistory(request));
     }
 
-    /** Loads compact Round summaries and translates persistence errors into RPC responses.
+    /**
+     * Loads compact Round summaries and translates persistence errors into RPC responses.
+     *
      * @param request owned Conversation identity supplied by Runner
      * @return ordered Round history, or a typed ownership/not-found response
      */
@@ -611,23 +660,26 @@ public class ConversationRoundRpcProvider implements ConversationRpcService
         return CompletableFuture.completedFuture(deleteRounds(request));
     }
 
-    /** Marks all active generated outputs of a completed Round as superseded before Regenerate.
+    /**
+     * Marks all active generated outputs of a completed Round as superseded before Regenerate.
+     *
      * @param request authenticated owner, Conversation, and completed Round number
      * @return typed mutation count or a client-safe validation/ownership error
      */
     @Override
-    public SupersedeGeneratedOutputsResponse supersedeGeneratedOutputs(
-        SupersedeGeneratedOutputsRequest request)
+    public SupersedeGeneratedOutputsResponse supersedeGeneratedOutputs(SupersedeGeneratedOutputsRequest request)
     {
         try
         {
             int supersededCount = conversationRoundService.supersedeGeneratedOutputs(
                 request.getUserId(), request.getConversationId(), request.getRoundNumber());
+
             SupersedeGeneratedOutputsResult data = SupersedeGeneratedOutputsResult.newBuilder()
                 .setConversationId(request.getConversationId())
                 .setRoundNumber(request.getRoundNumber())
                 .setSupersededCount(supersededCount)
                 .build();
+
             return SupersedeGeneratedOutputsResponse.newBuilder()
                 .setBase(successBase())
                 .setData(data)
@@ -644,13 +696,14 @@ public class ConversationRoundRpcProvider implements ConversationRpcService
         }
     }
 
-    /** Adapts generated-output supersede to Dubbo's asynchronous method signature.
+    /**
+     * Adapts generated-output supersede to Dubbo's asynchronous method signature.
+     *
      * @param request authenticated owner, Conversation, and completed Round number
      * @return future containing the synchronous mutation result
      */
     @Override
-    public CompletableFuture<SupersedeGeneratedOutputsResponse> supersedeGeneratedOutputsAsync(
-        SupersedeGeneratedOutputsRequest request)
+    public CompletableFuture<SupersedeGeneratedOutputsResponse> supersedeGeneratedOutputsAsync(SupersedeGeneratedOutputsRequest request)
     {
         return CompletableFuture.completedFuture(supersedeGeneratedOutputs(request));
     }
@@ -666,8 +719,7 @@ public class ConversationRoundRpcProvider implements ConversationRpcService
     @Override
     public PrepareConversationFilesResponse prepareConversationFiles(PrepareConversationFilesRequest request)
     {
-        return conversationRoundTracing.traceConversationFiles(
-            request, () -> prepareConversationFilesInternal(request));
+        return conversationRoundTracing.traceConversationFiles(request, () -> prepareConversationFilesInternal(request));
     }
 
     /**
@@ -679,39 +731,35 @@ public class ConversationRoundRpcProvider implements ConversationRpcService
      */
     private PrepareConversationFilesResponse prepareConversationFilesInternal(PrepareConversationFilesRequest request)
     {
-        PrepareConversationFilesResult.Builder data = PrepareConversationFilesResult.newBuilder()
-            .setRequestId(request.getRequestId());
+        PrepareConversationFilesResult.Builder data = PrepareConversationFilesResult.newBuilder().setRequestId(request.getRequestId());
 
         try
         {
             validatePrepareConversationFiles(request);
-            List<FileResource> fileResources = conversationFileService.listOwnedFiles(
-                request.getFileIdsList(), request.getUserId());
+            List<FileResource> fileResources = conversationFileService.listOwnedFiles(request.getFileIdsList(), request.getUserId());
 
             if (fileResources.size() != request.getFileIdsCount())
-                return prepareFilesError(data, ConversationErrorCode.CONVERSATION_ERROR_CODE_FILE_NOT_FOUND,
-                    "One or more files do not exist.");
+                return prepareFilesError(data, ConversationErrorCode.CONVERSATION_ERROR_CODE_FILE_NOT_FOUND, "One or more files do not exist.");
 
             long totalBytes = 0;
 
             for (FileResource fileResource : fileResources)
             {
                 if (fileResource.getConfirmedTime() == null)
-                    return prepareFilesError(data, ConversationErrorCode.CONVERSATION_ERROR_CODE_INVALID_FILE_SELECTION,
-                        "Every selected file must have a confirmed upload.");
+                    return prepareFilesError(data, ConversationErrorCode.CONVERSATION_ERROR_CODE_INVALID_FILE_SELECTION, "Every selected file must have a confirmed upload.");
+
                 totalBytes += fileResource.getFileSize();
             }
+
             if (totalBytes > conversationFileProperties.getMaxTotalBytesPerMessage())
-                return prepareFilesError(data, ConversationErrorCode.CONVERSATION_ERROR_CODE_INVALID_FILE_SELECTION,
-                    "The selected files exceed the total size limit.");
+                return prepareFilesError(data, ConversationErrorCode.CONVERSATION_ERROR_CODE_INVALID_FILE_SELECTION, "The selected files exceed the total size limit.");
 
             if (!conversationFileService.reserveFilesForRequest(
                 request.getFileIdsList(),
                 request.getUserId(),
                 request.getConversationId(),
                 request.getRequestId()))
-                return prepareFilesError(data, ConversationErrorCode.CONVERSATION_ERROR_CODE_INVALID_FILE_SELECTION,
-                    "One or more files are no longer available for this request.");
+                return prepareFilesError(data, ConversationErrorCode.CONVERSATION_ERROR_CODE_INVALID_FILE_SELECTION, "One or more files are no longer available for this request.");
 
             boolean allReady = true;
             boolean anyFailed = false;
@@ -732,8 +780,7 @@ public class ConversationRoundRpcProvider implements ConversationRpcService
         }
         catch (IllegalArgumentException e)
         {
-            return prepareFilesError(data, ConversationErrorCode.CONVERSATION_ERROR_CODE_INVALID_FILE_SELECTION,
-                e.getMessage());
+            return prepareFilesError(data, ConversationErrorCode.CONVERSATION_ERROR_CODE_INVALID_FILE_SELECTION, e.getMessage());
         }
     }
 
@@ -744,8 +791,7 @@ public class ConversationRoundRpcProvider implements ConversationRpcService
      * @return future containing the preparation response
      */
     @Override
-    public CompletableFuture<PrepareConversationFilesResponse> prepareConversationFilesAsync(
-        PrepareConversationFilesRequest request)
+    public CompletableFuture<PrepareConversationFilesResponse> prepareConversationFilesAsync(PrepareConversationFilesRequest request)
     {
         return CompletableFuture.completedFuture(prepareConversationFiles(request));
     }
@@ -757,26 +803,24 @@ public class ConversationRoundRpcProvider implements ConversationRpcService
      * @return prepared reference projections or a typed business error
      */
     @Override
-    public PrepareConversationReferencesResponse prepareConversationReferences(
-        PrepareConversationReferencesRequest request)
+    public PrepareConversationReferencesResponse prepareConversationReferences(PrepareConversationReferencesRequest request)
     {
-        return conversationRoundTracing.traceConversationReferences(
-            request, () -> prepareConversationReferencesInternal(request));
+        return conversationRoundTracing.traceConversationReferences(request, () -> prepareConversationReferencesInternal(request));
     }
 
-    /** Converts reference authorization failures into the RPC response envelope.
+    /**
+     * Converts reference authorization failures into the RPC response envelope.
+     *
      * @param request destination Conversation and frozen source boundaries
      * @return prepared reference projections, or a typed domain error response
      */
-    private PrepareConversationReferencesResponse prepareConversationReferencesInternal(
-        PrepareConversationReferencesRequest request)
+    private PrepareConversationReferencesResponse prepareConversationReferencesInternal(PrepareConversationReferencesRequest request)
     {
         try
         {
             return PrepareConversationReferencesResponse.newBuilder()
                 .setBase(successBase())
-                .addAllData(conversationRoundService.prepareReferences(
-                    request.getUserId(), request.getDestinationConversationId(), request.getReferencesList()))
+                .addAllData(conversationRoundService.prepareReferences(request.getUserId(), request.getDestinationConversationId(), request.getReferencesList()))
                 .build();
         }
         catch (RoundPersistenceException e)
@@ -794,8 +838,7 @@ public class ConversationRoundRpcProvider implements ConversationRpcService
      * @return completed future containing the synchronous preparation result
      */
     @Override
-    public CompletableFuture<PrepareConversationReferencesResponse> prepareConversationReferencesAsync(
-        PrepareConversationReferencesRequest request)
+    public CompletableFuture<PrepareConversationReferencesResponse> prepareConversationReferencesAsync(PrepareConversationReferencesRequest request)
     {
         return CompletableFuture.completedFuture(prepareConversationReferences(request));
     }
@@ -810,8 +853,7 @@ public class ConversationRoundRpcProvider implements ConversationRpcService
     private ifl.agentbreaker.conversationmanager.rpc.ConversationRound toProtoRound(
         SaveConversationRoundRequest request)
     {
-        Builder conversationRound =
-            ifl.agentbreaker.conversationmanager.rpc.ConversationRound.newBuilder()
+        Builder conversationRound = ifl.agentbreaker.conversationmanager.rpc.ConversationRound.newBuilder()
             .setConversationId(request.getConversationId())
             .setRoundNumber(request.getRoundNumber())
             .setTraceId(request.getTraceId())
@@ -843,8 +885,8 @@ public class ConversationRoundRpcProvider implements ConversationRpcService
             || request.getRequestId().isBlank()
             || request.getFileIdsCount() <= 0
             || request.getFileIdsCount() > conversationFileProperties.getMaxCountPerMessage())
-
             throw new IllegalArgumentException("The file preparation request is invalid.");
+
         Set<String> uniqueFileIds = new HashSet<>(request.getFileIdsList());
 
         if (uniqueFileIds.size() != request.getFileIdsCount() || uniqueFileIds.stream().anyMatch(String::isBlank))
@@ -863,10 +905,8 @@ public class ConversationRoundRpcProvider implements ConversationRpcService
      */
     private PreparedConversationFile toPreparedFile(FileResource fileResource)
     {
-        ConversationFileStatus status = ConversationFileStatus.valueOf(
-            "CONVERSATION_FILE_STATUS_" + fileResource.getStatus().name());
-        ConversationFileKind kind = ConversationFileKind.valueOf(
-            "CONVERSATION_FILE_KIND_" + fileResource.getKind().name());
+        ConversationFileStatus status = ConversationFileStatus.valueOf("CONVERSATION_FILE_STATUS_" + fileResource.getStatus().name());
+        ConversationFileKind kind = ConversationFileKind.valueOf("CONVERSATION_FILE_KIND_" + fileResource.getKind().name());
         PreparedConversationFile.Builder preparedFile = PreparedConversationFile.newBuilder()
             .setFileId(fileResource.getFileId())
             .setOriginalFilename(fileResource.getOriginalFilename())
@@ -920,13 +960,12 @@ public class ConversationRoundRpcProvider implements ConversationRpcService
      * Builds a stable error envelope while preserving the request correlation ID used by Runner
      * logs and reservation cleanup.
      *
-     * @param data partially built preparation result carrying the request ID
-     * @param code domain error code
+     * @param data    partially built preparation result carrying the request ID
+     * @param code    domain error code
      * @param message client-safe explanation
      * @return preparation response with no usable file payload
      */
-    private PrepareConversationFilesResponse prepareFilesError(
-        PrepareConversationFilesResult.Builder data, ConversationErrorCode code, String message)
+    private PrepareConversationFilesResponse prepareFilesError(PrepareConversationFilesResult.Builder data, ConversationErrorCode code, String message)
     {
         return PrepareConversationFilesResponse.newBuilder()
             .setBase(errorBase(code.getNumber(), message))
@@ -955,7 +994,7 @@ public class ConversationRoundRpcProvider implements ConversationRpcService
                 case CANCELLED -> RoundStatus.ROUND_STATUS_CANCELLED;
                 case IN_PROGRESS -> RoundStatus.ROUND_STATUS_IN_PROGRESS;
             })
-        .setTurnCount(round.getTurnCount())
+            .setTurnCount(round.getTurnCount())
             .setErrorMessage(round.getErrorMessage())
             .setStartTime(round.getStartTime().toEpochMilli())
             .setEndTime(round.getEndTime() == null ? 0 : round.getEndTime().toEpochMilli());
@@ -983,7 +1022,7 @@ public class ConversationRoundRpcProvider implements ConversationRpcService
      * Creates the common domain-error envelope. Keeping the code/message in {@code base} avoids
      * transport-level exceptions for expected validation, ownership, and state conflicts.
      *
-     * @param code stable domain error code
+     * @param code    stable domain error code
      * @param message client-safe diagnostic message
      * @return failed response metadata
      */
