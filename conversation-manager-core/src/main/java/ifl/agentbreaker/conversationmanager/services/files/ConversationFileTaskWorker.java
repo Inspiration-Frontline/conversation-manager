@@ -185,7 +185,7 @@ public class ConversationFileTaskWorker
                     sanitizedImage = conversationImageSanitizer.sanitize(fileResource, bytes);
                     extractionResult.metadata().setWidth(sanitizedImage.sourceWidth());
                     extractionResult.metadata().setHeight(sanitizedImage.sourceHeight());
-                    String derivativeKey = buildDerivativeKey(fileResource, sanitizedImage.extension());
+                    String derivativeKey = DerivativeObjectKeyBuilder.build(fileResource, sanitizedImage.extension());
                     conversationFileTaskService.prepareImageVariant(fileResource, derivativeKey);
                     putDerivative(fileResource.getBucketName(), derivativeKey, sanitizedImage);
                 }
@@ -305,21 +305,6 @@ public class ConversationFileTaskWorker
     }
 
     /**
-     * Builds a deterministic key adjacent to the immutable source object.
-     *
-     * @param fileResource original resource defining the parent object path
-     * @param extension normalized derivative extension without a leading dot
-     * @return deterministic model-input object key
-     */
-    static String buildDerivativeKey(FileResource fileResource, String extension)
-    {
-        int separator = fileResource.getObjectKey().lastIndexOf('/');
-        String parent = separator < 0 ? fileResource.getObjectKey() : fileResource.getObjectKey().substring(0, separator);
-
-        return parent + "/derived/model-input." + extension;
-    }
-
-    /**
      * Deletes a deterministic crash-left key even when no variant row was committed.
      *
      * @param fileResource original resource defining the parent object path and bucket
@@ -327,7 +312,7 @@ public class ConversationFileTaskWorker
      */
     private void deleteCrashLeftDerivative(FileResource fileResource, String extension)
     {
-        String objectKey = buildDerivativeKey(fileResource, extension);
+        String objectKey = DerivativeObjectKeyBuilder.build(fileResource, extension);
 
         if (oss.doesObjectExist(fileResource.getBucketName(), objectKey))
             oss.deleteObject(fileResource.getBucketName(), objectKey);

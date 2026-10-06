@@ -26,6 +26,9 @@ import ifl.agentbreaker.conversationmanager.domain.entities.pg.ConversationRound
 import ifl.agentbreaker.conversationmanager.domain.entities.pg.ConversationTaskAgentExecution;
 import ifl.agentbreaker.conversationmanager.domain.entities.pg.ConversationTurn;
 import ifl.agentbreaker.conversationmanager.domain.entities.pg.FileResource;
+import ifl.agentbreaker.conversationmanager.domain.dtos.requests.GenerationAttemptTerminalUpdate;
+import ifl.agentbreaker.conversationmanager.domain.dtos.requests.GeneratedFileMaterializationRequest;
+import ifl.agentbreaker.conversationmanager.domain.dtos.responses.MaterializedGeneratedFile;
 import ifl.agentbreaker.conversationmanager.exceptions.ServiceResponseException;
 import ifl.agentbreaker.conversationmanager.support.BusinessIdManager;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -136,7 +139,7 @@ public class GeneratedFileMaterializationService
     /**
      * Materializes one terminal generation attempt and returns its stable file reference.
      */
-    public MaterializationResult materialize(MaterializationRequest request)
+    public MaterializationResult materialize(GeneratedFileMaterializationRequest request)
     {
         validateRequest(request);
 
@@ -175,29 +178,24 @@ public class GeneratedFileMaterializationService
     /**
      * Replays an idempotent result or continues a previously accepted materialization.
      */
-    private MaterializationResult replayOrAdvanceExisting(MaterializationRequest request,
+    private MaterializationResult replayOrAdvanceExisting(GeneratedFileMaterializationRequest request,
                                                           ConversationGenerationAttempt existingGenerationAttempt)
     {
         if (existingGenerationAttempt.getCreatorId() != request.userId() || existingGenerationAttempt.getRoundId() <= 0)
             throw new ServiceResponseException(ConversationFileService.ERROR_FILE_NOT_FOUND, "Generation attempt does not exist.");
 
-        ConversationRoundGeneratedFile relation = conversationRoundGeneratedFileMapper.getByGenerationAttemptId(existingGenerationAttempt.getId());
+        MaterializedGeneratedFile materialized = conversationRoundGeneratedFileMapper
+            .getMaterializedFileByAttemptId(existingGenerationAttempt.getId());
 
-        if (relation != null)
-        {
-            // TODO: Why don't we just use existsById in this case?
-            FileResource resource = fileResourceMapper.getFileResourceById(relation.getFileResourceId());
-
-            if (resource != null)
-                return new MaterializationResult(existingGenerationAttempt.getAttemptId(), existingGenerationAttempt.getId(), resource.getFileId(),
-                    resource.getId(), relation.getOutputStatus(), existingGenerationAttempt.getStatus());
-        }
+        if (materialized != null)
+            return new MaterializationResult(existingGenerationAttempt.getAttemptId(), existingGenerationAttempt.getId(),
+                materialized.fileId(), materialized.fileResourceId(),
+                GeneratedOutputStatus.valueOf(materialized.outputStatus()), existingGenerationAttempt.getStatus());
 
         if (request.status() != GenerationAttemptStatus.COMPLETED)
         {
-            conversationGenerationAttemptMapper.updateTerminal(request.attemptId(), request.userId(),
-                request.status().name(), request.providerRequestId(), request.errorCode(), request.errorMessage(),
-                request.endTime());
+            conversationGenerationAttemptMapper.updateTerminal(
+                terminalUpdate(request, request.status().name(), request.errorCode(), request.errorMessage()));
             return new MaterializationResult(existingGenerationAttempt.getAttemptId(), existingGenerationAttempt.getId(), "", 0,
                 GeneratedOutputStatus.ACTIVE, request.status());
         }
@@ -213,13 +211,13 @@ public class GeneratedFileMaterializationService
     /**
      * Performs bounded image validation, OSS publication, and one transaction of metadata writes.
      */
-    private MaterializationResult materializeCompleted(MaterializationRequest request,
+    private MaterializationResult materializeCompleted(GeneratedFileMaterializationRequest request,
                                                        ConversationRound round,
                                                        ConversationGenerationAttempt attempt)
     {
         ValidatedImage validated = validateImage(request);
         FileResource resource = createResource(request, validated, round.getCreatorId());
-        String derivativeKey = buildDerivativeKey(resource, validated.sanitized().extension());
+        String derivativeKey = DerivativeObjectKeyBuilder.build(resource, validated.sanitized().extension());
 
         try
         {
@@ -244,7 +242,7 @@ public class GeneratedFileMaterializationService
     /**
      * Persists resource, derivative, relation, attempt, and optional Task-Agent detail atomically.
      */
-    private MaterializationResult persistMaterializedRows(MaterializationRequest request,
+    private MaterializationResult persistMaterializedRows(GeneratedFileMaterializationRequest request,
                                                           ConversationRound round,
                                                           ConversationGenerationAttempt attempt,
                                                           FileResource resource,
@@ -276,8 +274,8 @@ public class GeneratedFileMaterializationService
         if (conversationRoundGeneratedFileMapper.insertGeneratedFile(relation) != 1)
             throw new IllegalStateException("The generated output relation could not be persisted.");
 
-        conversationGenerationAttemptMapper.updateTerminal(request.attemptId(), request.userId(),
-            GenerationAttemptStatus.MATERIALIZED.name(), request.providerRequestId(), "", "", request.endTime());
+        conversationGenerationAttemptMapper.updateTerminal(terminalUpdate(request,
+            GenerationAttemptStatus.MATERIALIZED.name(), "", ""));
         persistTaskExecution(request, round.getId(), attempt.getId());
 
         return new MaterializationResult(request.attemptId(), attempt.getId(), insertedResource.getFileId(),
@@ -287,7 +285,7 @@ public class GeneratedFileMaterializationService
     /**
      * Creates an optional Task-Agent execution row from the request audit fields.
      */
-    private void persistTaskExecution(MaterializationRequest request, long roundId, long attemptId)
+    private void persistTaskExecution(GeneratedFileMaterializationRequest request, long roundId, long attemptId)
     {
         if (request.taskAgentId() <= 0 || !StringUtils.hasText(request.taskAgentName()))
             return;
@@ -349,7 +347,7 @@ public class GeneratedFileMaterializationService
     /**
      * Validates request identity and content bounds before any OSS or database mutation.
      */
-    private void validateRequest(MaterializationRequest request)
+    private void validateRequest(GeneratedFileMaterializationRequest request)
     {
         if (request.userId() <= 0 || !StringUtils.hasText(request.conversationId()) || request.roundNumber() <= 0
             || !StringUtils.hasText(request.attemptId()) || request.attemptId().length() > 100
@@ -370,7 +368,7 @@ public class GeneratedFileMaterializationService
     /**
      * Validates image decoding and creates the sanitized preview derivative.
      */
-    private ValidatedImage validateImage(MaterializationRequest request)
+    private ValidatedImage validateImage(GeneratedFileMaterializationRequest request)
     {
         if (request.outputKind() != GeneratedOutputKind.IMAGE
             || !Set.of("image/png", "image/jpeg", "image/webp").contains(request.mimeType()))
@@ -412,7 +410,7 @@ public class GeneratedFileMaterializationService
     /**
      * Creates an immutable READY resource metadata row before transaction insertion.
      */
-    private FileResource createResource(MaterializationRequest request, ValidatedImage validated, long userId)
+    private FileResource createResource(GeneratedFileMaterializationRequest request, ValidatedImage validated, long userId)
     {
         String fileId = BusinessIdManager.newFileId();
         String extension = extensionForMime(request.mimeType());
@@ -446,7 +444,7 @@ public class GeneratedFileMaterializationService
     /**
      * Creates a generation attempt entity from bounded request metadata.
      */
-    private ConversationGenerationAttempt createAttempt(MaterializationRequest request, long roundId)
+    private ConversationGenerationAttempt createAttempt(GeneratedFileMaterializationRequest request, long roundId)
     {
         ConversationGenerationAttempt attempt = new ConversationGenerationAttempt();
         attempt.setCreatorId(request.userId());
@@ -505,13 +503,6 @@ public class GeneratedFileMaterializationService
     /**
      * Builds the deterministic derivative key adjacent to the source object.
      */
-    private String buildDerivativeKey(FileResource resource, String extension)
-    {
-        int separator = resource.getObjectKey().lastIndexOf('/');
-        String parent = separator < 0 ? resource.getObjectKey() : resource.getObjectKey().substring(0, separator);
-        return parent + "/derived/model-input." + extension;
-    }
-
     /**
      * Maps a supported image MIME to its normalized extension.
      */
@@ -533,41 +524,6 @@ public class GeneratedFileMaterializationService
     }
 
     /**
-     * Immutable input accepted by the materialization service.
-     */
-    public record MaterializationRequest(long userId,
-                                         String conversationId,
-                                         long roundNumber,
-                                         String attemptId,
-                                         String capabilityKey,
-                                         String model,
-                                         GenerationAttemptStatus status,
-                                         long sourceTurnNumber,
-                                         String originalFilename,
-                                         String mimeType,
-                                         byte[] content,
-                                         String sha256,
-                                         int width,
-                                         int height,
-                                         GeneratedOutputKind outputKind,
-                                         String rewrittenInstruction,
-                                         String providerRequestId,
-                                         String errorCode,
-                                         String errorMessage,
-                                         Instant startTime,
-                                         Instant endTime,
-                                         String requestId,
-                                         String traceId,
-                                         long taskAgentId,
-                                         String taskAgentName,
-                                         int taskAgentVersion,
-                                         String normalizedSettingsJson,
-                                         String parentSpanId,
-                                         String taskSpanId)
-    {
-    }
-
-    /**
      * Stable output returned to the RPC boundary after idempotent persistence.
      */
     public record MaterializationResult(String attemptId,
@@ -577,5 +533,29 @@ public class GeneratedFileMaterializationService
                                         GeneratedOutputStatus outputStatus,
                                         GenerationAttemptStatus status)
     {
+    }
+
+    /**
+     * Builds the terminal mutation for one attempt from the request's audit fields.
+     *
+     * @param request materialization request carrying attempt identity and provider metadata
+     * @param status terminal attempt status to persist
+     * @param errorCode client-safe failure classification, empty on success
+     * @param errorMessage client-safe failure message, empty on success
+     * @return populated terminal update for the attempt mapper
+     */
+    private GenerationAttemptTerminalUpdate terminalUpdate(GeneratedFileMaterializationRequest request, String status,
+                                                           String errorCode, String errorMessage)
+    {
+        GenerationAttemptTerminalUpdate update = new GenerationAttemptTerminalUpdate();
+        update.setAttemptId(request.attemptId());
+        update.setUserId(request.userId());
+        update.setStatus(status);
+        update.setProviderRequestId(request.providerRequestId());
+        update.setErrorCode(errorCode);
+        update.setErrorMessage(errorMessage);
+        update.setEndTime(request.endTime());
+
+        return update;
     }
 }

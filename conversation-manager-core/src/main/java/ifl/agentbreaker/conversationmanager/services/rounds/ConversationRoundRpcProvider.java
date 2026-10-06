@@ -1,6 +1,7 @@
 package ifl.agentbreaker.conversationmanager.services.rounds;
 
 import ifl.agentbreaker.commons.api.dto.ResponseBase;
+import ifl.agentbreaker.conversationmanager.domain.dtos.requests.GeneratedFileMaterializationRequest;
 import ifl.agentbreaker.conversationmanager.domain.dtos.responses.ConversationRoundHistoryResult;
 import ifl.agentbreaker.conversationmanager.domain.dtos.responses.ConversationReplayResult;
 import ifl.agentbreaker.conversationmanager.domain.dtos.responses.RoundDeletionFailure;
@@ -64,6 +65,7 @@ import ifl.agentbreaker.conversationmanager.domain.constants.GeneratedOutputKind
 import org.apache.dubbo.config.annotation.DubboService;
 import org.springframework.beans.factory.annotation.Autowired;
 
+import java.time.Instant;
 import java.util.concurrent.CompletableFuture;
 import java.util.HashSet;
 import java.util.List;
@@ -132,19 +134,37 @@ public class ConversationRoundRpcProvider implements ConversationRpcService
     {
         try
         {
-            GeneratedFileMaterializationService.MaterializationRequest materializationRequest =
-                new GeneratedFileMaterializationService.MaterializationRequest(
-                    request.getUserId(), request.getConversationId(), request.getRoundNumber(), request.getAttemptId(),
-                    request.getCapabilityKey(), request.getModel(), toDomainAttemptStatus(request.getStatus()),
-                    request.getSourceTurnNumber(), request.getOriginalFilename(), request.getMimeType(),
-                    request.getContent().toByteArray(), request.getSha256(), request.getWidth(), request.getHeight(),
-                    toDomainOutputKind(request.getOutputKind()), request.getRewrittenInstruction(),
-                    request.getProviderRequestId(), request.getErrorCode(), request.getErrorMessage(),
-                    java.time.Instant.ofEpochMilli(request.getStartTime()), request.getEndTime() <= 0
-                    ? null : java.time.Instant.ofEpochMilli(request.getEndTime()), request.getRequestId(),
-                    request.getTraceId(), request.getTaskAgentId(), request.getTaskAgentName(),
-                    request.getTaskAgentVersion(), request.getNormalizedSettingsJson(), request.getParentSpanId(),
-                    request.getTaskSpanId());
+            GeneratedFileMaterializationRequest materializationRequest = GeneratedFileMaterializationRequest.builder()
+                .userId(request.getUserId())
+                .conversationId(request.getConversationId())
+                .roundNumber(request.getRoundNumber())
+                .attemptId(request.getAttemptId())
+                .capabilityKey(request.getCapabilityKey())
+                .model(request.getModel())
+                .status(toDomainAttemptStatus(request.getStatus()))
+                .sourceTurnNumber(request.getSourceTurnNumber())
+                .originalFilename(request.getOriginalFilename())
+                .mimeType(request.getMimeType())
+                .content(request.getContent().toByteArray())
+                .sha256(request.getSha256())
+                .width(request.getWidth())
+                .height(request.getHeight())
+                .outputKind(toDomainOutputKind(request.getOutputKind()))
+                .rewrittenInstruction(request.getRewrittenInstruction())
+                .providerRequestId(request.getProviderRequestId())
+                .errorCode(request.getErrorCode())
+                .errorMessage(request.getErrorMessage())
+                .startTime(Instant.ofEpochMilli(request.getStartTime()))
+                .endTime(request.getEndTime() <= 0 ? null : Instant.ofEpochMilli(request.getEndTime()))
+                .requestId(request.getRequestId())
+                .traceId(request.getTraceId())
+                .taskAgentId(request.getTaskAgentId())
+                .taskAgentName(request.getTaskAgentName())
+                .taskAgentVersion(request.getTaskAgentVersion())
+                .normalizedSettingsJson(request.getNormalizedSettingsJson())
+                .parentSpanId(request.getParentSpanId())
+                .taskSpanId(request.getTaskSpanId())
+                .build();
             GeneratedFileMaterializationService.MaterializationResult result =
                 generatedFileMaterializationService.materialize(materializationRequest);
 

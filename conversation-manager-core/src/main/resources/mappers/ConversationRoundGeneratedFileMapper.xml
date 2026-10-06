@@ -48,6 +48,16 @@
         WHERE "generation_attempt_id" = #{generationAttemptId}
     </select>
 
+    <select id="getMaterializedFileByAttemptId"
+            resultType="ifl.agentbreaker.conversationmanager.domain.dtos.responses.MaterializedGeneratedFile">
+        SELECT file."file_id" AS "fileId",
+               file."id" AS "fileResourceId",
+               relation."output_status" AS "outputStatus"
+        FROM "conversation_round_generated_file" relation
+        INNER JOIN "file_resource" file ON file."id" = relation."file_resource_id"
+        WHERE relation."generation_attempt_id" = #{generationAttemptId}
+    </select>
+
     <select id="listCompletedGeneratedFilesAtOrBefore"
             resultType="ifl.agentbreaker.conversationmanager.domain.dtos.responses.GeneratedFileHistory">
         SELECT round."round_number" AS "roundNumber",

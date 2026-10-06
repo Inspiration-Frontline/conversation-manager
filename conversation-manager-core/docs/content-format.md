@@ -209,7 +209,6 @@ When calling external LLM APIs, convert to provider-specific formats:
 ## Related Entities
 
 - [ConversationMessage](../src/main/java/ifl/agentbreaker/conversationmanager/domain/entities/pg/ConversationMessage.java) - Message entity with content storage
-- [MessageFile](../src/main/java/ifl/agentbreaker/conversationmanager/domain/entities/pg/MessageFile.java) - File metadata entity
 - [ContentPart](../../conversation-manager-api/src/main/java/ifl/agentbreaker/conversationmanager/api/dto/ContentPart.java) - DTO for content parts
 - [FileUrl](../../conversation-manager-api/src/main/java/ifl/agentbreaker/conversationmanager/api/dto/FileUrl.java) - DTO for file URLs
 - [ToolCall](../../conversation-manager-api/src/main/java/ifl/agentbreaker/conversationmanager/api/dto/ToolCall.java) - DTO for tool calls

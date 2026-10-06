@@ -19,12 +19,14 @@ import ifl.agentbreaker.conversationmanager.domain.constants.GeneratedOutputKind
 import ifl.agentbreaker.conversationmanager.domain.constants.GeneratedOutputStatus;
 import ifl.agentbreaker.conversationmanager.domain.constants.GenerationAttemptStatus;
 import ifl.agentbreaker.conversationmanager.domain.constants.TaskAgentExecutionStatus;
+import ifl.agentbreaker.conversationmanager.domain.dtos.responses.MaterializedGeneratedFile;
 import ifl.agentbreaker.conversationmanager.domain.entities.pg.ConversationGenerationAttempt;
 import ifl.agentbreaker.conversationmanager.domain.entities.pg.ConversationRound;
 import ifl.agentbreaker.conversationmanager.domain.entities.pg.ConversationRoundGeneratedFile;
 import ifl.agentbreaker.conversationmanager.domain.entities.pg.ConversationTaskAgentExecution;
 import ifl.agentbreaker.conversationmanager.domain.entities.pg.ConversationTurn;
 import ifl.agentbreaker.conversationmanager.domain.entities.pg.FileResource;
+import ifl.agentbreaker.conversationmanager.domain.dtos.requests.GeneratedFileMaterializationRequest;
 import ifl.agentbreaker.conversationmanager.exceptions.ServiceResponseException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -170,7 +172,7 @@ class GeneratedFileMaterializationServiceTest
     @Test
     void rejectsCompletedRequestWithEmptyContentBeforeDatabaseMutation()
     {
-        GeneratedFileMaterializationService.MaterializationRequest invalid = withContent(
+        GeneratedFileMaterializationRequest invalid = withContent(
             request(GenerationAttemptStatus.COMPLETED), new byte[0]);
 
         ServiceResponseException error = Assertions.assertThrows(ServiceResponseException.class,
@@ -290,15 +292,11 @@ class GeneratedFileMaterializationServiceTest
         existing.setCreatorId(USER_ID);
         existing.setRoundId(42L);
         existing.setStatus(GenerationAttemptStatus.MATERIALIZED);
-        ConversationRoundGeneratedFile relation = new ConversationRoundGeneratedFile();
-        relation.setFileResourceId(99L);
-        relation.setOutputStatus(GeneratedOutputStatus.ACTIVE);
-        FileResource resource = persistedResource();
         Mockito.when(conversationMapper.existsByIdAndUser(CONVERSATION_ID, USER_ID)).thenReturn(true);
         Mockito.when(conversationRoundMapper.getRound(CONVERSATION_ID, 3L)).thenReturn(round());
         Mockito.when(conversationGenerationAttemptMapper.getByAttemptId("attempt-1")).thenReturn(existing);
-        Mockito.when(conversationRoundGeneratedFileMapper.getByGenerationAttemptId(55L)).thenReturn(relation);
-        Mockito.when(fileResourceMapper.getFileResourceById(99L)).thenReturn(resource);
+        Mockito.when(conversationRoundGeneratedFileMapper.getMaterializedFileByAttemptId(55L))
+            .thenReturn(new MaterializedGeneratedFile("file-generated-1", 99L, GeneratedOutputStatus.ACTIVE.name()));
 
         GeneratedFileMaterializationService.MaterializationResult result = service.materialize(request(
             GenerationAttemptStatus.COMPLETED));
@@ -346,36 +344,110 @@ class GeneratedFileMaterializationServiceTest
         Mockito.verify(conversationTaskAgentExecutionMapper).insertTurnLink(USER_ID, 88L, 77L, 1);
     }
 
-    private GeneratedFileMaterializationService.MaterializationRequest request(GenerationAttemptStatus status)
+    private GeneratedFileMaterializationRequest request(GenerationAttemptStatus status)
     {
-        return new GeneratedFileMaterializationService.MaterializationRequest(
-            USER_ID, CONVERSATION_ID, 3L, "attempt-1", "builtin.generate_image",
-            "doubao-seedream-4-0-250828", status, SOURCE_TURN_NUMBER, "generated.png", "image/png",
-            png(2, 2), "", 2, 2, GeneratedOutputKind.IMAGE, "draw a blue cat", "provider-1", "", "",
-            START_TIME, START_TIME.plusSeconds(5), "request-1", "trace-1", 0L, "", 0, "{}", "", "");
+        return GeneratedFileMaterializationRequest.builder()
+            .userId(USER_ID)
+            .conversationId(CONVERSATION_ID)
+            .roundNumber(3L)
+            .attemptId("attempt-1")
+            .capabilityKey("builtin.generate_image")
+            .model("doubao-seedream-4-0-250828")
+            .status(status)
+            .sourceTurnNumber(SOURCE_TURN_NUMBER)
+            .originalFilename("generated.png")
+            .mimeType("image/png")
+            .content(png(2, 2))
+            .sha256("")
+            .width(2)
+            .height(2)
+            .outputKind(GeneratedOutputKind.IMAGE)
+            .rewrittenInstruction("draw a blue cat")
+            .providerRequestId("provider-1")
+            .errorCode("")
+            .errorMessage("")
+            .startTime(START_TIME)
+            .endTime(START_TIME.plusSeconds(5))
+            .requestId("request-1")
+            .traceId("trace-1")
+            .taskAgentId(0L)
+            .taskAgentName("")
+            .taskAgentVersion(0)
+            .normalizedSettingsJson("{}")
+            .parentSpanId("")
+            .taskSpanId("")
+            .build();
     }
 
-    private GeneratedFileMaterializationService.MaterializationRequest taskRequest(GenerationAttemptStatus status)
+    private GeneratedFileMaterializationRequest taskRequest(GenerationAttemptStatus status)
     {
-        GeneratedFileMaterializationService.MaterializationRequest base = request(status);
-        return new GeneratedFileMaterializationService.MaterializationRequest(
-            base.userId(), base.conversationId(), base.roundNumber(), base.attemptId(), base.capabilityKey(),
-            base.model(), base.status(), base.sourceTurnNumber(), base.originalFilename(), base.mimeType(),
-            base.content(), base.sha256(), base.width(), base.height(), base.outputKind(), base.rewrittenInstruction(),
-            base.providerRequestId(), base.errorCode(), base.errorMessage(), base.startTime(), base.endTime(),
-            base.requestId(), base.traceId(), 2L, "image-generation-agent", 1, "{}", "parent-span", "task-span");
+        return GeneratedFileMaterializationRequest.builder()
+            .userId(USER_ID)
+            .conversationId(CONVERSATION_ID)
+            .roundNumber(3L)
+            .attemptId("attempt-1")
+            .capabilityKey("builtin.generate_image")
+            .model("doubao-seedream-4-0-250828")
+            .status(status)
+            .sourceTurnNumber(SOURCE_TURN_NUMBER)
+            .originalFilename("generated.png")
+            .mimeType("image/png")
+            .content(png(2, 2))
+            .sha256("")
+            .width(2)
+            .height(2)
+            .outputKind(GeneratedOutputKind.IMAGE)
+            .rewrittenInstruction("draw a blue cat")
+            .providerRequestId("provider-1")
+            .errorCode("")
+            .errorMessage("")
+            .startTime(START_TIME)
+            .endTime(START_TIME.plusSeconds(5))
+            .requestId("request-1")
+            .traceId("trace-1")
+            .taskAgentId(2L)
+            .taskAgentName("image-generation-agent")
+            .taskAgentVersion(1)
+            .normalizedSettingsJson("{}")
+            .parentSpanId("parent-span")
+            .taskSpanId("task-span")
+            .build();
     }
 
-    private GeneratedFileMaterializationService.MaterializationRequest withContent(
-        GeneratedFileMaterializationService.MaterializationRequest request, byte[] content)
+    private GeneratedFileMaterializationRequest withContent(
+        GeneratedFileMaterializationRequest request, byte[] content)
     {
-        return new GeneratedFileMaterializationService.MaterializationRequest(
-            request.userId(), request.conversationId(), request.roundNumber(), request.attemptId(), request.capabilityKey(),
-            request.model(), request.status(), request.sourceTurnNumber(), request.originalFilename(), request.mimeType(),
-            content, request.sha256(), request.width(), request.height(), request.outputKind(), request.rewrittenInstruction(),
-            request.providerRequestId(), request.errorCode(), request.errorMessage(), request.startTime(), request.endTime(),
-            request.requestId(), request.traceId(), request.taskAgentId(), request.taskAgentName(), request.taskAgentVersion(),
-            request.normalizedSettingsJson(), request.parentSpanId(), request.taskSpanId());
+        return GeneratedFileMaterializationRequest.builder()
+            .userId(request.userId())
+            .conversationId(request.conversationId())
+            .roundNumber(request.roundNumber())
+            .attemptId(request.attemptId())
+            .capabilityKey(request.capabilityKey())
+            .model(request.model())
+            .status(request.status())
+            .sourceTurnNumber(request.sourceTurnNumber())
+            .originalFilename(request.originalFilename())
+            .mimeType(request.mimeType())
+            .content(content)
+            .sha256(request.sha256())
+            .width(request.width())
+            .height(request.height())
+            .outputKind(request.outputKind())
+            .rewrittenInstruction(request.rewrittenInstruction())
+            .providerRequestId(request.providerRequestId())
+            .errorCode(request.errorCode())
+            .errorMessage(request.errorMessage())
+            .startTime(request.startTime())
+            .endTime(request.endTime())
+            .requestId(request.requestId())
+            .traceId(request.traceId())
+            .taskAgentId(request.taskAgentId())
+            .taskAgentName(request.taskAgentName())
+            .taskAgentVersion(request.taskAgentVersion())
+            .normalizedSettingsJson(request.normalizedSettingsJson())
+            .parentSpanId(request.parentSpanId())
+            .taskSpanId(request.taskSpanId())
+            .build();
     }
 
     private ConversationRound round()

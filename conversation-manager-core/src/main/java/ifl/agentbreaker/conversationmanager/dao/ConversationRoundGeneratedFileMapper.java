@@ -2,6 +2,7 @@ package ifl.agentbreaker.conversationmanager.dao;
 
 import ifl.agentbreaker.conversationmanager.domain.entities.pg.ConversationRoundGeneratedFile;
 import ifl.agentbreaker.conversationmanager.domain.dtos.responses.GeneratedFileHistory;
+import ifl.agentbreaker.conversationmanager.domain.dtos.responses.MaterializedGeneratedFile;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 
@@ -23,6 +24,12 @@ public interface ConversationRoundGeneratedFileMapper
      * @return relation, or null when materialization has not committed
      */
     ConversationRoundGeneratedFile getByGenerationAttemptId(@Param("generationAttemptId") long generationAttemptId);
+
+    /** Loads the committed file identity for one materialized generation attempt.
+     * @param generationAttemptId internal attempt identity
+     * @return materialized file projection, or null when the attempt has no committed relation
+     */
+    MaterializedGeneratedFile getMaterializedFileByAttemptId(@Param("generationAttemptId") long generationAttemptId);
 
     /** Lists generated outputs for owner history projection.
      * @param conversationId stable Conversation identity

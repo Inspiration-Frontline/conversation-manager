@@ -1,5 +1,6 @@
 package ifl.agentbreaker.conversationmanager.dao;
 
+import ifl.agentbreaker.conversationmanager.domain.dtos.requests.TaskAgentExecutionTerminalUpdate;
 import ifl.agentbreaker.conversationmanager.domain.entities.pg.ConversationTaskAgentExecution;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
@@ -27,20 +28,8 @@ public interface ConversationTaskAgentExecutionMapper
                        @Param("turnOrder") int turnOrder);
 
     /** Updates terminal state and bounded error/provider fields.
-     * @param executionId execution identity
-     * @param userId authenticated owner
-     * @param status terminal status
-     * @param providerRequestId bounded provider request identifier
-     * @param errorCode safe failure classification
-     * @param errorMessage safe failure message
-     * @param endTime terminal time
+     * @param update terminal values for one owned execution row
      * @return affected row count
      */
-    int updateTerminal(@Param("executionId") long executionId,
-                       @Param("userId") long userId,
-                       @Param("status") String status,
-                       @Param("providerRequestId") String providerRequestId,
-                       @Param("errorCode") String errorCode,
-                       @Param("errorMessage") String errorMessage,
-                       @Param("endTime") java.time.Instant endTime);
+    int updateTerminal(TaskAgentExecutionTerminalUpdate update);
 }

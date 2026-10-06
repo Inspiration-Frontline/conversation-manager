@@ -71,11 +71,6 @@ import java.util.Set;
 @LogArgumentsAndResponse
 public class ConversationFileService
 {
-    /** Shared-snapshot file identity and lifecycle values used to mint a preview URL. */
-    private record SharedPreviewTarget(long fileResourceId, String kind, String status)
-    {
-    }
-
     /** Client-visible code for invalid upload metadata or content. */
     public static final int ERROR_INVALID_FILE = 2300;
     /** Client-visible code for an unknown or unauthorized file. */
