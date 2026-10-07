@@ -21,11 +21,12 @@ public record SharedRoundHistoryView(long latestRoundNumber, List<RoundView> rou
      * @param endTime Round end time in epoch milliseconds, or zero while unfinished
      * @param files share-authorized attachments belonging to the Round
      * @param references redacted immutable source boundaries used by the Round
+     * @param editSource source image provenance when the Round is an image edit, otherwise null
      */
     public record RoundView(long roundNumber, String userMessage, String assistantAnswer, String status,
                             String errorMessage, long turnCount, long startTime, long endTime,
                             List<FileView> files, List<GeneratedFileView> generatedFiles,
-                            List<ReferenceView> references)
+                            List<ReferenceView> references, EditSourceView editSource)
     {
     }
 
@@ -65,6 +66,17 @@ public record SharedRoundHistoryView(long latestRoundNumber, List<RoundView> rou
      * @param sourceTitle source title captured for display
      */
     public record ReferenceView(long sourceEndRoundNumber, String sourceTitle)
+    {
+    }
+
+    /** Bounded share-visible provenance for one image-editing Round.
+     * @param fileId stable public identifier of the source image
+     * @param sourceKind UPLOADED or GENERATED
+     * @param sourceRoundNumber Round that produced or attached the source image, or null when unknown
+     * @param resolutionKind EXPLICIT or REFERENCE_RESOLVER
+     */
+    public record EditSourceView(String fileId, String sourceKind, Long sourceRoundNumber,
+                                 String resolutionKind)
     {
     }
 }

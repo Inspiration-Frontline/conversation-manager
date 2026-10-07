@@ -3,7 +3,8 @@ package ifl.agentbreaker.conversationmanager.services.rounds;
 import com.fasterxml.jackson.databind.JsonNode;
 import ifl.agentbreaker.authcenter.session.UserContextService;
 import ifl.agentbreaker.conversationmanager.config.ConversationReferenceProperties;
-import ifl.agentbreaker.conversationmanager.dao.ConversationRoundFileMapper;
+import ifl.agentbreaker.conversationmanager.dao.ConversationRoundInputFileMapper;
+import ifl.agentbreaker.conversationmanager.dao.ConversationRoundEditSourceMapper;
 import ifl.agentbreaker.conversationmanager.dao.ConversationRoundGeneratedFileMapper;
 import ifl.agentbreaker.conversationmanager.dao.FileCleanupTaskMapper;
 import ifl.agentbreaker.conversationmanager.dao.FileResourceMapper;
@@ -15,6 +16,7 @@ import ifl.agentbreaker.conversationmanager.dao.ConversationMapper;
 import ifl.agentbreaker.conversationmanager.dao.ConversationRoundMapper;
 import ifl.agentbreaker.conversationmanager.dao.ConversationRoundReferenceMapper;
 import ifl.agentbreaker.conversationmanager.dao.ConversationTurnMapper;
+import ifl.agentbreaker.conversationmanager.dao.ConversationTaskAgentExecutionMapper;
 import ifl.agentbreaker.conversationmanager.dao.ConversationToolCallExecutionMapper;
 import ifl.agentbreaker.conversationmanager.domain.constants.ConversationRoundStatus;
 import ifl.agentbreaker.conversationmanager.domain.constants.ConversationFileStatus;
@@ -32,9 +34,11 @@ import ifl.agentbreaker.conversationmanager.domain.dtos.responses.ResolvedConver
 import ifl.agentbreaker.conversationmanager.domain.dtos.responses.RoundDeletionFailure;
 import ifl.agentbreaker.conversationmanager.domain.dtos.responses.RoundDeletionResult;
 import ifl.agentbreaker.conversationmanager.domain.dtos.responses.RoundHistoryView;
-import ifl.agentbreaker.conversationmanager.domain.dtos.responses.RoundFileHistory;
+import ifl.agentbreaker.conversationmanager.domain.dtos.responses.RoundInputFileHistory;
 import ifl.agentbreaker.conversationmanager.domain.dtos.responses.GeneratedFileHistory;
+import ifl.agentbreaker.conversationmanager.domain.dtos.responses.EditSourceHistory;
 import ifl.agentbreaker.conversationmanager.domain.dtos.responses.RoundAssistantAnswerHistory;
+import ifl.agentbreaker.conversationmanager.domain.dtos.responses.RoundSubExecutionHistory;
 import ifl.agentbreaker.conversationmanager.domain.dtos.responses.RoundToolActivityHistory;
 import ifl.agentbreaker.conversationmanager.domain.dtos.responses.SharedRoundHistoryView;
 import ifl.agentbreaker.conversationmanager.domain.entities.pg.Conversation;
@@ -156,16 +160,28 @@ public class ConversationRoundService
     private ConversationToolCallExecutionMapper conversationToolCallExecutionMapper;
 
     /**
+     * Bounded Task-Agent execution diagnostics shown as sub-agent steps.
+     */
+    @Autowired
+    private ConversationTaskAgentExecutionMapper conversationTaskAgentExecutionMapper;
+
+    /**
      * Persistence operations for Round-to-file references.
      */
     @Autowired
-    private ConversationRoundFileMapper conversationRoundFileMapper;
+    private ConversationRoundInputFileMapper conversationRoundFileMapper;
 
     /**
      * Persistence operations for generic generated-output relations.
      */
     @Autowired
     private ConversationRoundGeneratedFileMapper conversationRoundGeneratedFileMapper;
+
+    /**
+     * Persistence operations for image-editing source provenance.
+     */
+    @Autowired
+    private ConversationRoundEditSourceMapper conversationRoundEditSourceMapper;
 
     /**
      * Persistence operations for file-resource ownership and references.
@@ -457,10 +473,10 @@ public class ConversationRoundService
         try
         {
             ConversationRoundHistoryResult history = getHistory(userId, conversationId);
-            Map<Long, List<RoundFileHistory>> filesByRound = conversationRoundFileMapper
+            Map<Long, List<RoundInputFileHistory>> filesByRound = conversationRoundFileMapper
                 .listRoundFiles(conversationId)
                 .stream()
-                .collect(Collectors.groupingBy(RoundFileHistory::roundNumber));
+                .collect(Collectors.groupingBy(RoundInputFileHistory::roundNumber));
             Map<Long, List<GeneratedFileHistory>> generatedFilesByRound = conversationRoundGeneratedFileMapper
                 .listRoundGeneratedFiles(conversationId)
                 .stream()
@@ -469,6 +485,10 @@ public class ConversationRoundService
                 .listRoundToolActivities(conversationId)
                 .stream()
                 .collect(Collectors.groupingBy(RoundToolActivityHistory::roundNumber));
+            Map<Long, List<RoundSubExecutionHistory>> subExecutionsByRound = conversationTaskAgentExecutionMapper
+                .listRoundTaskAgentExecutions(conversationId)
+                .stream()
+                .collect(Collectors.groupingBy(RoundSubExecutionHistory::roundNumber));
             Map<Long, List<ConversationRoundReference>> referencesByRound = listReferencesByRound(history.rounds());
             Map<Long, String> assistantAnswersByRound = conversationTurnMapper
                 .listLatestRoundAnswers(conversationId)
@@ -476,14 +496,16 @@ public class ConversationRoundService
                 .collect(Collectors.toMap(
                     RoundAssistantAnswerHistory::roundNumber,
                     RoundAssistantAnswerHistory::assistantAnswer));
+            Map<Long, EditSourceHistory> editSourcesByRoundId = listEditSourcesByRoundId(
+                history.rounds().stream().map(ConversationRound::getId).toList());
 
             return ServiceResponse.buildSuccessResponse(new RoundHistoryView(
                 conversationId,
                 history.latestRoundNumber(),
                 history.rounds().stream()
                     .map(round -> toRoundView(
-                        round, toolActivitiesByRound, filesByRound, generatedFilesByRound,
-                        referencesByRound, assistantAnswersByRound))
+                        round, toolActivitiesByRound, subExecutionsByRound, filesByRound, generatedFilesByRound,
+                        referencesByRound, assistantAnswersByRound, editSourcesByRoundId))
                     .toList()));
         }
         catch (RoundPersistenceException e)
@@ -493,10 +515,12 @@ public class ConversationRoundService
     }
 
     /**
-     * Builds one Round history view from its grouped Tool, file, and reference projections.
+     * Builds one Round history view from its grouped Tool, sub-execution, file, and reference
+     * projections.
      *
      * @param round                 persisted Round metadata
      * @param toolActivitiesByRound Tool evidence grouped by Round number
+     * @param subExecutionsByRound  Task-Agent executions grouped by Round number
      * @param filesByRound          file evidence grouped by Round number
      * @param referencesByRound     frozen references grouped by database Round ID
      * @return user-visible Round history view
@@ -504,10 +528,12 @@ public class ConversationRoundService
     private RoundHistoryView.RoundView toRoundView(
         ConversationRound round,
         Map<Long, List<RoundToolActivityHistory>> toolActivitiesByRound,
-        Map<Long, List<RoundFileHistory>> filesByRound,
+        Map<Long, List<RoundSubExecutionHistory>> subExecutionsByRound,
+        Map<Long, List<RoundInputFileHistory>> filesByRound,
         Map<Long, List<GeneratedFileHistory>> generatedFilesByRound,
         Map<Long, List<ConversationRoundReference>> referencesByRound,
-        Map<Long, String> assistantAnswersByRound)
+        Map<Long, String> assistantAnswersByRound,
+        Map<Long, EditSourceHistory> editSourcesByRoundId)
     {
         return new RoundHistoryView.RoundView(
             round.getRoundNumber(), extractTextContent(round),
@@ -519,6 +545,9 @@ public class ConversationRoundService
             toolActivitiesByRound.getOrDefault(round.getRoundNumber(), List.of()).stream()
                 .map(this::toToolActivityView)
                 .toList(),
+            subExecutionsByRound.getOrDefault(round.getRoundNumber(), List.of()).stream()
+                .map(this::toSubExecutionView)
+                .toList(),
             filesByRound.getOrDefault(round.getRoundNumber(), List.of()).stream()
                 .map(file -> new RoundHistoryView.FileView(
                     file.fileId(), file.originalFilename(), file.mimeType(), file.fileSize(),
@@ -529,7 +558,8 @@ public class ConversationRoundService
                 .toList(),
             referencesByRound.getOrDefault(round.getId(), List.of()).stream()
                 .map(this::toReferenceView)
-                .toList());
+                .toList(),
+            toEditSourceView(editSourcesByRoundId.get(round.getId())));
     }
 
     /**
@@ -543,6 +573,22 @@ public class ConversationRoundService
         return new RoundHistoryView.ToolActivityView(
             activity.toolCallId(), activity.toolName(), activity.toolKey(), activity.arguments(),
             activity.status(), activity.resultContent(), activity.errorMessage());
+    }
+
+    /**
+     * Converts one persisted Task-Agent execution into the HTTP history projection.
+     *
+     * @param execution persisted Task-Agent execution row
+     * @return sub-agent step shown under the Round
+     */
+    private RoundHistoryView.SubExecutionView toSubExecutionView(RoundSubExecutionHistory execution)
+    {
+        return new RoundHistoryView.SubExecutionView(
+            execution.capabilityKey(), execution.taskAgentId(), execution.taskAgentName(),
+            execution.taskAgentVersion(), execution.status(), execution.turnNumber(),
+            execution.startTime() == null ? 0L : execution.startTime().toEpochMilli(),
+            execution.endTime() == null ? 0L : execution.endTime().toEpochMilli(),
+            execution.errorMessage());
     }
 
     /**
@@ -732,10 +778,10 @@ public class ConversationRoundService
      */
     public SharedRoundHistoryView getSharedHttpHistory(String conversationId, long endRoundNumber)
     {
-        Map<Long, List<RoundFileHistory>> filesByRound = conversationRoundFileMapper
+        Map<Long, List<RoundInputFileHistory>> filesByRound = conversationRoundFileMapper
             .listCompletedRoundFilesAtOrBefore(conversationId, endRoundNumber)
             .stream()
-            .collect(Collectors.groupingBy(RoundFileHistory::roundNumber));
+            .collect(Collectors.groupingBy(RoundInputFileHistory::roundNumber));
         Map<Long, List<GeneratedFileHistory>> generatedFilesByRound = conversationRoundGeneratedFileMapper
             .listCompletedGeneratedFilesAtOrBefore(conversationId, endRoundNumber)
             .stream()
@@ -743,6 +789,8 @@ public class ConversationRoundService
         List<ConversationRound> visibleRounds = conversationRoundMapper
             .listCompletedRoundsAtOrBefore(conversationId, endRoundNumber);
         Map<Long, List<ConversationRoundReference>> referencesByRound = listReferencesByRound(visibleRounds);
+        Map<Long, EditSourceHistory> editSourcesByRoundId = listEditSourcesByRoundId(
+            visibleRounds.stream().map(ConversationRound::getId).toList());
 
         long latestRoundNumber = visibleRounds.isEmpty()
             ? 0
@@ -764,7 +812,8 @@ public class ConversationRoundService
                     .toList(),
                 referencesByRound.getOrDefault(round.getId(), List.of()).stream()
                     .map(this::toSharedReferenceView)
-                    .toList())).toList());
+                    .toList(),
+                toSharedEditSourceView(editSourcesByRoundId.get(round.getId())))).toList());
     }
 
     /**
@@ -781,6 +830,45 @@ public class ConversationRoundService
 
         return conversationRoundReferenceMapper.listReferencesByRoundIds(roundIds).stream()
             .collect(Collectors.groupingBy(ConversationRoundReference::getRoundId));
+    }
+
+    /**
+     * Loads and indexes edit-source provenance for the supplied Round database identities.
+     *
+     * @param roundIds visible Round database identities
+     * @return provenance indexed by Round database identity
+     */
+    private Map<Long, EditSourceHistory> listEditSourcesByRoundId(List<Long> roundIds)
+    {
+        if (roundIds.isEmpty())
+            return Map.of();
+
+        return conversationRoundEditSourceMapper.listByRoundIds(roundIds).stream()
+            .collect(Collectors.toMap(EditSourceHistory::roundId, source -> source));
+    }
+
+    /**
+     * Converts one edit-source projection to the owner history shape.
+     *
+     * @param source edit-source history row, possibly null
+     * @return owner-visible provenance, or null for an ordinary Round
+     */
+    private RoundHistoryView.EditSourceView toEditSourceView(EditSourceHistory source)
+    {
+        return source == null ? null : new RoundHistoryView.EditSourceView(
+            source.fileId(), source.sourceKind(), source.sourceRoundNumber(), source.resolutionKind());
+    }
+
+    /**
+     * Converts one edit-source projection to the shared history shape.
+     *
+     * @param source edit-source history row, possibly null
+     * @return share-visible provenance, or null for an ordinary Round
+     */
+    private SharedRoundHistoryView.EditSourceView toSharedEditSourceView(EditSourceHistory source)
+    {
+        return source == null ? null : new SharedRoundHistoryView.EditSourceView(
+            source.fileId(), source.sourceKind(), source.sourceRoundNumber(), source.resolutionKind());
     }
 
     /**
@@ -1283,11 +1371,8 @@ public class ConversationRoundService
 
         // Keep auto-title in the high-water transaction so failed Rounds never rename a Conversation.
         String visibleUserMessage = extractTextContent(request.getUserRequest());
-        String automaticTitle = StringUtils.hasText(visibleUserMessage)
-            ? ConversationTitleManager.deriveFromFirstUserMessage(visibleUserMessage)
-            : roundFiles.isEmpty()
-            ? ConversationTitleManager.DEFAULT_TITLE
-            : ConversationTitleManager.deriveFromAttachmentFilename(roundFiles.get(0).getOriginalFilename());
+        String automaticTitle = ConversationTitleManager.deriveAutomaticTitle(
+            visibleUserMessage, roundFiles.isEmpty() ? null : roundFiles.get(0).getOriginalFilename());
 
         if (conversationMapper.advanceLatestRoundNumber(
             request.getConversationId(), request.getUserId(), request.getRoundNumber(),
@@ -1821,7 +1906,7 @@ public class ConversationRoundService
      * @param request RPC user request, possibly containing text and stable file parts
      * @return visible text joined from text parts, or {@code null} for attachment-only input
      */
-    private String extractTextContent(UserRequest request)
+    String extractTextContent(UserRequest request)
     {
         if (request == null)
             return null;

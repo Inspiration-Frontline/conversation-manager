@@ -16,7 +16,7 @@ class SharedConversationProjectionTest
     {
         SharedRoundHistoryView.RoundView round = new SharedRoundHistoryView.RoundView(
             1, "Question", "Answer", "COMPLETED", "", 1, 1, 2, List.of(), List.of(),
-            List.of(new SharedRoundHistoryView.ReferenceView(3, "Frozen source")));
+            List.of(new SharedRoundHistoryView.ReferenceView(3, "Frozen source")), null);
         SharedConversationView view = new SharedConversationView(
             "share_public", "Snapshot", null, new SharedRoundHistoryView(1, List.of(round)));
 

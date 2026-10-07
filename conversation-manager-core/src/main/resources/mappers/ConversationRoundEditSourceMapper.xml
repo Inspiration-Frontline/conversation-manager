@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="ifl.agentbreaker.conversationmanager.dao.ConversationRoundEditSourceMapper">
+    <insert id="insertEditSource">
+        INSERT INTO "conversation_round_edit_source" (
+            "creator_id", "modifier_id", "round_id", "source_file_resource_id", "source_kind",
+            "source_round_id", "resolution_kind", "resolver_execution_id", "resolution_reason"
+        ) VALUES (
+            #{creatorId}, #{modifierId}, #{roundId}, #{sourceFileResourceId}, #{sourceKind},
+            #{sourceRoundId}, #{resolutionKind}, #{resolverExecutionId}, #{resolutionReason}
+        )
+        ON CONFLICT ("round_id") DO NOTHING
+    </insert>
+
+    <select id="getByRoundId"
+            resultType="ifl.agentbreaker.conversationmanager.domain.entities.pg.ConversationRoundEditSource">
+        SELECT "id", "creator_id", "modifier_id", "creation_time", "modification_time", "round_id",
+               "source_file_resource_id", "source_kind", "source_round_id", "resolution_kind",
+               "resolver_execution_id", "resolution_reason"
+        FROM "conversation_round_edit_source"
+        WHERE "round_id" = #{roundId}
+    </select>
+
+    <select id="listByRoundIds"
+            resultType="ifl.agentbreaker.conversationmanager.domain.dtos.responses.EditSourceHistory">
+        SELECT relation."round_id" AS "roundId",
+               file."file_id" AS "fileId",
+               relation."source_kind" AS "sourceKind",
+               source_round."round_number" AS "sourceRoundNumber",
+               relation."resolution_kind" AS "resolutionKind"
+        FROM "conversation_round_edit_source" relation
+        INNER JOIN "file_resource" file ON file."id" = relation."source_file_resource_id"
+        LEFT JOIN "conversation_round" source_round ON source_round."id" = relation."source_round_id"
+        WHERE relation."round_id" IN
+        <foreach collection="roundIds" item="roundId" open="(" separator="," close=")">
+            #{roundId}
+        </foreach>
+    </select>
+
+    <delete id="deleteByConversationIds">
+        DELETE FROM "conversation_round_edit_source" relation
+        USING "conversation_round" round, "conversation" conversation
+        WHERE relation."round_id" = round."id"
+          AND round."conversation_id" IN
+        <foreach collection="conversationIds" item="conversationId" open="(" separator="," close=")">
+            #{conversationId}
+        </foreach>
+          AND conversation."conversation_id" = round."conversation_id"
+          AND conversation."creator_id" = #{userId}
+    </delete>
+</mapper>

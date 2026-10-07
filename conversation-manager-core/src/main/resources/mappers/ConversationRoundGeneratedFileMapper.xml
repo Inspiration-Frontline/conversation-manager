@@ -58,6 +58,15 @@
         WHERE relation."generation_attempt_id" = #{generationAttemptId}
     </select>
 
+    <select id="findLatestVisibleRoundNumber" resultType="java.lang.Long">
+        SELECT MAX(round."round_number")
+        FROM "conversation_round_generated_file" relation
+        INNER JOIN "conversation_round" round ON round."id" = relation."round_id"
+        WHERE round."conversation_id" = #{conversationId}
+          AND round."deleted" = FALSE
+          AND relation."file_resource_id" = #{fileResourceId}
+    </select>
+
     <select id="listCompletedGeneratedFilesAtOrBefore"
             resultType="ifl.agentbreaker.conversationmanager.domain.dtos.responses.GeneratedFileHistory">
         SELECT round."round_number" AS "roundNumber",

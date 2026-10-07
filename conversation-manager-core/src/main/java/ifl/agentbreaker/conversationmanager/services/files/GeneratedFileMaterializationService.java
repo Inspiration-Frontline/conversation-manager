@@ -5,6 +5,8 @@ import com.aliyun.oss.model.ObjectMetadata;
 import ifl.agentbreaker.conversationmanager.config.ConversationFileProperties;
 import ifl.agentbreaker.conversationmanager.config.OssStorageProperties;
 import ifl.agentbreaker.conversationmanager.dao.ConversationGenerationAttemptMapper;
+import ifl.agentbreaker.conversationmanager.dao.ConversationRoundEditSourceMapper;
+import ifl.agentbreaker.conversationmanager.dao.ConversationRoundInputFileMapper;
 import ifl.agentbreaker.conversationmanager.dao.ConversationRoundGeneratedFileMapper;
 import ifl.agentbreaker.conversationmanager.dao.ConversationRoundMapper;
 import ifl.agentbreaker.conversationmanager.dao.ConversationTaskAgentExecutionMapper;
@@ -14,20 +16,25 @@ import ifl.agentbreaker.conversationmanager.dao.FileResourceMapper;
 import ifl.agentbreaker.conversationmanager.dao.FileResourceVariantMapper;
 import ifl.agentbreaker.conversationmanager.domain.constants.ConversationFileKind;
 import ifl.agentbreaker.conversationmanager.domain.constants.ConversationFileStatus;
+import ifl.agentbreaker.conversationmanager.domain.constants.EditResolutionKind;
+import ifl.agentbreaker.conversationmanager.domain.constants.EditSourceKind;
 import ifl.agentbreaker.conversationmanager.domain.constants.FileResourceOrigin;
 import ifl.agentbreaker.conversationmanager.domain.constants.FileVariantType;
 import ifl.agentbreaker.conversationmanager.domain.constants.GeneratedOutputKind;
 import ifl.agentbreaker.conversationmanager.domain.constants.GeneratedOutputStatus;
 import ifl.agentbreaker.conversationmanager.domain.constants.GenerationAttemptStatus;
+import ifl.agentbreaker.conversationmanager.domain.constants.ResolverExecutionStatus;
 import ifl.agentbreaker.conversationmanager.domain.constants.TaskAgentExecutionStatus;
 import ifl.agentbreaker.conversationmanager.domain.entities.pg.ConversationGenerationAttempt;
 import ifl.agentbreaker.conversationmanager.domain.entities.pg.ConversationRound;
+import ifl.agentbreaker.conversationmanager.domain.entities.pg.ConversationRoundEditSource;
 import ifl.agentbreaker.conversationmanager.domain.entities.pg.ConversationRoundGeneratedFile;
 import ifl.agentbreaker.conversationmanager.domain.entities.pg.ConversationTaskAgentExecution;
 import ifl.agentbreaker.conversationmanager.domain.entities.pg.ConversationTurn;
 import ifl.agentbreaker.conversationmanager.domain.entities.pg.FileResource;
 import ifl.agentbreaker.conversationmanager.domain.dtos.requests.GenerationAttemptTerminalUpdate;
 import ifl.agentbreaker.conversationmanager.domain.dtos.requests.GeneratedFileMaterializationRequest;
+import ifl.agentbreaker.conversationmanager.domain.dtos.requests.ReferenceResolutionAudit;
 import ifl.agentbreaker.conversationmanager.domain.dtos.responses.MaterializedGeneratedFile;
 import ifl.agentbreaker.conversationmanager.exceptions.ServiceResponseException;
 import ifl.agentbreaker.conversationmanager.support.BusinessIdManager;
@@ -59,6 +66,16 @@ public class GeneratedFileMaterializationService
     public static final int ERROR_INVALID_GENERATED_FILE = 2400;
 
     /**
+     * Stable capability key recorded for image-reference-resolver Task-Agent executions.
+     */
+    private static final String RESOLVER_CAPABILITY_KEY = "builtin.resolve_image_reference";
+
+    /**
+     * Bounded retention for the resolver explanation.
+     */
+    private static final int MAX_RESOLUTION_REASON_LENGTH = 500;
+
+    /**
      * Ownership and Conversation lookup.
      */
     @Autowired
@@ -81,6 +98,18 @@ public class GeneratedFileMaterializationService
      */
     @Autowired
     private ConversationRoundGeneratedFileMapper conversationRoundGeneratedFileMapper;
+
+    /**
+     * Visible Round lookup for uploaded edit sources.
+     */
+    @Autowired
+    private ConversationRoundInputFileMapper conversationRoundFileMapper;
+
+    /**
+     * Image-editing source provenance persistence.
+     */
+    @Autowired
+    private ConversationRoundEditSourceMapper conversationRoundEditSourceMapper;
 
     /**
      * Optional Task-Agent diagnostic persistence.
@@ -167,6 +196,9 @@ public class GeneratedFileMaterializationService
 
         if (request.status() != GenerationAttemptStatus.COMPLETED)
         {
+            // The resolver executes before the provider edit inside the edit capability, so its
+            // audit row is inserted first and primary-key order matches execution order.
+            persistEditAudit(request, round.getId());
             persistTaskExecution(request, round.getId(), inserted.getId());
             return new MaterializationResult(request.attemptId(), inserted.getId(), "", 0,
                 GeneratedOutputStatus.ACTIVE, request.status());
@@ -276,6 +308,8 @@ public class GeneratedFileMaterializationService
 
         conversationGenerationAttemptMapper.updateTerminal(terminalUpdate(request,
             GenerationAttemptStatus.MATERIALIZED.name(), "", ""));
+        // Resolver audit first: primary-key order then matches the resolver-then-edit execution order.
+        persistEditAudit(request, round.getId());
         persistTaskExecution(request, round.getId(), attempt.getId());
 
         return new MaterializationResult(request.attemptId(), attempt.getId(), insertedResource.getFileId(),
@@ -330,6 +364,260 @@ public class GeneratedFileMaterializationService
     }
 
     /**
+     * Persists resolver and edit-source provenance for one edit attempt. The operation is
+     * idempotent by editing Round so a repeated persistence call cannot duplicate provenance.
+     */
+    private void persistEditAudit(GeneratedFileMaterializationRequest request, long roundId)
+    {
+        boolean hasEditSource = StringUtils.hasText(request.editSourceFileId());
+
+        if (!hasEditSource && request.referenceResolution() == null)
+            return;
+
+        if (hasEditSource && conversationRoundEditSourceMapper.getByRoundId(roundId) != null)
+            return;
+
+        Long resolverExecutionId = persistReferenceResolution(request, roundId);
+
+        if (hasEditSource)
+            persistEditSource(request, roundId, resolverExecutionId);
+    }
+
+    /**
+     * Persists one image-reference-resolver Task-Agent execution when the request carries its audit.
+     */
+    private Long persistReferenceResolution(GeneratedFileMaterializationRequest request, long roundId)
+    {
+        ReferenceResolutionAudit audit = request.referenceResolution();
+
+        if (audit == null)
+            return null;
+
+        ConversationTurn sourceTurn = conversationTurnMapper.getTurn(roundId, request.sourceTurnNumber());
+
+        if (sourceTurn == null)
+            throw new IllegalStateException("The source Turn for the resolver execution could not be found.");
+
+        ConversationTaskAgentExecution execution = new ConversationTaskAgentExecution();
+        execution.setCreatorId(request.userId());
+        execution.setModifierId(request.userId());
+        execution.setRoundId(roundId);
+        execution.setTaskAgentId(audit.taskAgentId());
+        execution.setTaskAgentName(audit.taskAgentName());
+        execution.setTaskAgentVersion(Math.max(1, audit.taskAgentVersion()));
+        execution.setCapabilityKey(RESOLVER_CAPABILITY_KEY);
+        execution.setStatus(toResolverTaskStatus(audit.status()));
+        execution.setRequestId(nullSafe(audit.requestId()));
+        execution.setTraceId(nullSafe(audit.traceId()));
+        execution.setParentSpanId(nullSafe(audit.parentSpanId()));
+        execution.setTaskSpanId(nullSafe(audit.taskSpanId()));
+        execution.setRewrittenInstruction("");
+        execution.setInputResourceIdsJson("[]");
+        execution.setNormalizedSettingsJson("{}");
+        execution.setProviderRequestId("");
+        execution.setErrorCode("");
+        execution.setErrorMessage(boundedResolverFailureMessage(audit.status(), audit.resolutionReason()));
+        execution.setStartTime(audit.startTime());
+        execution.setEndTime(audit.endTime());
+        execution.setParentTurnId(sourceTurn.getId());
+        ConversationTaskAgentExecution persistedExecution = conversationTaskAgentExecutionMapper.insertExecution(execution);
+
+        if (persistedExecution == null || persistedExecution.getId() <= 0)
+            throw new IllegalStateException("The resolver execution could not be persisted.");
+
+        if (conversationTaskAgentExecutionMapper.insertTurnLink(request.userId(), persistedExecution.getId(),
+            sourceTurn.getId(), 1) != 1)
+            throw new IllegalStateException("The resolver Turn link could not be persisted.");
+
+        return persistedExecution.getId();
+    }
+
+    /**
+     * Persists explicit provenance for the single source image of one editing Round.
+     */
+    private void persistEditSource(GeneratedFileMaterializationRequest request, long roundId,
+                                   Long resolverExecutionId)
+    {
+        FileResource sourceResource = fileResourceMapper.getOwnedFileResource(
+            request.editSourceFileId(), request.userId());
+
+        if (sourceResource == null || sourceResource.isDeleted()
+            || sourceResource.getKind() != ConversationFileKind.IMAGE
+            || sourceResource.getStatus() != ConversationFileStatus.READY)
+            throw new ServiceResponseException(ERROR_INVALID_GENERATED_FILE,
+                "The edit source image is not available.");
+
+        EditSourceKind sourceKind = sourceResource.getOrigin() == FileResourceOrigin.GENERATED
+            ? EditSourceKind.GENERATED : EditSourceKind.UPLOADED;
+        Long sourceRoundId = resolveSourceRoundId(request, sourceResource, sourceKind);
+
+        if (sourceRoundId == null)
+            throw new ServiceResponseException(ERROR_INVALID_GENERATED_FILE,
+                "The edit source image is not visible in this Conversation.");
+
+        ConversationRoundEditSource editSource = new ConversationRoundEditSource();
+        editSource.setCreatorId(request.userId());
+        editSource.setModifierId(request.userId());
+        editSource.setRoundId(roundId);
+        editSource.setSourceFileResourceId(sourceResource.getId());
+        editSource.setSourceKind(sourceKind);
+        editSource.setSourceRoundId(sourceRoundId);
+        editSource.setResolutionKind(request.editResolutionKind());
+        editSource.setResolverExecutionId(resolverExecutionId);
+        editSource.setResolutionReason(boundedResolutionReason(request));
+        int insertedCount = conversationRoundEditSourceMapper.insertEditSource(editSource);
+
+        if (insertedCount != 1 && conversationRoundEditSourceMapper.getByRoundId(roundId) == null)
+            throw new IllegalStateException("The edit source provenance could not be persisted.");
+    }
+
+    /**
+     * Resolves the visible source Round from the durable file relations, falling back to the
+     * Runner-reported Round only while that Round remains visible.
+     */
+    private Long resolveSourceRoundId(GeneratedFileMaterializationRequest request, FileResource sourceResource,
+                                      EditSourceKind sourceKind)
+    {
+        Long visibleRoundNumber = sourceKind == EditSourceKind.GENERATED
+            ? conversationRoundGeneratedFileMapper.findLatestVisibleRoundNumber(
+                request.conversationId(), sourceResource.getId())
+            : conversationRoundFileMapper.findLatestVisibleRoundNumber(
+                request.conversationId(), sourceResource.getId());
+        Long reportedRoundNumber = request.editSourceRoundNumber() > 0
+            ? request.editSourceRoundNumber() : null;
+        Long resolvedRoundNumber = visibleRoundNumber != null ? visibleRoundNumber : reportedRoundNumber;
+
+        if (resolvedRoundNumber == null)
+            return null;
+
+        ConversationRound sourceRound = conversationRoundMapper.getRound(request.conversationId(), resolvedRoundNumber);
+
+        if (sourceRound == null || sourceRound.isDeleted())
+            return null;
+
+        return sourceRound.getId();
+    }
+
+    /**
+     * Validates edit-source metadata consistency before any OSS or database mutation.
+     */
+    private void validateEditSource(GeneratedFileMaterializationRequest request)
+    {
+        boolean hasEditSource = StringUtils.hasText(request.editSourceFileId());
+
+        if (!hasEditSource)
+        {
+            if (request.editResolutionKind() != null)
+                throw new ServiceResponseException(ERROR_INVALID_GENERATED_FILE,
+                    "An edit resolution kind requires a source image.");
+
+            if (request.referenceResolution() == null)
+                return;
+
+            validateReferenceResolution(request.referenceResolution(), null);
+
+            return;
+        }
+
+        if (request.editSourceFileId().length() > 64 || request.editResolutionKind() == null)
+            throw new ServiceResponseException(ERROR_INVALID_GENERATED_FILE,
+                "The edit source metadata is inconsistent.");
+
+        if (request.editResolutionKind() == EditResolutionKind.REFERENCE_RESOLVER)
+        {
+            validateReferenceResolution(request.referenceResolution(), request.editSourceFileId());
+        }
+        else if (request.referenceResolution() != null)
+        {
+            throw new ServiceResponseException(ERROR_INVALID_GENERATED_FILE,
+                "An explicit edit source must not carry a resolver audit.");
+        }
+    }
+
+    /**
+     * Validates resolver audit bounds and its agreement with the selected source image.
+     */
+    private void validateReferenceResolution(ReferenceResolutionAudit audit, String editSourceFileId)
+    {
+        if (audit == null || audit.status() == null || audit.taskAgentId() <= 0
+            || !StringUtils.hasText(audit.taskAgentName()) || audit.startTime() == null
+            || (audit.endTime() != null && audit.endTime().isBefore(audit.startTime())))
+            throw new ServiceResponseException(ERROR_INVALID_GENERATED_FILE, "The resolver audit is invalid.");
+
+        if (editSourceFileId == null)
+        {
+            if (StringUtils.hasText(audit.resolvedFileId()))
+                throw new ServiceResponseException(ERROR_INVALID_GENERATED_FILE,
+                    "A resolved candidate requires an edit source.");
+
+            return;
+        }
+
+        if (!editSourceFileId.equals(audit.resolvedFileId()))
+            throw new ServiceResponseException(ERROR_INVALID_GENERATED_FILE,
+                "The resolved candidate does not match the edit source.");
+    }
+
+    /**
+     * Maps resolver state to Task-Agent execution state.
+     */
+    private TaskAgentExecutionStatus toResolverTaskStatus(ResolverExecutionStatus status)
+    {
+        return switch (status)
+        {
+            case COMPLETED -> TaskAgentExecutionStatus.COMPLETED;
+            case CANCELLED -> TaskAgentExecutionStatus.CANCELLED;
+            case FAILED -> TaskAgentExecutionStatus.FAILED;
+        };
+    }
+
+    /**
+     * Returns a bounded resolver explanation suitable for durable retention.
+     */
+    private String boundedResolutionReason(GeneratedFileMaterializationRequest request)
+    {
+        ReferenceResolutionAudit audit = request.referenceResolution();
+
+        if (audit == null)
+            return "";
+
+        return boundedReason(audit.resolutionReason());
+    }
+
+    /**
+     * Returns the bounded resolver explanation retained on a failed resolver execution row.
+     */
+    private String boundedResolverFailureMessage(ResolverExecutionStatus status, String resolutionReason)
+    {
+        if (status != ResolverExecutionStatus.FAILED)
+            return "";
+
+        return boundedReason(resolutionReason);
+    }
+
+    /**
+     * Truncates one resolver explanation to the durable retention bound.
+     */
+    private String boundedReason(String reason)
+    {
+        if (!StringUtils.hasText(reason))
+            return "";
+
+        String normalizedReason = reason.trim();
+
+        return normalizedReason.length() <= MAX_RESOLUTION_REASON_LENGTH
+            ? normalizedReason : normalizedReason.substring(0, MAX_RESOLUTION_REASON_LENGTH);
+    }
+
+    /**
+     * Returns an empty string for a null audit field.
+     */
+    private String nullSafe(String value)
+    {
+        return value == null ? "" : value;
+    }
+
+    /**
      * Maps generation state to Task-Agent state without exposing provider-specific values.
      */
     private TaskAgentExecutionStatus toTaskStatus(GenerationAttemptStatus status)
@@ -353,6 +641,8 @@ public class GeneratedFileMaterializationService
             || !StringUtils.hasText(request.attemptId()) || request.attemptId().length() > 100
             || request.sourceTurnNumber() <= 0 || request.outputKind() == null)
             throw new ServiceResponseException(ERROR_INVALID_GENERATED_FILE, "The generated file request is invalid.");
+
+        validateEditSource(request);
 
         if (request.startTime() == null || (request.endTime() != null && request.endTime().isBefore(request.startTime())))
             throw new ServiceResponseException(ERROR_INVALID_GENERATED_FILE, "The generation timestamps are invalid.");

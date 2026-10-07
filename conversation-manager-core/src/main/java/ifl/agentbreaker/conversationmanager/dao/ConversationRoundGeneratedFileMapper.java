@@ -57,6 +57,14 @@ public interface ConversationRoundGeneratedFileMapper
         @Param("endRoundNumber") long endRoundNumber,
         @Param("fileIds") Collection<String> fileIds);
 
+    /** Resolves the latest visible Round that produced one generated resource.
+     * @param conversationId stable Conversation identity
+     * @param fileResourceId internal file resource identity
+     * @return latest visible Round number, or null when the resource is not a visible output
+     */
+    Long findLatestVisibleRoundNumber(@Param("conversationId") String conversationId,
+                                      @Param("fileResourceId") long fileResourceId);
+
     /** Marks the selected outputs superseded for Regenerate presentation.
      * @param roundId containing Round database identity
      * @param fileResourceIds selected generated resources

@@ -28,6 +28,9 @@ file sits directly in `SQLs/`.
 20. `Forward/20260908_FileResourceOrigin.sql`
 21. `Forward/20260912_TaskAgentExecutionIdempotency.sql`
 22. `Forward/20260913_RestoreForkedGeneratedFiles.sql`
+23. `Forward/20261006_ConversationRoundEditSource.sql`
+24. `Forward/20261006_02_RestoreForkedEditSources.sql`
+25. `Forward/20261007_RenameRoundInputFiles.sql`
 
 The two `20260825` files are a committed legacy naming exception: the Expand migration must run
 before Contract even though their action names sort in the opposite order. Future same-day

@@ -8,7 +8,7 @@ import lombok.EqualsAndHashCode;
  */
 @Data
 @EqualsAndHashCode(callSuper = true)
-public class ConversationRoundFile extends EntityBase
+public class ConversationRoundInputFile extends EntityBase
 {
     /**
      * Database identifier of the containing Round.

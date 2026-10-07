@@ -12,7 +12,7 @@ package ifl.agentbreaker.conversationmanager.domain.dtos.responses;
  * @param kind Resolved Conversation file kind
  * @param status Terminal or processing file status
  */
-public record RoundFileHistory(
+public record RoundInputFileHistory(
     long roundNumber,
     long fileResourceId,
     String fileId,

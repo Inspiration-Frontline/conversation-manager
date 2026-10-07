@@ -2,6 +2,7 @@ package ifl.agentbreaker.conversationmanager.domain.dtos.requests;
 
 import ifl.agentbreaker.conversationmanager.domain.constants.GeneratedOutputKind;
 import ifl.agentbreaker.conversationmanager.domain.constants.GenerationAttemptStatus;
+import ifl.agentbreaker.conversationmanager.domain.constants.EditResolutionKind;
 import lombok.Builder;
 
 import java.time.Instant;
@@ -39,6 +40,14 @@ import java.time.Instant;
  * @param normalizedSettingsJson bounded provider settings captured for replay
  * @param parentSpanId capability span that owns the Task-Agent execution
  * @param taskSpanId Task-Agent execution span
+ * @param editResolutionKind method used to choose the single edit source image, or null for
+ *        ordinary generation
+ * @param editSourceFileId stable source image file ID for an edit attempt, or an empty value for
+ *        ordinary generation
+ * @param editSourceRoundNumber Round that produced or attached the source image, or zero when
+ *        unknown
+ * @param referenceResolution resolver audit when the source image was chosen by the
+ *        image-reference-resolver Task Agent, otherwise null
  */
 @Builder
 public record GeneratedFileMaterializationRequest(
@@ -70,6 +79,10 @@ public record GeneratedFileMaterializationRequest(
     int taskAgentVersion,
     String normalizedSettingsJson,
     String parentSpanId,
-    String taskSpanId)
+    String taskSpanId,
+    EditResolutionKind editResolutionKind,
+    String editSourceFileId,
+    long editSourceRoundNumber,
+    ReferenceResolutionAudit referenceResolution)
 {
 }

@@ -12,7 +12,8 @@ import ifl.agentbreaker.conversationmanager.dao.FileCleanupTaskMapper;
 import ifl.agentbreaker.conversationmanager.dao.FileProcessingTaskMapper;
 import ifl.agentbreaker.conversationmanager.dao.FileResourceMapper;
 import ifl.agentbreaker.conversationmanager.dao.FileResourceVariantMapper;
-import ifl.agentbreaker.conversationmanager.dao.ConversationRoundFileMapper;
+import ifl.agentbreaker.conversationmanager.dao.ConversationRoundEditSourceMapper;
+import ifl.agentbreaker.conversationmanager.dao.ConversationRoundInputFileMapper;
 import ifl.agentbreaker.conversationmanager.dao.ConversationRoundGeneratedFileMapper;
 import ifl.agentbreaker.conversationmanager.dao.ConversationSharingMapper;
 import ifl.agentbreaker.conversationmanager.domain.constants.ConversationFileKind;
@@ -30,8 +31,9 @@ import ifl.agentbreaker.conversationmanager.domain.dtos.responses.FileDownloadUr
 import ifl.agentbreaker.conversationmanager.domain.dtos.responses.FileResourceInfo;
 import ifl.agentbreaker.conversationmanager.domain.dtos.responses.FileUploadSession;
 import ifl.agentbreaker.conversationmanager.domain.dtos.responses.FilePreviewUrl;
-import ifl.agentbreaker.conversationmanager.domain.dtos.responses.RoundFileHistory;
+import ifl.agentbreaker.conversationmanager.domain.dtos.responses.RoundInputFileHistory;
 import ifl.agentbreaker.conversationmanager.domain.dtos.responses.GeneratedFileHistory;
+import ifl.agentbreaker.conversationmanager.domain.dtos.responses.PreparedImageEditSource;
 import ifl.agentbreaker.conversationmanager.domain.entities.pg.FileResource;
 import ifl.agentbreaker.conversationmanager.domain.entities.pg.FileResourceVariant;
 import ifl.agentbreaker.conversationmanager.domain.entities.pg.ConversationSharing;
@@ -103,11 +105,17 @@ public class ConversationFileService
 
     /** Persistence operations for Round-to-file references. */
     @Autowired
-    private ConversationRoundFileMapper conversationRoundFileMapper;
+    private ConversationRoundInputFileMapper conversationRoundFileMapper;
 
     /** Persistence operations for generic generated-output relations. */
     @Autowired
     private ConversationRoundGeneratedFileMapper conversationRoundGeneratedFileMapper;
+
+    /**
+     * Image-editing source provenance cleanup.
+     */
+    @Autowired
+    private ConversationRoundEditSourceMapper conversationRoundEditSourceMapper;
 
     /** Persistence operations for sharing snapshot authorization. */
     @Autowired
@@ -363,6 +371,75 @@ public class ConversationFileService
     }
 
     /**
+     * Authorizes one existing image as the source of an image-editing Round and mints a signed URL
+     * for the exact object the Runner may download: the sanitized MODEL_INPUT derivative for an
+     * uploaded image, or the validated generated original.
+     *
+     * @param userId authenticated owner of the source image
+     * @param conversationId Conversation that must contain the visible source
+     * @param fileId stable public source image identity
+     * @return provider-input metadata and a short-lived signed URL
+     */
+    public PreparedImageEditSource prepareImageEditSource(long userId, String conversationId, String fileId)
+    {
+        if (userId <= 0 || !StringUtils.hasText(conversationId) || !StringUtils.hasText(fileId))
+            throw new ServiceResponseException(ERROR_INVALID_FILE, "The edit source request is invalid.");
+
+        FileResource fileResource = fileResourceMapper.getOwnedFileResource(fileId, userId);
+
+        if (fileResource == null || fileResource.isDeleted())
+            throw new ServiceResponseException(ERROR_FILE_NOT_FOUND, "Edit source image does not exist.");
+
+        if (fileResource.getStatus() != ConversationFileStatus.READY
+            || fileResource.getKind() != ConversationFileKind.IMAGE)
+            throw new ServiceResponseException(ERROR_INVALID_FILE, "The edit source must be a ready image.");
+
+        boolean generated = fileResource.getOrigin() == FileResourceOrigin.GENERATED;
+        Long sourceRoundNumber = generated
+            ? conversationRoundGeneratedFileMapper.findLatestVisibleRoundNumber(conversationId, fileResource.getId())
+            : conversationRoundFileMapper.findLatestVisibleRoundNumber(conversationId, fileResource.getId());
+
+        if (sourceRoundNumber == null)
+            throw new ServiceResponseException(ERROR_FILE_NOT_FOUND,
+                "Edit source image is not visible in this Conversation.");
+
+        Instant expiresAt = Instant.now().plusSeconds(ossStorageProperties.getPresignedUrlTtlSeconds());
+        FileResourceVariant modelInputVariant = null;
+        String downloadUrl;
+
+        if (generated)
+        {
+            downloadUrl = createDownloadUrl(fileResource, expiresAt);
+        }
+        else
+        {
+            modelInputVariant = fileResourceVariantMapper.getReadyVariant(
+                fileResource.getId(), FileVariantType.MODEL_INPUT);
+
+            if (modelInputVariant == null)
+                throw new ServiceResponseException(ERROR_INVALID_FILE, "The edit source derivative is not ready.");
+
+            downloadUrl = createVariantUrl(modelInputVariant, expiresAt, false);
+        }
+
+        String mimeType = modelInputVariant != null && StringUtils.hasText(modelInputVariant.getMimeType())
+            ? modelInputVariant.getMimeType()
+            : (StringUtils.hasText(fileResource.getDetectedMimeType())
+                ? fileResource.getDetectedMimeType() : fileResource.getDeclaredMimeType());
+        long fileSize = modelInputVariant != null && modelInputVariant.getFileSize() != null
+            ? modelInputVariant.getFileSize() : fileResource.getFileSize();
+        String sha256 = modelInputVariant != null ? modelInputVariant.getSha256() : fileResource.getSha256();
+        int width = modelInputVariant != null ? modelInputVariant.getWidth()
+            : (fileResource.getWidth() == null ? 0 : fileResource.getWidth());
+        int height = modelInputVariant != null ? modelInputVariant.getHeight()
+            : (fileResource.getHeight() == null ? 0 : fileResource.getHeight());
+
+        return new PreparedImageEditSource(fileResource.getFileId(), fileResource.getOriginalFilename(),
+            mimeType, fileSize, sha256 == null ? "" : sha256, width, height,
+            fileResource.getOrigin().name(), sourceRoundNumber, downloadUrl);
+    }
+
+    /**
      * Mints a signed URL only when the file is linked from a completed Round inside a valid share
      * boundary. The caller is authenticated by the HTTP filter; no owner identity is inferred from
      * the file request itself.
@@ -375,7 +452,7 @@ public class ConversationFileService
     public ServiceResponse<FileDownloadUrl> getSharedFileDownloadUrl(
         String conversationId, long endRoundNumber, String fileId)
     {
-        RoundFileHistory sharedFile = conversationRoundFileMapper.getSharedRoundFile(
+        RoundInputFileHistory sharedFile = conversationRoundFileMapper.getSharedRoundFile(
             conversationId, endRoundNumber, fileId);
 
         long fileResourceId;
@@ -478,13 +555,13 @@ public class ConversationFileService
         if (sharing == null)
             throw new ServiceResponseException(ERROR_FILE_NOT_FOUND, "Shared conversation does not exist or has expired.");
 
-        List<RoundFileHistory> attachmentFiles = conversationRoundFileMapper.listSharedRoundFiles(
+        List<RoundInputFileHistory> attachmentFiles = conversationRoundFileMapper.listSharedRoundFiles(
             sharing.getParentConversationId(), sharing.getEndRoundNumber(), request.getFileIds());
         List<GeneratedFileHistory> generatedFiles = conversationRoundGeneratedFileMapper.listSharedGeneratedFiles(
             sharing.getParentConversationId(), sharing.getEndRoundNumber(), request.getFileIds());
         Map<String, SharedPreviewTarget> filesById = new LinkedHashMap<>();
 
-        for (RoundFileHistory file : attachmentFiles)
+        for (RoundInputFileHistory file : attachmentFiles)
             filesById.put(file.fileId(), new SharedPreviewTarget(
                 file.fileResourceId(), file.kind(), file.status()));
 
@@ -614,6 +691,7 @@ public class ConversationFileService
             FileCleanupReason.CONVERSATION_DELETED,
             conversationFileProperties.getOrphanTtlSeconds());
         conversationRoundFileMapper.deleteByConversationIds(uniqueConversationIds, userId);
+        conversationRoundEditSourceMapper.deleteByConversationIds(uniqueConversationIds, userId);
         fileResourceMapper.clearReservationsForConversations(uniqueConversationIds, userId);
     }
 

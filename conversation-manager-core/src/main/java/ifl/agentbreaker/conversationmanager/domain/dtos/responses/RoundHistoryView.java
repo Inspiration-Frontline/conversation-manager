@@ -21,13 +21,33 @@ public record RoundHistoryView(String conversationId, long latestRoundNumber, Li
      * @param startTime Round start time in epoch milliseconds
      * @param endTime Round end time in epoch milliseconds, or zero while unfinished
      * @param tools ordered Tool execution projections visible to the owner
+     * @param subExecutions ordered Task-Agent executions shown as sub-agent steps of the Round
      * @param files files attached to the Round
      * @param references immutable source-Conversation boundaries used by the Round
+     * @param editSource source image provenance when the Round is an image edit, otherwise null
      */
     public record RoundView(long roundNumber, String userMessage, String assistantAnswer, String status,
                             String errorMessage, long turnCount, long startTime, long endTime,
-                            List<ToolActivityView> tools, List<FileView> files,
-                            List<GeneratedFileView> generatedFiles, List<ReferenceView> references)
+                            List<ToolActivityView> tools, List<SubExecutionView> subExecutions, List<FileView> files,
+                            List<GeneratedFileView> generatedFiles, List<ReferenceView> references,
+                            EditSourceView editSource)
+    {
+    }
+
+    /** One Task-Agent execution shown as a sub-agent step under a primary-agent Round.
+     * @param capabilityKey permanent AgentBreaker capability identity the sub-agent executed
+     * @param taskAgentId immutable Task-Agent identity
+     * @param taskAgentName published Task-Agent name
+     * @param taskAgentVersion immutable Task-Agent version
+     * @param status terminal execution status
+     * @param turnNumber model Turn the execution belongs to
+     * @param startTime execution start time in epoch milliseconds
+     * @param endTime execution end time in epoch milliseconds, or zero while unfinished
+     * @param errorMessage bounded failure detail, or an empty value when successful
+     */
+    public record SubExecutionView(String capabilityKey, long taskAgentId, String taskAgentName,
+                                   long taskAgentVersion, String status, long turnNumber, long startTime,
+                                   long endTime, String errorMessage)
     {
     }
 
@@ -82,6 +102,17 @@ public record RoundHistoryView(String conversationId, long latestRoundNumber, Li
      * @param sourceTitle source title captured for display
      */
     public record ReferenceView(String sourceConversationId, long sourceEndRoundNumber, String sourceTitle)
+    {
+    }
+
+    /** Bounded provenance for one image-editing Round.
+     * @param fileId stable public identifier of the source image
+     * @param sourceKind UPLOADED or GENERATED
+     * @param sourceRoundNumber Round that produced or attached the source image, or null when unknown
+     * @param resolutionKind EXPLICIT or REFERENCE_RESOLVER
+     */
+    public record EditSourceView(String fileId, String sourceKind, Long sourceRoundNumber,
+                                 String resolutionKind)
     {
     }
 }

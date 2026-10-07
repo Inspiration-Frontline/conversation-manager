@@ -48,7 +48,7 @@
         )
         SELECT DISTINCT #{userId}, #{userId}, relation."file_resource_id", #{reason}, 'PENDING',
             NOW() + (#{delaySeconds} * INTERVAL '1 second')
-        FROM "conversation_round_file" relation
+        FROM "conversation_round_input_file" relation
         INNER JOIN "conversation_round" round ON round."id" = relation."round_id"
         INNER JOIN "conversation" conversation ON conversation."conversation_id" = round."conversation_id"
         WHERE conversation."creator_id" = #{userId}

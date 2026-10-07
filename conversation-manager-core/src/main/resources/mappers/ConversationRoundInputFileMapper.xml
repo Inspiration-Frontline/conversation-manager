@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
-<mapper namespace="ifl.agentbreaker.conversationmanager.dao.ConversationRoundFileMapper">
+<mapper namespace="ifl.agentbreaker.conversationmanager.dao.ConversationRoundInputFileMapper">
     <insert id="insertRoundFiles">
-        INSERT INTO "conversation_round_file" (
+        INSERT INTO "conversation_round_input_file" (
             "creator_id", "modifier_id", "round_id", "file_resource_id", "file_order"
         ) VALUES
         <foreach collection="fileResourceIds" item="fileResourceId" index="fileOrder" separator=",">
@@ -11,7 +11,7 @@
         ON CONFLICT DO NOTHING
     </insert>
 
-    <select id="listRoundFiles" resultType="ifl.agentbreaker.conversationmanager.domain.dtos.responses.RoundFileHistory">
+    <select id="listRoundFiles" resultType="ifl.agentbreaker.conversationmanager.domain.dtos.responses.RoundInputFileHistory">
         SELECT round."round_number" AS "roundNumber",
                file."id" AS "fileResourceId",
                file."file_id" AS "fileId",
@@ -21,7 +21,7 @@
                file."kind" AS "kind",
                file."status" AS "status"
         FROM "conversation_round" round
-        INNER JOIN "conversation_round_file" relation ON relation."round_id" = round."id"
+        INNER JOIN "conversation_round_input_file" relation ON relation."round_id" = round."id"
         INNER JOIN "file_resource" file ON file."id" = relation."file_resource_id"
         WHERE round."conversation_id" = #{conversationId}
           AND round."deleted" = FALSE
@@ -29,7 +29,7 @@
     </select>
 
     <select id="listCompletedRoundFilesAtOrBefore"
-            resultType="ifl.agentbreaker.conversationmanager.domain.dtos.responses.RoundFileHistory">
+            resultType="ifl.agentbreaker.conversationmanager.domain.dtos.responses.RoundInputFileHistory">
         SELECT round."round_number" AS "roundNumber",
                file."id" AS "fileResourceId",
                file."file_id" AS "fileId",
@@ -39,7 +39,7 @@
                file."kind" AS "kind",
                file."status" AS "status"
         FROM "conversation_round" round
-        INNER JOIN "conversation_round_file" relation ON relation."round_id" = round."id"
+        INNER JOIN "conversation_round_input_file" relation ON relation."round_id" = round."id"
         INNER JOIN "file_resource" file ON file."id" = relation."file_resource_id"
         WHERE round."conversation_id" = #{conversationId}
           AND round."round_number" &lt;= #{endRoundNumber}
@@ -49,7 +49,7 @@
     </select>
 
     <select id="getSharedRoundFile"
-            resultType="ifl.agentbreaker.conversationmanager.domain.dtos.responses.RoundFileHistory">
+            resultType="ifl.agentbreaker.conversationmanager.domain.dtos.responses.RoundInputFileHistory">
         SELECT round."round_number" AS "roundNumber",
                file."id" AS "fileResourceId",
                file."file_id" AS "fileId",
@@ -59,7 +59,7 @@
                file."kind" AS "kind",
                file."status" AS "status"
         FROM "conversation_round" round
-        INNER JOIN "conversation_round_file" relation ON relation."round_id" = round."id"
+        INNER JOIN "conversation_round_input_file" relation ON relation."round_id" = round."id"
         INNER JOIN "file_resource" file ON file."id" = relation."file_resource_id"
         WHERE round."conversation_id" = #{conversationId}
           AND round."round_number" &lt;= #{endRoundNumber}
@@ -71,7 +71,7 @@
     </select>
 
     <select id="listSharedRoundFiles"
-            resultType="ifl.agentbreaker.conversationmanager.domain.dtos.responses.RoundFileHistory">
+            resultType="ifl.agentbreaker.conversationmanager.domain.dtos.responses.RoundInputFileHistory">
         SELECT round."round_number" AS "roundNumber",
                file."id" AS "fileResourceId",
                file."file_id" AS "fileId",
@@ -81,7 +81,7 @@
                file."kind" AS "kind",
                file."status" AS "status"
         FROM "conversation_round" round
-        INNER JOIN "conversation_round_file" relation ON relation."round_id" = round."id"
+        INNER JOIN "conversation_round_input_file" relation ON relation."round_id" = round."id"
         INNER JOIN "file_resource" file ON file."id" = relation."file_resource_id"
         WHERE round."conversation_id" = #{conversationId}
           AND round."round_number" &lt;= #{endRoundNumber}
@@ -101,7 +101,7 @@
     </select>
 
     <delete id="deleteByConversationIds">
-        DELETE FROM "conversation_round_file" relation
+        DELETE FROM "conversation_round_input_file" relation
         USING "conversation_round" round, "conversation" conversation
         WHERE relation."round_id" = round."id"
           AND round."conversation_id" IN
@@ -111,4 +111,13 @@
           AND conversation."conversation_id" = round."conversation_id"
           AND conversation."creator_id" = #{userId}
     </delete>
+
+    <select id="findLatestVisibleRoundNumber" resultType="java.lang.Long">
+        SELECT MAX(round."round_number")
+        FROM "conversation_round_input_file" relation
+        INNER JOIN "conversation_round" round ON round."id" = relation."round_id"
+        WHERE round."conversation_id" = #{conversationId}
+          AND round."deleted" = FALSE
+          AND relation."file_resource_id" = #{fileResourceId}
+    </select>
 </mapper>

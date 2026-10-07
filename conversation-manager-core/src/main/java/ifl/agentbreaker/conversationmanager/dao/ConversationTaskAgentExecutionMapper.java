@@ -1,9 +1,12 @@
 package ifl.agentbreaker.conversationmanager.dao;
 
 import ifl.agentbreaker.conversationmanager.domain.dtos.requests.TaskAgentExecutionTerminalUpdate;
+import ifl.agentbreaker.conversationmanager.domain.dtos.responses.RoundSubExecutionHistory;
 import ifl.agentbreaker.conversationmanager.domain.entities.pg.ConversationTaskAgentExecution;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
+
+import java.util.List;
 
 /** MyBatis operations for bounded Task-Agent execution diagnostics. */
 @Mapper
@@ -32,4 +35,10 @@ public interface ConversationTaskAgentExecutionMapper
      * @return affected row count
      */
     int updateTerminal(TaskAgentExecutionTerminalUpdate update);
+
+    /** Lists the Task-Agent executions of one Conversation in execution order.
+     * @param conversationId owned Conversation identifier
+     * @return sub-execution projections ordered by Round, Turn, and insertion order
+     */
+    List<RoundSubExecutionHistory> listRoundTaskAgentExecutions(@Param("conversationId") String conversationId);
 }

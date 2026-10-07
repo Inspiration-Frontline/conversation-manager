@@ -2,6 +2,8 @@ package ifl.agentbreaker.conversationmanager.support;
 
 import java.util.regex.Pattern;
 
+import org.springframework.util.StringUtils;
+
 /**
  * Applies one title policy to manual renames and automatic first-Round naming.
  *
@@ -18,6 +20,12 @@ public final class ConversationTitleManager
 
     /** Whitespace pattern used to collapse title separators. */
     private static final Pattern WHITESPACE = Pattern.compile("\\s+");
+
+    /**
+     * Matches signed-URL or credential parameters that must never become displayed title text.
+     */
+    private static final Pattern CREDENTIAL_QUERY_PARAMETER = Pattern.compile(
+        "(?i).*(signature|expires|ossaccesskeyid|accesskeyid|x-amz-|credential|token)=.*");
 
     /** Prevents construction because title policy is stateless. */
     private ConversationTitleManager()
@@ -52,6 +60,27 @@ public final class ConversationTitleManager
     }
 
     /**
+     * Derives the automatic first-Round title, preferring visible user text over attachment names.
+     *
+     * Attachment messages carry their text inside content parts rather than the scalar compatibility
+     * field, so callers must pass the already extracted visible text instead of the raw request.
+     *
+     * @param visibleText visible user text of the Round, possibly blank for an attachment-only request
+     * @param firstAttachmentFilename original filename of the first ordered attachment, possibly blank
+     * @return normalized visible-text title, sanitized attachment basename, or {@link #DEFAULT_TITLE}
+     */
+    public static String deriveAutomaticTitle(String visibleText, String firstAttachmentFilename)
+    {
+        if (StringUtils.hasText(visibleText))
+            return deriveFromFirstUserMessage(visibleText);
+
+        if (StringUtils.hasText(firstAttachmentFilename))
+            return deriveFromAttachmentFilename(firstAttachmentFilename);
+
+        return DEFAULT_TITLE;
+    }
+
+    /**
      * Derives an attachment-only title without exposing the filename extension as display text.
      *
      * @param filename original filename of the first validated attachment
@@ -64,6 +93,9 @@ public final class ConversationTitleManager
 
         if (dot > 0)
             normalized = normalized.substring(0, dot);
+
+        if (normalized.contains("://") || CREDENTIAL_QUERY_PARAMETER.matcher(normalized).matches())
+            return DEFAULT_TITLE;
 
         return normalized.isEmpty() ? DEFAULT_TITLE : normalized;
     }

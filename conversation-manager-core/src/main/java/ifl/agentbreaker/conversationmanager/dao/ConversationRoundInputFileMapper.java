@@ -1,6 +1,6 @@
 package ifl.agentbreaker.conversationmanager.dao;
 
-import ifl.agentbreaker.conversationmanager.domain.dtos.responses.RoundFileHistory;
+import ifl.agentbreaker.conversationmanager.domain.dtos.responses.RoundInputFileHistory;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 
@@ -9,7 +9,7 @@ import java.util.List;
 
 /** MyBatis persistence operations for immutable Round-to-file references. */
 @Mapper
-public interface ConversationRoundFileMapper
+public interface ConversationRoundInputFileMapper
 {
     /**
      * Links an ordered file selection to a Round after owner authorization.
@@ -29,7 +29,7 @@ public interface ConversationRoundFileMapper
      * @param conversationId stable Conversation identifier
      * @return attachment summaries ordered by Round and file position
      */
-    List<RoundFileHistory> listRoundFiles(@Param("conversationId") String conversationId);
+    List<RoundInputFileHistory> listRoundFiles(@Param("conversationId") String conversationId);
 
     /**
      * Loads attachments belonging to completed Rounds inside an inclusive snapshot boundary.
@@ -38,7 +38,7 @@ public interface ConversationRoundFileMapper
      * @param endRoundNumber inclusive shared or forked boundary
      * @return attachment summaries ordered by Round and file position
      */
-    List<RoundFileHistory> listCompletedRoundFilesAtOrBefore(@Param("conversationId") String conversationId,
+    List<RoundInputFileHistory> listCompletedRoundFilesAtOrBefore(@Param("conversationId") String conversationId,
                                                               @Param("endRoundNumber") long endRoundNumber);
 
     /**
@@ -49,9 +49,19 @@ public interface ConversationRoundFileMapper
      * @param fileId stable file resource identifier
      * @return authorized attachment summary, or {@code null} when outside the snapshot
      */
-    RoundFileHistory getSharedRoundFile(@Param("conversationId") String conversationId,
+    RoundInputFileHistory getSharedRoundFile(@Param("conversationId") String conversationId,
                                         @Param("endRoundNumber") long endRoundNumber,
                                         @Param("fileId") String fileId);
+
+    /**
+     * Resolves the latest visible Round that attached one uploaded resource.
+     *
+     * @param conversationId stable Conversation identifier
+     * @param fileResourceId internal file resource identity
+     * @return latest visible Round number, or {@code null} when the resource is not attached
+     */
+    Long findLatestVisibleRoundNumber(@Param("conversationId") String conversationId,
+                                      @Param("fileResourceId") long fileResourceId);
 
     /** Resolves an ordered file batch only inside completed Rounds of a shared snapshot.
      * @param conversationId stable source Conversation identifier
@@ -59,7 +69,7 @@ public interface ConversationRoundFileMapper
      * @param fileIds requested stable file identifiers
      * @return authorized attachment summaries
      */
-    List<RoundFileHistory> listSharedRoundFiles(@Param("conversationId") String conversationId,
+    List<RoundInputFileHistory> listSharedRoundFiles(@Param("conversationId") String conversationId,
                                                @Param("endRoundNumber") long endRoundNumber,
                                                @Param("fileIds") Collection<String> fileIds);
 

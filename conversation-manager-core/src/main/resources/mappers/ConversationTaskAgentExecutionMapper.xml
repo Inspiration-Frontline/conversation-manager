@@ -77,4 +77,24 @@
             "error_message" = COALESCE(#{errorMessage}, "error_message"), "end_time" = #{endTime}
         WHERE "id" = #{executionId} AND "creator_id" = #{userId}
     </update>
+
+    <select id="listRoundTaskAgentExecutions"
+            resultType="ifl.agentbreaker.conversationmanager.domain.dtos.responses.RoundSubExecutionHistory">
+        SELECT round."round_number" AS "roundNumber",
+               turn."turn_number" AS "turnNumber",
+               execution."capability_key" AS "capabilityKey",
+               execution."task_agent_id" AS "taskAgentId",
+               execution."task_agent_name" AS "taskAgentName",
+               execution."task_agent_version" AS "taskAgentVersion",
+               execution."status" AS "status",
+               execution."start_time" AS "startTime",
+               execution."end_time" AS "endTime",
+               execution."error_message" AS "errorMessage"
+        FROM "conversation_task_agent_execution" execution
+        LEFT JOIN "conversation_turn" turn ON turn."id" = execution."parent_turn_id"
+        INNER JOIN "conversation_round" round ON round."id" = execution."round_id"
+        WHERE round."conversation_id" = #{conversationId}
+          AND round."deleted" = FALSE
+        ORDER BY round."round_number", turn."turn_number" NULLS FIRST, execution."id"
+    </select>
 </mapper>

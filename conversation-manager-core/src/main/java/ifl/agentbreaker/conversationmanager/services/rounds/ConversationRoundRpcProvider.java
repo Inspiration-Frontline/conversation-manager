@@ -1,9 +1,14 @@
 package ifl.agentbreaker.conversationmanager.services.rounds;
 
 import ifl.agentbreaker.commons.api.dto.ResponseBase;
+import ifl.agentbreaker.conversationmanager.domain.constants.EditResolutionKind;
+import ifl.agentbreaker.conversationmanager.domain.constants.ResolverExecutionStatus;
 import ifl.agentbreaker.conversationmanager.domain.dtos.requests.GeneratedFileMaterializationRequest;
+import ifl.agentbreaker.conversationmanager.domain.dtos.requests.ReferenceResolutionAudit;
 import ifl.agentbreaker.conversationmanager.domain.dtos.responses.ConversationRoundHistoryResult;
 import ifl.agentbreaker.conversationmanager.domain.dtos.responses.ConversationReplayResult;
+import ifl.agentbreaker.conversationmanager.domain.dtos.responses.GeneratedFileHistory;
+import ifl.agentbreaker.conversationmanager.domain.dtos.responses.PreparedImageEditSource;
 import ifl.agentbreaker.conversationmanager.domain.dtos.responses.RoundDeletionFailure;
 import ifl.agentbreaker.conversationmanager.domain.dtos.responses.RoundDeletionResult;
 import ifl.agentbreaker.conversationmanager.domain.entities.pg.ConversationRound;
@@ -11,6 +16,7 @@ import ifl.agentbreaker.conversationmanager.domain.entities.pg.FileResource;
 import ifl.agentbreaker.conversationmanager.domain.entities.pg.FileResourceVariant;
 import ifl.agentbreaker.conversationmanager.config.ConversationFileProperties;
 import ifl.agentbreaker.conversationmanager.dao.ConversationMapper;
+import ifl.agentbreaker.conversationmanager.dao.ConversationRoundGeneratedFileMapper;
 import ifl.agentbreaker.conversationmanager.rpc.AssistantAnswer;
 import ifl.agentbreaker.conversationmanager.rpc.AppendConversationRoundProgressRequest;
 import ifl.agentbreaker.conversationmanager.rpc.AppendConversationRoundProgressResponse;
@@ -38,10 +44,14 @@ import ifl.agentbreaker.conversationmanager.rpc.GetConversationRoundHistoryReque
 import ifl.agentbreaker.conversationmanager.rpc.GetConversationRoundHistoryResponse;
 import ifl.agentbreaker.conversationmanager.rpc.GetConversationTurnHistoryRequest;
 import ifl.agentbreaker.conversationmanager.rpc.GetConversationTurnHistoryResponse;
+import ifl.agentbreaker.conversationmanager.rpc.GeneratedFileSummary;
 import ifl.agentbreaker.conversationmanager.rpc.ReplayDetailLevel;
 import ifl.agentbreaker.conversationmanager.rpc.PrepareConversationFilesRequest;
 import ifl.agentbreaker.conversationmanager.rpc.PrepareConversationFilesResponse;
 import ifl.agentbreaker.conversationmanager.rpc.PrepareConversationFilesResult;
+import ifl.agentbreaker.conversationmanager.rpc.PrepareImageEditSourceRequest;
+import ifl.agentbreaker.conversationmanager.rpc.PrepareImageEditSourceResponse;
+import ifl.agentbreaker.conversationmanager.rpc.PrepareImageEditSourceResult;
 import ifl.agentbreaker.conversationmanager.rpc.PrepareConversationReferencesRequest;
 import ifl.agentbreaker.conversationmanager.rpc.PrepareConversationReferencesResponse;
 import ifl.agentbreaker.conversationmanager.rpc.PreparedConversationFile;
@@ -69,7 +79,9 @@ import java.time.Instant;
 import java.util.concurrent.CompletableFuture;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 
 /**
@@ -104,6 +116,12 @@ public class ConversationRoundRpcProvider implements ConversationRpcService
      */
     @Autowired
     private ConversationMapper conversationMapper;
+
+    /**
+     * Generated-output lookup used when projecting compact Round history.
+     */
+    @Autowired
+    private ConversationRoundGeneratedFileMapper conversationRoundGeneratedFileMapper;
 
     /**
      * Tracing wrapper that records RPC outcomes without changing the response contract.
@@ -164,6 +182,11 @@ public class ConversationRoundRpcProvider implements ConversationRpcService
                 .normalizedSettingsJson(request.getNormalizedSettingsJson())
                 .parentSpanId(request.getParentSpanId())
                 .taskSpanId(request.getTaskSpanId())
+                .editResolutionKind(toDomainEditResolutionKind(request.getEditResolutionKind()))
+                .editSourceFileId(request.getEditSourceFileId())
+                .editSourceRoundNumber(request.getEditSourceRoundNumber())
+                .referenceResolution(request.hasReferenceResolution()
+                    ? toReferenceResolutionAudit(request.getReferenceResolution()) : null)
                 .build();
             GeneratedFileMaterializationService.MaterializationResult result =
                 generatedFileMaterializationService.materialize(materializationRequest);
@@ -264,6 +287,69 @@ public class ConversationRoundRpcProvider implements ConversationRpcService
                 ifl.agentbreaker.conversationmanager.rpc.GeneratedAttemptStatus.GENERATED_ATTEMPT_STATUS_UNKNOWN;
             case MATERIALIZED ->
                 ifl.agentbreaker.conversationmanager.rpc.GeneratedAttemptStatus.GENERATED_ATTEMPT_STATUS_MATERIALIZED;
+        };
+    }
+
+    /**
+     * Converts the wire edit-resolution method into the domain enum, or null for ordinary
+     * generation.
+     *
+     * @param resolutionKind wire method value
+     * @return domain method, or null when the attempt is not an edit
+     */
+    private EditResolutionKind toDomainEditResolutionKind(
+        ifl.agentbreaker.conversationmanager.rpc.EditResolutionKind resolutionKind)
+    {
+        return switch (resolutionKind)
+        {
+            case EDIT_RESOLUTION_KIND_EXPLICIT -> EditResolutionKind.EXPLICIT;
+            case EDIT_RESOLUTION_KIND_REFERENCE_RESOLVER -> EditResolutionKind.REFERENCE_RESOLVER;
+            default -> null;
+        };
+    }
+
+    /**
+     * Converts one wire resolver audit into the bounded domain request DTO.
+     *
+     * @param audit wire resolver audit
+     * @return domain resolver audit
+     */
+    private ReferenceResolutionAudit toReferenceResolutionAudit(
+        ifl.agentbreaker.conversationmanager.rpc.ReferenceResolutionAudit audit)
+    {
+        return ReferenceResolutionAudit.builder()
+            .taskAgentId(audit.getTaskAgentId())
+            .taskAgentName(audit.getTaskAgentName())
+            .taskAgentVersion(audit.getTaskAgentVersion())
+            .status(toDomainResolverStatus(audit.getStatus()))
+            .requestId(audit.getRequestId())
+            .traceId(audit.getTraceId())
+            .parentSpanId(audit.getParentSpanId())
+            .taskSpanId(audit.getTaskSpanId())
+            .resolvedFileId(audit.getResolvedFileId())
+            .resolvedRoundNumber(audit.getResolvedRoundNumber())
+            .resolutionReason(audit.getResolutionReason())
+            .startTime(audit.getStartTime() <= 0 ? null : Instant.ofEpochMilli(audit.getStartTime()))
+            .endTime(audit.getEndTime() <= 0 ? null : Instant.ofEpochMilli(audit.getEndTime()))
+            .model(audit.getModel())
+            .build();
+    }
+
+    /**
+     * Converts the wire resolver status into the domain status.
+     *
+     * @param status wire resolver status
+     * @return domain resolver status, or null when unspecified
+     */
+    private ResolverExecutionStatus toDomainResolverStatus(
+        ifl.agentbreaker.conversationmanager.rpc.ResolverExecutionStatus status)
+    {
+        return switch (status)
+        {
+            case RESOLVER_EXECUTION_STATUS_COMPLETED -> ResolverExecutionStatus.COMPLETED;
+            case RESOLVER_EXECUTION_STATUS_FAILED -> ResolverExecutionStatus.FAILED;
+            case RESOLVER_EXECUTION_STATUS_CANCELLED -> ResolverExecutionStatus.CANCELLED;
+            default -> null;
         };
     }
 
@@ -512,9 +598,13 @@ public class ConversationRoundRpcProvider implements ConversationRpcService
             ConversationRoundHistory.Builder data = ConversationRoundHistory.newBuilder()
                 .setConversationId(request.getConversationId())
                 .setLatestRoundNumber(conversationRoundHistoryResult.latestRoundNumber());
+            Map<Long, List<GeneratedFileHistory>> generatedFilesByRound = conversationRoundGeneratedFileMapper
+                .listRoundGeneratedFiles(request.getConversationId())
+                .stream()
+                .collect(Collectors.groupingBy(GeneratedFileHistory::roundNumber));
 
             for (ConversationRound round : conversationRoundHistoryResult.rounds())
-                data.addRounds(toSummary(round));
+                data.addRounds(toSummary(round, generatedFilesByRound.getOrDefault(round.getRoundNumber(), List.of())));
 
             return GetConversationRoundHistoryResponse.newBuilder().setBase(successBase()).setData(data).build();
         }
@@ -817,6 +907,58 @@ public class ConversationRoundRpcProvider implements ConversationRpcService
     }
 
     /**
+     * Authorizes one existing image as the source of an image-editing Round and returns signed
+     * provider-input metadata for the exact object the Runner may download.
+     *
+     * @param request user, Conversation, and stable source file identity
+     * @return signed provider-input metadata or a typed business error
+     */
+    @Override
+    public PrepareImageEditSourceResponse prepareImageEditSource(PrepareImageEditSourceRequest request)
+    {
+        try
+        {
+            PreparedImageEditSource prepared = conversationFileService.prepareImageEditSource(
+                request.getUserId(), request.getConversationId(), request.getFileId());
+            PrepareImageEditSourceResult data = PrepareImageEditSourceResult.newBuilder()
+                .setFileId(prepared.fileId())
+                .setOriginalFilename(prepared.originalFilename())
+                .setMimeType(prepared.mimeType())
+                .setFileSize(prepared.fileSize())
+                .setSha256(prepared.sha256())
+                .setWidth(prepared.width())
+                .setHeight(prepared.height())
+                .setOrigin(prepared.origin())
+                .setSourceRoundNumber(prepared.sourceRoundNumber())
+                .setDownloadUrl(prepared.downloadUrl())
+                .build();
+
+            return PrepareImageEditSourceResponse.newBuilder().setBase(successBase()).setData(data).build();
+        }
+        catch (ServiceResponseException e)
+        {
+            return PrepareImageEditSourceResponse.newBuilder()
+                .setBase(errorBase(e.getCode(), e.getMessage()))
+                .setData(PrepareImageEditSourceResult.getDefaultInstance())
+                .build();
+        }
+    }
+
+    /**
+     * Adapts edit-source preparation to Dubbo's asynchronous signature without losing its
+     * correlation semantics.
+     *
+     * @param request edit-source preparation request
+     * @return future containing the preparation response
+     */
+    @Override
+    public CompletableFuture<PrepareImageEditSourceResponse> prepareImageEditSourceAsync(
+        PrepareImageEditSourceRequest request)
+    {
+        return CompletableFuture.completedFuture(prepareImageEditSource(request));
+    }
+
+    /**
      * Authorizes and resolves a frozen batch of same-Group Conversation references.
      *
      * @param request destination Conversation and frozen source boundaries
@@ -998,9 +1140,10 @@ public class ConversationRoundRpcProvider implements ConversationRpcService
      * content and status, but not the internal table IDs or raw LLM payloads.
      *
      * @param round persisted Round entity
+     * @param generatedFiles generated outputs visible for the Round
      * @return compact history summary
      */
-    private ConversationRoundSummary toSummary(ConversationRound round)
+    private ConversationRoundSummary toSummary(ConversationRound round, List<GeneratedFileHistory> generatedFiles)
     {
         ConversationRoundSummary.Builder summary = ConversationRoundSummary.newBuilder()
             .setConversationId(round.getConversationId())
@@ -1023,6 +1166,14 @@ public class ConversationRoundRpcProvider implements ConversationRpcService
             summary.setFinalAnswer(AssistantAnswer.newBuilder()
                 .setContent(round.getFinalAnswerContent())
                 .setSourceTurnNumber(round.getFinalSourceTurnNumber()));
+
+        for (GeneratedFileHistory generatedFile : generatedFiles)
+            summary.addGeneratedFiles(GeneratedFileSummary.newBuilder()
+                .setFileId(generatedFile.fileId())
+                .setOriginalFilename(generatedFile.originalFilename())
+                .setMimeType(generatedFile.mimeType())
+                .setOutputKind(generatedFile.outputKind())
+                .setOutputStatus(generatedFile.outputStatus()));
 
         return summary.build();
     }

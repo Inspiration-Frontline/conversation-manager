@@ -98,7 +98,7 @@
             file."creator_id" = #{userId}
             OR EXISTS (
               SELECT 1
-              FROM "conversation_round_file" relation
+              FROM "conversation_round_input_file" relation
               INNER JOIN "conversation_round" round ON round."id" = relation."round_id"
               INNER JOIN "conversation" conversation ON conversation."conversation_id" = round."conversation_id"
               WHERE relation."file_resource_id" = file."id"
@@ -138,7 +138,7 @@
             file."creator_id" = #{userId}
             OR EXISTS (
                 SELECT 1
-                FROM "conversation_round_file" relation
+                FROM "conversation_round_input_file" relation
                 INNER JOIN "conversation_round" round ON round."id" = relation."round_id"
                 INNER JOIN "conversation" conversation ON conversation."conversation_id" = round."conversation_id"
                 WHERE relation."file_resource_id" = file."id"
@@ -296,8 +296,12 @@
     <select id="hasRoundReferences" resultType="boolean">
         SELECT EXISTS (
             SELECT 1
-            FROM "conversation_round_file"
+            FROM "conversation_round_input_file"
             WHERE "file_resource_id" = #{id}
+        ) OR EXISTS (
+            SELECT 1
+            FROM "conversation_round_edit_source"
+            WHERE "source_file_resource_id" = #{id}
         )
     </select>
 </mapper>

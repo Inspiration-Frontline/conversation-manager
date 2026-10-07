@@ -203,13 +203,10 @@ public class ConversationRoundProgressService
     private String deriveAutomaticTitle(
         CreateConversationRoundCheckpointRequest request, List<FileResource> roundFiles)
     {
-        if (StringUtils.hasText(request.getUserRequest().getContent()))
-            return ConversationTitleManager.deriveFromFirstUserMessage(request.getUserRequest().getContent());
+        String visibleText = conversationRoundService.extractTextContent(request.getUserRequest());
+        String firstAttachmentFilename = roundFiles.isEmpty() ? null : roundFiles.get(0).getOriginalFilename();
 
-        if (!roundFiles.isEmpty())
-            return ConversationTitleManager.deriveFromAttachmentFilename(roundFiles.get(0).getOriginalFilename());
-
-        return ConversationTitleManager.DEFAULT_TITLE;
+        return ConversationTitleManager.deriveAutomaticTitle(visibleText, firstAttachmentFilename);
     }
 
     /**
