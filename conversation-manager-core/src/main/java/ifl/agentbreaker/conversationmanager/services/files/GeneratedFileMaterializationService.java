@@ -479,12 +479,9 @@ public class GeneratedFileMaterializationService
                                       EditSourceKind sourceKind)
     {
         Long visibleRoundNumber = sourceKind == EditSourceKind.GENERATED
-            ? conversationRoundGeneratedFileMapper.findLatestVisibleRoundNumber(
-                request.conversationId(), sourceResource.getId())
-            : conversationRoundFileMapper.findLatestVisibleRoundNumber(
-                request.conversationId(), sourceResource.getId());
-        Long reportedRoundNumber = request.editSourceRoundNumber() > 0
-            ? request.editSourceRoundNumber() : null;
+            ? conversationRoundGeneratedFileMapper.findLatestVisibleRoundNumber(request.conversationId(), sourceResource.getId())
+            : conversationRoundFileMapper.findLatestVisibleRoundNumber(request.conversationId(), sourceResource.getId());
+        Long reportedRoundNumber = request.editSourceRoundNumber() > 0 ? request.editSourceRoundNumber() : null;
         Long resolvedRoundNumber = visibleRoundNumber != null ? visibleRoundNumber : reportedRoundNumber;
 
         if (resolvedRoundNumber == null)
@@ -508,8 +505,7 @@ public class GeneratedFileMaterializationService
         if (!hasEditSource)
         {
             if (request.editResolutionKind() != null)
-                throw new ServiceResponseException(ERROR_INVALID_GENERATED_FILE,
-                    "An edit resolution kind requires a source image.");
+                throw new ServiceResponseException(ERROR_INVALID_GENERATED_FILE, "An edit resolution kind requires a source image.");
 
             if (request.referenceResolution() == null)
                 return;
@@ -520,18 +516,12 @@ public class GeneratedFileMaterializationService
         }
 
         if (request.editSourceFileId().length() > 64 || request.editResolutionKind() == null)
-            throw new ServiceResponseException(ERROR_INVALID_GENERATED_FILE,
-                "The edit source metadata is inconsistent.");
+            throw new ServiceResponseException(ERROR_INVALID_GENERATED_FILE, "The edit source metadata is inconsistent.");
 
         if (request.editResolutionKind() == EditResolutionKind.REFERENCE_RESOLVER)
-        {
             validateReferenceResolution(request.referenceResolution(), request.editSourceFileId());
-        }
         else if (request.referenceResolution() != null)
-        {
-            throw new ServiceResponseException(ERROR_INVALID_GENERATED_FILE,
-                "An explicit edit source must not carry a resolver audit.");
-        }
+            throw new ServiceResponseException(ERROR_INVALID_GENERATED_FILE, "An explicit edit source must not carry a resolver audit.");
     }
 
     /**
@@ -547,15 +537,13 @@ public class GeneratedFileMaterializationService
         if (editSourceFileId == null)
         {
             if (StringUtils.hasText(audit.resolvedFileId()))
-                throw new ServiceResponseException(ERROR_INVALID_GENERATED_FILE,
-                    "A resolved candidate requires an edit source.");
+                throw new ServiceResponseException(ERROR_INVALID_GENERATED_FILE, "A resolved candidate requires an edit source.");
 
             return;
         }
 
         if (!editSourceFileId.equals(audit.resolvedFileId()))
-            throw new ServiceResponseException(ERROR_INVALID_GENERATED_FILE,
-                "The resolved candidate does not match the edit source.");
+            throw new ServiceResponseException(ERROR_INVALID_GENERATED_FILE, "The resolved candidate does not match the edit source.");
     }
 
     /**
@@ -792,9 +780,6 @@ public class GeneratedFileMaterializationService
 
     /**
      * Builds the deterministic derivative key adjacent to the source object.
-     */
-    /**
-     * Maps a supported image MIME to its normalized extension.
      */
     private String extensionForMime(String mimeType)
     {

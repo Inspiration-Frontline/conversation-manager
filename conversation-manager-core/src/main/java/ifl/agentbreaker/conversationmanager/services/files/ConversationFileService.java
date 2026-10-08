@@ -408,9 +408,7 @@ public class ConversationFileService
         String downloadUrl;
 
         if (generated)
-        {
             downloadUrl = createDownloadUrl(fileResource, expiresAt);
-        }
         else
         {
             modelInputVariant = fileResourceVariantMapper.getReadyVariant(

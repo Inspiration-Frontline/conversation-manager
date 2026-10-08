@@ -200,11 +200,10 @@ public class ConversationRoundProgressService
      * @param roundFiles ordered attachment resources persisted for the Round
      * @return non-blank normalized title
      */
-    private String deriveAutomaticTitle(
-        CreateConversationRoundCheckpointRequest request, List<FileResource> roundFiles)
+    private String deriveAutomaticTitle(CreateConversationRoundCheckpointRequest request, List<FileResource> roundFiles)
     {
         String visibleText = conversationRoundService.extractTextContent(request.getUserRequest());
-        String firstAttachmentFilename = roundFiles.isEmpty() ? null : roundFiles.get(0).getOriginalFilename();
+        String firstAttachmentFilename = roundFiles.isEmpty() ? null : roundFiles.getFirst().getOriginalFilename();
 
         return ConversationTitleManager.deriveAutomaticTitle(visibleText, firstAttachmentFilename);
     }
