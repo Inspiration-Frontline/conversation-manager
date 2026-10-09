@@ -75,11 +75,14 @@ public class ConversationTaskAgentExecution extends EntityBase
     /**
      * JSON array of stable input resource IDs.
      */
+    // TODO: Why do we use string-json, I suppose we should use "List<Long> inputResourceIds" here, and store "[1, 2, ...]" format JSON in DB.
+    //  So I suppose we do not need to change the table schema, but we need to modify the data type here, and we may need a new converter to integrate with MyBatis.
     private String inputResourceIdsJson;
 
     /**
      * JSON object of normalized settings.
      */
+    // TODO: Same as above. But why do we need a settings JSON here?
     private String normalizedSettingsJson;
 
     /**

@@ -102,6 +102,7 @@ public class GeneratedFileMaterializationService
     /**
      * Visible Round lookup for uploaded edit sources.
      */
+    // TODO: Rename all "conversationRoundFileMapper" of type "ConversationRoundInputFileMapper" to "conversationRoundInputFileMapper".
     @Autowired
     private ConversationRoundInputFileMapper conversationRoundFileMapper;
 
@@ -425,8 +426,8 @@ public class GeneratedFileMaterializationService
         if (persistedExecution == null || persistedExecution.getId() <= 0)
             throw new IllegalStateException("The resolver execution could not be persisted.");
 
-        if (conversationTaskAgentExecutionMapper.insertTurnLink(request.userId(), persistedExecution.getId(),
-            sourceTurn.getId(), 1) != 1)
+        int insertedTurnLinkCount = conversationTaskAgentExecutionMapper.insertTurnLink(request.userId(), persistedExecution.getId(), sourceTurn.getId(), 1);
+        if (insertedTurnLinkCount != 1)
             throw new IllegalStateException("The resolver Turn link could not be persisted.");
 
         return persistedExecution.getId();
@@ -444,16 +445,14 @@ public class GeneratedFileMaterializationService
         if (sourceResource == null || sourceResource.isDeleted()
             || sourceResource.getKind() != ConversationFileKind.IMAGE
             || sourceResource.getStatus() != ConversationFileStatus.READY)
-            throw new ServiceResponseException(ERROR_INVALID_GENERATED_FILE,
-                "The edit source image is not available.");
+            throw new ServiceResponseException(ERROR_INVALID_GENERATED_FILE, "The edit source image is not available.");
 
         EditSourceKind sourceKind = sourceResource.getOrigin() == FileResourceOrigin.GENERATED
             ? EditSourceKind.GENERATED : EditSourceKind.UPLOADED;
         Long sourceRoundId = resolveSourceRoundId(request, sourceResource, sourceKind);
 
         if (sourceRoundId == null)
-            throw new ServiceResponseException(ERROR_INVALID_GENERATED_FILE,
-                "The edit source image is not visible in this Conversation.");
+            throw new ServiceResponseException(ERROR_INVALID_GENERATED_FILE, "The edit source image is not visible in this Conversation.");
 
         ConversationRoundEditSource editSource = new ConversationRoundEditSource();
         editSource.setCreatorId(request.userId());

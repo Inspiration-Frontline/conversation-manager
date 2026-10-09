@@ -400,8 +400,7 @@ public class ConversationFileService
             : conversationRoundFileMapper.findLatestVisibleRoundNumber(conversationId, fileResource.getId());
 
         if (sourceRoundNumber == null)
-            throw new ServiceResponseException(ERROR_FILE_NOT_FOUND,
-                "Edit source image is not visible in this Conversation.");
+            throw new ServiceResponseException(ERROR_FILE_NOT_FOUND, "Edit source image is not visible in this Conversation.");
 
         Instant expiresAt = Instant.now().plusSeconds(ossStorageProperties.getPresignedUrlTtlSeconds());
         FileResourceVariant modelInputVariant = null;
@@ -411,8 +410,7 @@ public class ConversationFileService
             downloadUrl = createDownloadUrl(fileResource, expiresAt);
         else
         {
-            modelInputVariant = fileResourceVariantMapper.getReadyVariant(
-                fileResource.getId(), FileVariantType.MODEL_INPUT);
+            modelInputVariant = fileResourceVariantMapper.getReadyVariant(fileResource.getId(), FileVariantType.MODEL_INPUT);
 
             if (modelInputVariant == null)
                 throw new ServiceResponseException(ERROR_INVALID_FILE, "The edit source derivative is not ready.");
@@ -424,14 +422,12 @@ public class ConversationFileService
             ? modelInputVariant.getMimeType()
             : (StringUtils.hasText(fileResource.getDetectedMimeType())
                 ? fileResource.getDetectedMimeType() : fileResource.getDeclaredMimeType());
-        long fileSize = modelInputVariant != null && modelInputVariant.getFileSize() != null
-            ? modelInputVariant.getFileSize() : fileResource.getFileSize();
+        long fileSize = modelInputVariant != null && modelInputVariant.getFileSize() != null ? modelInputVariant.getFileSize() : fileResource.getFileSize();
         String sha256 = modelInputVariant != null ? modelInputVariant.getSha256() : fileResource.getSha256();
-        int width = modelInputVariant != null ? modelInputVariant.getWidth()
-            : (fileResource.getWidth() == null ? 0 : fileResource.getWidth());
-        int height = modelInputVariant != null ? modelInputVariant.getHeight()
-            : (fileResource.getHeight() == null ? 0 : fileResource.getHeight());
+        int width = modelInputVariant != null ? modelInputVariant.getWidth() : (fileResource.getWidth() == null ? 0 : fileResource.getWidth());
+        int height = modelInputVariant != null ? modelInputVariant.getHeight() : (fileResource.getHeight() == null ? 0 : fileResource.getHeight());
 
+        // TODO: Use builder to make it more readable.
         return new PreparedImageEditSource(fileResource.getFileId(), fileResource.getOriginalFilename(),
             mimeType, fileSize, sha256 == null ? "" : sha256, width, height,
             fileResource.getOrigin().name(), sourceRoundNumber, downloadUrl);
@@ -512,19 +508,21 @@ public class ConversationFileService
     {
         validatePreviewIds(request.getFileIds());
         long userId = UserContextService.getCurrentUserId();
-        List<FileResource> resources = fileResourceMapper.listConversationReferencedFileResources(
-            request.getFileIds(), userId);
+        List<FileResource> resources = fileResourceMapper.listConversationReferencedFileResources(request.getFileIds(), userId);
 
         if (resources.size() != request.getFileIds().size())
             throw new ServiceResponseException(ERROR_FILE_NOT_FOUND, "One or more images do not exist or are not accessible.");
+
         Map<String, FileResource> resourcesByFileId = new LinkedHashMap<>();
 
         for (FileResource resource : resources)
         {
             if (resource.getKind() != ConversationFileKind.IMAGE || resource.getStatus() != ConversationFileStatus.READY)
                 throw new ServiceResponseException(ERROR_INVALID_FILE, "Every preview file must be a ready image.");
+
             resourcesByFileId.put(resource.getFileId(), resource);
         }
+
         List<Long> resourceIds = resources.stream().map(FileResource::getId).toList();
         Map<Long, FileResourceVariant> variants = indexReadyVariants(resourceIds);
         Instant expiresAt = Instant.now().plusSeconds(ossStorageProperties.getPresignedUrlTtlSeconds());
@@ -553,19 +551,15 @@ public class ConversationFileService
         if (sharing == null)
             throw new ServiceResponseException(ERROR_FILE_NOT_FOUND, "Shared conversation does not exist or has expired.");
 
-        List<RoundInputFileHistory> attachmentFiles = conversationRoundFileMapper.listSharedRoundFiles(
-            sharing.getParentConversationId(), sharing.getEndRoundNumber(), request.getFileIds());
-        List<GeneratedFileHistory> generatedFiles = conversationRoundGeneratedFileMapper.listSharedGeneratedFiles(
-            sharing.getParentConversationId(), sharing.getEndRoundNumber(), request.getFileIds());
+        List<RoundInputFileHistory> attachmentFiles = conversationRoundFileMapper.listSharedRoundFiles(sharing.getParentConversationId(), sharing.getEndRoundNumber(), request.getFileIds());
+        List<GeneratedFileHistory> generatedFiles = conversationRoundGeneratedFileMapper.listSharedGeneratedFiles(sharing.getParentConversationId(), sharing.getEndRoundNumber(), request.getFileIds());
         Map<String, SharedPreviewTarget> filesById = new LinkedHashMap<>();
 
         for (RoundInputFileHistory file : attachmentFiles)
-            filesById.put(file.fileId(), new SharedPreviewTarget(
-                file.fileResourceId(), file.kind(), file.status()));
+            filesById.put(file.fileId(), new SharedPreviewTarget(file.fileResourceId(), file.kind(), file.status()));
 
         for (GeneratedFileHistory file : generatedFiles)
-            filesById.put(file.fileId(), new SharedPreviewTarget(
-                file.fileResourceId(), file.kind(), file.status()));
+            filesById.put(file.fileId(), new SharedPreviewTarget(file.fileResourceId(), file.kind(), file.status()));
 
         if (filesById.size() != request.getFileIds().size())
             throw new ServiceResponseException(ERROR_FILE_NOT_FOUND, "One or more images do not exist in the shared snapshot.");
@@ -781,8 +775,7 @@ public class ConversationFileService
             throw new ServiceResponseException(ERROR_INVALID_FILE, "The file MIME type is not supported.");
 
         if (!ConversationFileTypeResolver.isMimeTypeCompatible(extension, mimeType))
-            throw new ServiceResponseException(
-                ERROR_INVALID_FILE, "The file MIME type does not match its filename extension.");
+            throw new ServiceResponseException(ERROR_INVALID_FILE, "The file MIME type does not match its filename extension.");
 
         if (fileSize <= 0 || fileSize > conversationFileProperties.getMaxBytes())
             throw new ServiceResponseException(ERROR_INVALID_FILE, "The file exceeds the configured size limit.");
@@ -828,8 +821,7 @@ public class ConversationFileService
      */
     private String createSignedGetUrl(FileResource fileResource, Instant expiresAt)
     {
-        GeneratePresignedUrlRequest request = new GeneratePresignedUrlRequest(
-            fileResource.getBucketName(), fileResource.getObjectKey(), HttpMethod.GET);
+        GeneratePresignedUrlRequest request = new GeneratePresignedUrlRequest(fileResource.getBucketName(), fileResource.getObjectKey(), HttpMethod.GET);
         request.setExpiration(Date.from(expiresAt));
 
         return oss.generatePresignedUrl(request).toString();
@@ -846,8 +838,7 @@ public class ConversationFileService
      */
     private String createVariantUrl(FileResourceVariant variant, Instant expiresAt, boolean inline)
     {
-        GeneratePresignedUrlRequest request = new GeneratePresignedUrlRequest(
-            variant.getBucketName(), variant.getObjectKey(), HttpMethod.GET);
+        GeneratePresignedUrlRequest request = new GeneratePresignedUrlRequest(variant.getBucketName(), variant.getObjectKey(), HttpMethod.GET);
         request.setExpiration(Date.from(expiresAt));
 
         if (inline)
@@ -887,8 +878,8 @@ public class ConversationFileService
     {
         Map<Long, FileResourceVariant> variants = new LinkedHashMap<>();
 
-        for (FileResourceVariant variant : fileResourceVariantMapper.listReadyVariants(
-            resourceIds, FileVariantType.MODEL_INPUT))
+        List<FileResourceVariant> readyVariants = fileResourceVariantMapper.listReadyVariants(resourceIds, FileVariantType.MODEL_INPUT);
+        for (FileResourceVariant variant : readyVariants)
             variants.put(variant.getFileResourceId(), variant);
 
         return variants;
